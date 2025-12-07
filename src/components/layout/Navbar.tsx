@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X, ShoppingBag, User, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useCartStore } from "@/stores/cartStore";
 
 const navLinks = [
   { name: "Home", path: "/" },
@@ -17,6 +18,8 @@ const navLinks = [
 export const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
+  const { openCart, getTotalItems } = useCartStore();
+  const totalItems = getTotalItems();
 
   return (
     <motion.header
@@ -74,13 +77,31 @@ export const Navbar = () => {
               <Button variant="ghost" size="icon">
                 <MapPin className="w-5 h-5" />
               </Button>
-              <Button variant="ghost" size="icon" className="relative">
+              <Button variant="ghost" size="icon" className="relative" onClick={openCart}>
                 <ShoppingBag className="w-5 h-5" />
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-primary text-primary-foreground text-xs rounded-full flex items-center justify-center">
-                  0
-                </span>
+                <motion.span
+                  key={totalItems}
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  className="absolute -top-1 -right-1 w-5 h-5 bg-primary text-primary-foreground text-xs rounded-full flex items-center justify-center"
+                >
+                  {totalItems}
+                </motion.span>
               </Button>
             </div>
+
+            {/* Mobile Cart */}
+            <Button variant="ghost" size="icon" className="relative md:hidden" onClick={openCart}>
+              <ShoppingBag className="w-5 h-5" />
+              <motion.span
+                key={totalItems}
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="absolute -top-1 -right-1 w-5 h-5 bg-primary text-primary-foreground text-xs rounded-full flex items-center justify-center"
+              >
+                {totalItems}
+              </motion.span>
+            </Button>
 
             {/* Mobile Menu Button */}
             <Button
@@ -132,12 +153,6 @@ export const Navbar = () => {
                 </Button>
                 <Button variant="ghost" size="icon">
                   <MapPin className="w-5 h-5" />
-                </Button>
-                <Button variant="ghost" size="icon" className="relative">
-                  <ShoppingBag className="w-5 h-5" />
-                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-primary text-primary-foreground text-xs rounded-full flex items-center justify-center">
-                    0
-                  </span>
                 </Button>
               </div>
             </div>
