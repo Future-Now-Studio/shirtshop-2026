@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
-import { ArrowRight, Upload, Palette, Package, Truck } from "lucide-react";
+import { ArrowRight, Upload, Palette, Package, Truck, Sparkles } from "lucide-react";
 import heroImage from "@/assets/hero-image.jpg";
 
 const steps = [
@@ -49,11 +49,15 @@ const SelbstGestalten = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4 }}
+            className="flex flex-col sm:flex-row gap-4 justify-center"
           >
-            <Button variant="hero" size="xl" className="group">
-              Designer starten
-              <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-            </Button>
+            <Link to="/designer">
+              <Button variant="hero" size="xl" className="group">
+                <Sparkles className="w-5 h-5" />
+                T-Shirt Designer starten
+                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              </Button>
+            </Link>
           </motion.div>
         </div>
       </section>
@@ -111,10 +115,13 @@ const SelbstGestalten = () => {
               einzigartige Textilien für dich oder dein Team.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button size="xl" className="group">
-                Jetzt loslegen
-                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-              </Button>
+              <Link to="/designer">
+                <Button size="xl" className="group">
+                  <Sparkles className="w-5 h-5" />
+                  Jetzt Designer öffnen
+                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                </Button>
+              </Link>
               <Link to="/produkte">
                 <Button variant="outline" size="xl">
                   Produkte ansehen
