@@ -13,6 +13,9 @@ import SelbstGestalten from "./pages/SelbstGestalten";
 import TShirtDesigner from "./pages/TShirtDesigner";
 import Grossbestellung from "./pages/Grossbestellung";
 import Filialen from "./pages/Filialen";
+import Checkout from "./pages/Checkout";
+import CheckoutSuccess from "./pages/CheckoutSuccess";
+import AdminPlacementZones from "./pages/AdminPlacementZones";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -34,6 +37,10 @@ const App = () => (
           <Route path="/designer" element={<TShirtDesigner />} />
           <Route path="/grossbestellung" element={<Grossbestellung />} />
           <Route path="/filialen" element={<Filialen />} />
+          <Route path="/checkout" element={<Checkout />} />
+          <Route path="/checkout/success" element={<CheckoutSuccess />} />
+          <Route path="/admin/placement-zones" element={<AdminPlacementZones />} />
+          <Route path="/admin/placement-zones/:productId" element={<AdminPlacementZones />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

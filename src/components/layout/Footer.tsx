@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Mail, Phone, MapPin, Instagram, Facebook } from "lucide-react";
+import logo from "@/assets/group-25.svg";
 
 export const Footer = () => {
   return (
@@ -14,13 +15,11 @@ export const Footer = () => {
             viewport={{ once: true }}
           >
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center">
-                <span className="text-primary-foreground font-bold text-xl">PS</span>
-              </div>
-              <div>
-                <p className="font-bold text-xl leading-tight">Private</p>
-                <p className="font-bold text-xl leading-tight">Shirt</p>
-              </div>
+              <img
+                src={logo}
+                alt="Private Shirt Logo"
+                className="h-12 w-auto"
+              />
             </div>
             <p className="text-background/70 mb-6">
               Sei du selbst. Sei einzigartig. Professionelle Textilveredelung aus Hamburg.

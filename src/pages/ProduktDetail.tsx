@@ -1,27 +1,132 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
-import { getProductById } from "@/data/products";
+import { useProduct, useProductVariations } from "@/hooks/useProducts";
 import { useCartStore } from "@/stores/cartStore";
-import { ShoppingBag, Check, ArrowLeft, Palette } from "lucide-react";
+import { ShoppingBag, Check, ArrowLeft, Palette, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 
 const ProduktDetail = () => {
   const { id } = useParams<{ id: string }>();
-  const product = getProductById(Number(id));
+  const { data: product, isLoading, error } = useProduct(Number(id));
+  const { data: variations = [] } = useProductVariations(Number(id));
   const addItem = useCartStore((state) => state.addItem);
 
-  const [selectedColor, setSelectedColor] = useState(product?.colors[0] || "");
+  const [selectedColor, setSelectedColor] = useState("");
   const [selectedSize, setSelectedSize] = useState("");
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
-  if (!product) {
+  useEffect(() => {
+    if (product) {
+      setSelectedColor(product.colors[0] || "");
+      setSelectedImageIndex(0);
+    }
+  }, [product]);
+
+  // Get all available images for the current selection
+  const availableImages = useMemo(() => {
+    if (!product) {
+      return [];
+    }
+
+    const images: string[] = [];
+
+    // If variations exist, get images from matching variations
+    if (variations.length > 0) {
+      const matchingVariations = variations.filter(variation => {
+        const colorAttr = variation.attributes?.find(attr => 
+          attr.name.toLowerCase().includes('color') || 
+          attr.name.toLowerCase().includes('farbe') ||
+          attr.name.toLowerCase().includes('colour')
+        );
+        
+        const sizeAttr = variation.attributes?.find(attr => 
+          attr.name.toLowerCase().includes('size') || 
+          attr.name.toLowerCase().includes('größe') || 
+          attr.name.toLowerCase().includes('groesse')
+        );
+
+        const colorMatch = colorAttr && selectedColor 
+          ? colorAttr.option.toLowerCase() === selectedColor.toLowerCase()
+          : false;
+        
+        const sizeMatch = sizeAttr && selectedSize
+          ? sizeAttr.option.toLowerCase() === selectedSize.toLowerCase()
+          : false;
+
+        // If both color and size are selected, match both
+        if (selectedColor && selectedSize) {
+          return colorMatch && sizeMatch;
+        } 
+        // If only color is selected, match color
+        else if (selectedColor && !selectedSize) {
+          return colorMatch;
+        }
+        
+        return false;
+      });
+
+      // Add variation images
+      matchingVariations.forEach(variation => {
+        if (variation.image?.src && !images.includes(variation.image.src)) {
+          images.push(variation.image.src);
+        }
+      });
+    }
+
+    // Add product images (if not already included)
+    if (product.images && product.images.length > 0) {
+      product.images.forEach(img => {
+        if (!images.includes(img)) {
+          images.push(img);
+        }
+      });
+    } else if (product.image && !images.includes(product.image)) {
+      images.push(product.image);
+    }
+
+    return images.length > 0 ? images : [product.image];
+  }, [product, variations, selectedColor, selectedSize]);
+
+  // Reset image index when images change
+  useEffect(() => {
+    setSelectedImageIndex(0);
+  }, [availableImages.length, selectedColor, selectedSize]);
+
+  const currentImage = availableImages[selectedImageIndex] || product?.image || '';
+
+  const nextImage = () => {
+    setSelectedImageIndex((prev) => (prev + 1) % availableImages.length);
+  };
+
+  const prevImage = () => {
+    setSelectedImageIndex((prev) => (prev - 1 + availableImages.length) % availableImages.length);
+  };
+
+  if (isLoading) {
+    return (
+      <Layout>
+        <div className="min-h-[60vh] flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
+            <p className="text-muted-foreground">Produkt wird geladen...</p>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (error || !product) {
     return (
       <Layout>
         <div className="min-h-[60vh] flex items-center justify-center">
           <div className="text-center">
             <h1 className="text-2xl font-bold mb-4">Produkt nicht gefunden</h1>
+            <p className="text-muted-foreground mb-4">
+              {error ? "Fehler beim Laden des Produkts" : "Das angeforderte Produkt existiert nicht."}
+            </p>
             <Link to="/produkte">
               <Button>Zurück zu Produkten</Button>
             </Link>
@@ -41,7 +146,7 @@ const ProduktDetail = () => {
       productId: product.id,
       name: product.name,
       price: product.price,
-      image: product.image,
+      image: currentImage, // Use the current variation image
       color: selectedColor,
       size: selectedSize,
       quantity: 1,
@@ -69,19 +174,76 @@ const ProduktDetail = () => {
         </motion.div>
 
         <div className="grid lg:grid-cols-2 gap-12">
-          {/* Image */}
+          {/* Image Gallery */}
           <motion.div
             initial={{ opacity: 0, x: -30 }}
             animate={{ opacity: 1, x: 0 }}
             className="relative"
           >
-            <div className="aspect-square rounded-3xl overflow-hidden bg-muted">
-              <img
-                src={product.image}
-                alt={product.name}
-                className="w-full h-full object-cover"
-              />
+            <div className="aspect-square rounded-3xl overflow-hidden bg-white relative group border border-border/50">
+              <AnimatePresence mode="wait">
+                <motion.img
+                  key={currentImage}
+                  src={currentImage}
+                  alt={product.name}
+                  className="w-full h-full object-contain"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.3 }}
+                />
+              </AnimatePresence>
+
+              {/* Navigation arrows - only show if multiple images */}
+              {availableImages.length > 1 && (
+                <>
+                  <button
+                    onClick={prevImage}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-background/80 hover:bg-background rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-10"
+                    aria-label="Previous image"
+                  >
+                    <ChevronLeft className="w-5 h-5 text-foreground" />
+                  </button>
+                  <button
+                    onClick={nextImage}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-background/80 hover:bg-background rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-10"
+                    aria-label="Next image"
+                  >
+                    <ChevronRight className="w-5 h-5 text-foreground" />
+                  </button>
+                </>
+              )}
+
+              {/* Image counter */}
+              {availableImages.length > 1 && (
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-background/80 px-3 py-1 rounded-full text-sm text-foreground">
+                  {selectedImageIndex + 1} / {availableImages.length}
+                </div>
+              )}
             </div>
+
+            {/* Thumbnail gallery */}
+            {availableImages.length > 1 && (
+              <div className="flex gap-2 mt-4 overflow-x-auto pb-2">
+                {availableImages.map((img, index) => (
+                  <button
+                    key={img}
+                    onClick={() => setSelectedImageIndex(index)}
+                    className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-all ${
+                      selectedImageIndex === index
+                        ? "border-primary ring-2 ring-primary/20"
+                        : "border-border hover:border-primary/50"
+                    }`}
+                  >
+                    <img
+                      src={img}
+                      alt={`${product.name} - Image ${index + 1}`}
+                      className="w-full h-full object-cover"
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
           </motion.div>
 
           {/* Details */}
@@ -163,7 +325,10 @@ const ProduktDetail = () => {
                 <ShoppingBag className="w-5 h-5" />
                 In den Warenkorb
               </Button>
-              <Link to="/selbst-gestalten" className="flex-1">
+              <Link 
+                to={`/selbst-gestalten?productImage=${encodeURIComponent(product?.images[selectedImageIndex] || product?.image || '')}&productId=${product?.id || ''}`}
+                className="flex-1"
+              >
                 <Button variant="outline" size="xl" className="w-full">
                   <Palette className="w-5 h-5" />
                   Selbst gestalten

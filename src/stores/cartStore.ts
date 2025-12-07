@@ -10,7 +10,9 @@ export interface CartItem {
   color: string;
   size: string;
   quantity: number;
-  customDesign?: string; // Base64 of custom design if applicable
+  customDesign?: string; // Base64 of final design image (with shirt)
+  customDesignRaw?: string; // JSON string of raw canvas elements (text, images, etc.)
+  designElementCount?: number; // Number of design elements (text, images, etc.) - each adds 10€
 }
 
 interface CartStore {
@@ -25,6 +27,7 @@ interface CartStore {
   toggleCart: () => void;
   getTotalItems: () => number;
   getTotalPrice: () => number;
+  getItemPrice: (item: CartItem) => number;
 }
 
 export const useCartStore = create<CartStore>()(
@@ -70,10 +73,18 @@ export const useCartStore = create<CartStore>()(
       },
 
       getTotalPrice: () => {
-        return get().items.reduce(
-          (total, item) => total + item.price * item.quantity,
-          0
-        );
+        return get().items.reduce((total, item) => {
+          // Base price + (design elements * 10€) per item, multiplied by quantity
+          const pricePerUnit = item.price + ((item.designElementCount || 0) * 10);
+          return total + (pricePerUnit * item.quantity);
+        }, 0);
+      },
+      
+      // Get price for a specific item
+      getItemPrice: (item: CartItem) => {
+        // Base price + (design elements * 10€) per unit
+        const pricePerUnit = item.price + ((item.designElementCount || 0) * 10);
+        return pricePerUnit * item.quantity;
       },
     }),
     {

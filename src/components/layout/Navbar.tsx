@@ -1,12 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X, ShoppingBag, User, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCartStore } from "@/stores/cartStore";
+import logo from "@/assets/group-25.svg";
 
 const navLinks = [
-  { name: "Home", path: "/" },
   { name: "Filialen", path: "/filialen" },
   { name: "Unternehmen", path: "/unternehmen" },
   { name: "Leistungen", path: "/leistungen" },
@@ -17,42 +17,56 @@ const navLinks = [
 
 export const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const [hasNotificationBar, setHasNotificationBar] = useState(false);
   const location = useLocation();
   const { openCart, getTotalItems } = useCartStore();
   const totalItems = getTotalItems();
+
+  // Check if notification bar is visible
+  useEffect(() => {
+    const checkNotificationBar = () => {
+      const dismissed = localStorage.getItem("notification-bar-dismissed");
+      setHasNotificationBar(!dismissed);
+    };
+    checkNotificationBar();
+    // Listen for custom event when notification is dismissed
+    window.addEventListener("notification-bar-dismissed", checkNotificationBar);
+    // Also listen for storage changes (for cross-tab sync)
+    window.addEventListener("storage", checkNotificationBar);
+    return () => {
+      window.removeEventListener("notification-bar-dismissed", checkNotificationBar);
+      window.removeEventListener("storage", checkNotificationBar);
+    };
+  }, []);
 
   return (
     <motion.header
       initial={{ y: -100 }}
       animate={{ y: 0 }}
       transition={{ duration: 0.6, ease: "easeOut" }}
-      className="fixed top-0 left-0 right-0 z-50 glass-nav"
+      className="fixed left-0 right-0 z-50 glass-nav"
+      style={{ top: hasNotificationBar ? "44px" : "0px" }}
     >
       <nav className="container-wide">
-        <div className="flex items-center justify-between h-20">
+        <div className="flex items-center justify-between h-24">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-3 group">
-            <motion.div
-              whileHover={{ rotate: 180 }}
-              transition={{ duration: 0.5 }}
-              className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center"
-            >
-              <span className="text-primary-foreground font-bold text-lg">PS</span>
-            </motion.div>
-            <div className="hidden sm:block">
-              <p className="font-bold text-lg text-primary leading-tight">Private</p>
-              <p className="font-bold text-lg text-primary leading-tight">Shirt</p>
-            </div>
+            <motion.img
+              src={logo}
+              alt="Private Shirt Logo"
+              whileHover={{ scale: 1.05 }}
+              transition={{ duration: 0.3 }}
+              className="h-12 w-auto"
+            />
           </Link>
 
           {/* Desktop Navigation */}
-          <div className="hidden lg:flex items-center gap-1">
+          <div className="hidden lg:flex items-center gap-2">
             {navLinks.map((link) => (
               <Link key={link.path} to={link.path}>
                 <Button
                   variant="nav"
-                  size="sm"
-                  className={`relative ${
+                  className={`relative text-base px-5 py-2 ${
                     location.pathname === link.path ? "text-primary" : ""
                   }`}
                 >
@@ -69,21 +83,21 @@ export const Navbar = () => {
           </div>
 
           {/* Right Icons */}
-          <div className="flex items-center gap-2">
-            <div className="hidden md:flex items-center gap-2">
-              <Button variant="ghost" size="icon">
-                <User className="w-5 h-5" />
+          <div className="flex items-center gap-3">
+            <div className="hidden md:flex items-center gap-3">
+              <Button variant="ghost" size="icon" className="h-11 w-11">
+                <User className="w-6 h-6" />
               </Button>
-              <Button variant="ghost" size="icon">
-                <MapPin className="w-5 h-5" />
+              <Button variant="ghost" size="icon" className="h-11 w-11">
+                <MapPin className="w-6 h-6" />
               </Button>
-              <Button variant="ghost" size="icon" className="relative" onClick={openCart}>
-                <ShoppingBag className="w-5 h-5" />
+              <Button variant="ghost" size="icon" className="relative h-11 w-11" onClick={openCart}>
+                <ShoppingBag className="w-6 h-6" />
                 <motion.span
                   key={totalItems}
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
-                  className="absolute -top-1 -right-1 w-5 h-5 bg-primary text-primary-foreground text-xs rounded-full flex items-center justify-center"
+                  className="absolute -top-1 -right-1 w-6 h-6 bg-primary text-primary-foreground text-sm font-bold rounded-full flex items-center justify-center"
                 >
                   {totalItems}
                 </motion.span>
@@ -91,13 +105,13 @@ export const Navbar = () => {
             </div>
 
             {/* Mobile Cart */}
-            <Button variant="ghost" size="icon" className="relative md:hidden" onClick={openCart}>
-              <ShoppingBag className="w-5 h-5" />
+            <Button variant="ghost" size="icon" className="relative md:hidden h-11 w-11" onClick={openCart}>
+              <ShoppingBag className="w-6 h-6" />
               <motion.span
                 key={totalItems}
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
-                className="absolute -top-1 -right-1 w-5 h-5 bg-primary text-primary-foreground text-xs rounded-full flex items-center justify-center"
+                className="absolute -top-1 -right-1 w-6 h-6 bg-primary text-primary-foreground text-sm font-bold rounded-full flex items-center justify-center"
               >
                 {totalItems}
               </motion.span>
@@ -107,10 +121,10 @@ export const Navbar = () => {
             <Button
               variant="ghost"
               size="icon"
-              className="lg:hidden"
+              className="lg:hidden h-11 w-11"
               onClick={() => setIsOpen(!isOpen)}
             >
-              {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              {isOpen ? <X className="w-7 h-7" /> : <Menu className="w-7 h-7" />}
             </Button>
           </div>
         </div>
@@ -137,7 +151,7 @@ export const Navbar = () => {
                   <Link
                     to={link.path}
                     onClick={() => setIsOpen(false)}
-                    className={`block py-3 px-4 rounded-xl font-medium transition-colors ${
+                    className={`block py-4 px-5 rounded-xl font-medium text-base transition-colors ${
                       location.pathname === link.path
                         ? "bg-accent text-primary"
                         : "hover:bg-muted"

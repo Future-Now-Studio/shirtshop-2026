@@ -59,6 +59,53 @@ This project is built with:
 - React
 - shadcn-ui
 - Tailwind CSS
+- Stripe (for payments)
+
+## Stripe Payment Setup
+
+To enable payment processing:
+
+1. **Get your Stripe keys:**
+   - Sign up at https://stripe.com
+   - Go to Developers > API keys
+   - Copy your Publishable key
+
+2. **Set environment variable:**
+   - Create a `.env` file in the root directory
+   - Add: `VITE_STRIPE_PUBLISHABLE_KEY=pk_test_your_key_here`
+
+3. **Backend Setup (Required for production):**
+   - You need to create a backend endpoint at `/api/create-payment-intent`
+   - This endpoint should:
+     - Create a Stripe PaymentIntent
+     - Return the `clientSecret` to the frontend
+   - Example backend code (Node.js/Express):
+     ```javascript
+     const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+     
+     app.post('/api/create-payment-intent', async (req, res) => {
+       const { amount, currency = 'eur' } = req.body;
+       
+       const paymentIntent = await stripe.paymentIntents.create({
+         amount: Math.round(amount * 100), // Convert to cents
+         currency,
+       });
+       
+       res.json({ clientSecret: paymentIntent.client_secret });
+     });
+     ```
+
+4. **Start the backend server:**
+   - Open a new terminal window
+   - Run: `npm run server`
+   - The server will start on http://localhost:3001
+   - Make sure your Stripe secret key is set (it's already configured in server.js)
+
+5. **Start the frontend:**
+   - In another terminal, run: `npm run dev`
+   - The frontend will run on http://localhost:8080 (or the port shown)
+
+**Note:** Both the backend server and frontend need to be running for payments to work!
 
 ## How can I deploy this project?
 

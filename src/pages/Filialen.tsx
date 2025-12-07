@@ -1,31 +1,29 @@
 import { motion } from "framer-motion";
 import { Layout } from "@/components/layout/Layout";
-import { MapPin, Clock, Phone, Mail } from "lucide-react";
+import { MapPin, Phone, Mail, Printer } from "lucide-react";
+import europaPassage from "@/assets/Altona-Store.webp";
+import altona from "@/assets/Altona-Store.webp";
 
 const locations = [
   {
-    name: "Hamburg Altona",
+    name: "Europa Passage",
+    address: "Ballindamm 40",
+    city: "20095 Hamburg",
+    phone: "040 328 738 04",
+    fax: "040 328 738 15",
+    email: "europa-passage@private-shirt.de",
+    mapEmbedUrl: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2369.5!2d10.001!3d53.551!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zNTPCsDMzJzAzLjYiTiAxMMKwMDAnMDMuNiJF!5e0!3m2!1sde!2sde!4v1234567890&q=Ballindamm+40,+20095+Hamburg",
+    image: europaPassage,
+  },
+  {
+    name: "Mercado Altona",
     address: "Ottenser Hauptstraße 10",
     city: "22765 Hamburg",
-    phone: "040 - 180 75 863",
-    hours: "Mo - Fr: 10:00 - 18:00",
-    status: "closed",
-  },
-  {
-    name: "Hamburg City",
-    address: "Mönckebergstraße 25",
-    city: "20095 Hamburg",
-    phone: "040 - 180 75 864",
-    hours: "Mo - Sa: 10:00 - 20:00",
-    status: "closed",
-  },
-  {
-    name: "Hamburg Wandsbek",
-    address: "Wandsbeker Marktstraße 50",
-    city: "22041 Hamburg",
-    phone: "040 - 180 75 865",
-    hours: "Mo - Fr: 10:00 - 18:00",
-    status: "closed",
+    phone: "040 399 077 78",
+    fax: "040 399 081 16",
+    email: "altona@private-shirt.de",
+    mapEmbedUrl: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2369.5!2d9.935!3d53.550!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zNTPCsDMzJzAwLjAiTiA5wrA1NicyMC4wIkU!5e0!3m2!1sde!2sde!4v1234567890&q=Ottenser+Hauptstraße+10,+22765+Hamburg",
+    image: altona,
   },
 ];
 
@@ -33,45 +31,46 @@ const Filialen = () => {
   return (
     <Layout>
       {/* Hero */}
-      <section className="pt-12 pb-8 bg-gradient-to-b from-accent/30 to-background">
-        <div className="container-wide">
-          <motion.h1
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-4xl lg:text-6xl font-bold text-primary mb-4"
-          >
-            unsere <span className="text-secondary italic">filialen.</span>
-          </motion.h1>
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="text-lg text-muted-foreground max-w-2xl"
-          >
-            Besuche uns in einer unserer Filialen in Hamburg
-          </motion.p>
-        </div>
-      </section>
-
-      {/* Notice */}
-      <section className="py-8">
+      <section className="pt-12 pb-16 bg-background">
         <div className="container-wide">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-secondary/20 border border-secondary/30 rounded-2xl p-6 text-center"
+            className="text-center"
           >
-            <p className="text-lg font-semibold text-foreground">
-              ⚠️ Aktuell sind unsere Filialen geschlossen. Online-Bestellungen werden weiterhin bearbeitet.
-            </p>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.1 }}
+              className="flex justify-center mb-6"
+            >
+              <MapPin className="w-16 h-16 text-secondary" fill="currentColor" />
+            </motion.div>
+            <motion.h1
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="text-4xl lg:text-5xl font-bold text-foreground mb-6"
+            >
+              Zuhause, wo du es bist
+              <span className="block w-24 h-1 bg-primary mx-auto mt-4"></span>
+            </motion.h1>
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              className="text-lg text-muted-foreground max-w-3xl mx-auto"
+            >
+              Wir sind für dich da – online und in unseren Shops. Qualität und Service stehen bei uns an erster Stelle.
+            </motion.p>
           </motion.div>
         </div>
       </section>
 
       {/* Locations */}
-      <section className="section-padding">
+      <section className="section-padding bg-background">
         <div className="container-wide">
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid md:grid-cols-2 gap-8 lg:gap-12">
             {locations.map((location, index) => (
               <motion.div
                 key={location.name}
@@ -79,74 +78,73 @@ const Filialen = () => {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: index * 0.1 }}
-                className="glass-card p-8 relative overflow-hidden"
+                className="bg-white rounded-2xl overflow-hidden shadow-lg"
               >
-                {location.status === "closed" && (
-                  <div className="absolute top-4 right-4 bg-destructive text-destructive-foreground text-xs font-bold px-3 py-1 rounded-full">
-                    Geschlossen
-                  </div>
-                )}
-                
-                <h3 className="text-2xl font-bold text-primary mb-6">{location.name}</h3>
-                
-                <div className="space-y-4">
-                  <div className="flex items-start gap-3">
-                    <MapPin className="w-5 h-5 text-primary mt-1" />
-                    <div>
-                      <p className="font-medium">{location.address}</p>
-                      <p className="text-muted-foreground">{location.city}</p>
+                {/* Shop Image */}
+                <div className="relative h-64 overflow-hidden">
+                  <img
+                    src={location.image}
+                    alt={location.name}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+
+                {/* Location Details */}
+                <div className="p-6">
+                  <h3 className="text-2xl font-bold text-primary mb-6">{location.name}</h3>
+                  
+                  <div className="space-y-4 mb-6">
+                    <div className="flex items-start gap-3">
+                      <MapPin className="w-5 h-5 text-foreground mt-1 flex-shrink-0" />
+                      <div>
+                        <p className="text-foreground">{location.address}</p>
+                        <p className="text-foreground">{location.city}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
+                      <Phone className="w-5 h-5 text-foreground flex-shrink-0" />
+                      <a 
+                        href={`tel:${location.phone.replace(/\s/g, '')}`} 
+                        className="text-foreground hover:text-primary transition-colors"
+                      >
+                        {location.phone}
+                      </a>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <Printer className="w-5 h-5 text-foreground flex-shrink-0" />
+                      <span className="text-foreground">{location.fax}</span>
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
+                      <Mail className="w-5 h-5 text-foreground flex-shrink-0" />
+                      <a 
+                        href={`mailto:${location.email}`} 
+                        className="text-foreground hover:text-primary transition-colors"
+                      >
+                        {location.email}
+                      </a>
                     </div>
                   </div>
-                  
-                  <div className="flex items-center gap-3">
-                    <Phone className="w-5 h-5 text-primary" />
-                    <a href={`tel:${location.phone}`} className="hover:text-primary transition-colors">
-                      {location.phone}
-                    </a>
-                  </div>
-                  
-                  <div className="flex items-center gap-3">
-                    <Clock className="w-5 h-5 text-primary" />
-                    <span className="text-muted-foreground">{location.hours}</span>
+
+                  {/* Google Map */}
+                  <div className="mt-6 rounded-lg overflow-hidden">
+                    <iframe
+                      src={location.mapEmbedUrl}
+                      width="100%"
+                      height="300"
+                      style={{ border: 0 }}
+                      allowFullScreen
+                      loading="lazy"
+                      referrerPolicy="no-referrer-when-downgrade"
+                      className="w-full"
+                    ></iframe>
                   </div>
                 </div>
               </motion.div>
             ))}
           </div>
-        </div>
-      </section>
-
-      {/* Contact Alternative */}
-      <section className="section-padding bg-muted/30">
-        <div className="container-wide">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-center max-w-2xl mx-auto"
-          >
-            <h2 className="text-3xl font-bold text-primary mb-4">Online erreichbar</h2>
-            <p className="text-lg text-muted-foreground mb-8">
-              Auch wenn unsere Filialen geschlossen sind, sind wir online für Sie da!
-            </p>
-            
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <a
-                href="mailto:info@private-shirt.de"
-                className="flex items-center justify-center gap-2 glass-card p-4 hover:shadow-soft transition-all"
-              >
-                <Mail className="w-5 h-5 text-primary" />
-                <span className="font-medium">info@private-shirt.de</span>
-              </a>
-              <a
-                href="tel:040-18075863"
-                className="flex items-center justify-center gap-2 glass-card p-4 hover:shadow-soft transition-all"
-              >
-                <Phone className="w-5 h-5 text-primary" />
-                <span className="font-medium">040 - 180 75 863</span>
-              </a>
-            </div>
-          </motion.div>
         </div>
       </section>
     </Layout>

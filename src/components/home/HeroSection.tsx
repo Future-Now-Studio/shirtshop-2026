@@ -3,21 +3,37 @@ import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import heroImage from "@/assets/hero-image.jpg";
+import heroVideo from "@/assets/Video_PSM.mp4";
 
 export const HeroSection = () => {
   return (
     <section className="relative min-h-[90vh] flex items-center overflow-hidden">
-      {/* Background gradient */}
-      <div className="absolute inset-0 gradient-bg opacity-90" />
-      
-      {/* Hero image */}
+      {/* Hero video */}
       <div className="absolute inset-0">
-        <img
-          src={heroImage}
-          alt="Fashion hero"
-          className="w-full h-full object-cover opacity-40 mix-blend-overlay"
-        />
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="w-full h-full object-cover"
+        >
+          <source src="https://www.pexels.com/de-de/download/video/9065014/" type="video/mp4" />
+          {/* Fallback image if video fails to load */}
+          <img
+            src={heroImage}
+            alt="Fashion hero"
+            className="w-full h-full object-cover"
+          />
+        </video>
       </div>
+
+      {/* Background gradient - stronger on left, weaker on right */}
+      <div 
+        className="absolute inset-0"
+        style={{
+          background: 'linear-gradient(to right, rgba(216, 18, 125, 0.7) 0%, rgba(216, 18, 125, 0.4) 40%, rgba(216, 18, 125, 0.1) 70%, transparent 100%)'
+        }}
+      />
 
       {/* Content */}
       <div className="container-wide relative z-10">

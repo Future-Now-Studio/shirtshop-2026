@@ -1,11 +1,21 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Plus, Minus, ShoppingBag, Trash2 } from "lucide-react";
+import { X, Plus, Minus, ShoppingBag, Trash2, Truck, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { useCartStore } from "@/stores/cartStore";
 import { Link } from "react-router-dom";
 
+const FREE_SHIPPING_THRESHOLD = 50; // Minimum order value for free shipping in EUR
+const SHIPPING_COST = 4.95; // Standard shipping cost in EUR
+
 export const CartDrawer = () => {
-  const { items, isOpen, closeCart, updateQuantity, removeItem, getTotalPrice } = useCartStore();
+  const { items, isOpen, closeCart, updateQuantity, removeItem, getTotalPrice, getItemPrice } = useCartStore();
+  
+  const subtotal = getTotalPrice();
+  const remainingForFreeShipping = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal);
+  const progress = Math.min(100, (subtotal / FREE_SHIPPING_THRESHOLD) * 100);
+  const hasFreeShipping = subtotal >= FREE_SHIPPING_THRESHOLD;
+  const shippingCost = hasFreeShipping ? 0 : SHIPPING_COST;
 
   return (
     <AnimatePresence>
@@ -86,7 +96,12 @@ export const CartDrawer = () => {
                           </span>
                         )}
                         <p className="font-bold text-primary mt-1">
-                          {item.price.toFixed(2).replace(".", ",")} €
+                          {getItemPrice(item).toFixed(2).replace(".", ",")} €
+                          {item.designElementCount && item.designElementCount > 0 && (
+                            <span className="text-xs text-muted-foreground block font-normal">
+                              {item.price.toFixed(2).replace(".", ",")} € + {item.designElementCount} Element{item.designElementCount !== 1 ? 'e' : ''} × 10 €
+                            </span>
+                          )}
                         </p>
                       </div>
                       <div className="flex flex-col items-end gap-2">
@@ -129,17 +144,70 @@ export const CartDrawer = () => {
             {/* Footer */}
             {items.length > 0 && (
               <div className="p-6 border-t border-border space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-muted-foreground">Zwischensumme</span>
-                  <span className="text-2xl font-bold">
-                    {getTotalPrice().toFixed(2).replace(".", ",")} €
-                  </span>
+                {/* Free Shipping Progress */}
+                {!hasFreeShipping ? (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-gradient-to-r from-primary/10 to-secondary/10 rounded-xl p-4 border border-primary/20"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <Truck className="w-4 h-4 text-primary" />
+                      <p className="text-sm font-semibold text-foreground">
+                        {remainingForFreeShipping > 0
+                          ? `Noch ${remainingForFreeShipping.toFixed(2).replace(".", ",")} € für kostenlosen Versand!`
+                          : "Kostenloser Versand!"}
+                      </p>
+                    </div>
+                    <Progress value={progress} className="h-2 mb-2" />
+                    <p className="text-xs text-muted-foreground">
+                      {subtotal.toFixed(2).replace(".", ",")} € von {FREE_SHIPPING_THRESHOLD.toFixed(2).replace(".", ",")} €
+                    </p>
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="bg-gradient-to-r from-primary/20 to-secondary/20 rounded-xl p-4 border-2 border-primary/40"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-5 h-5 text-primary" />
+                      <p className="text-sm font-bold text-primary">
+                        🎉 Kostenloser Versand freigeschaltet!
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* Price Summary */}
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Zwischensumme</span>
+                    <span className="font-semibold">
+                      {subtotal.toFixed(2).replace(".", ",")} €
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">
+                      Versand
+                      {hasFreeShipping && (
+                        <span className="text-primary font-semibold ml-1">(kostenlos)</span>
+                      )}
+                    </span>
+                    <span className={`font-semibold ${hasFreeShipping ? "text-primary line-through text-muted-foreground" : ""}`}>
+                      {shippingCost.toFixed(2).replace(".", ",")} €
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center pt-2 border-t border-border">
+                    <span className="text-lg font-bold">Gesamt</span>
+                    <span className="text-2xl font-bold text-primary">
+                      {(subtotal + shippingCost).toFixed(2).replace(".", ",")} €
+                    </span>
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Versandkosten werden im Checkout berechnet
-                </p>
-                <Button size="lg" className="w-full">
-                  Zur Kasse
+
+                <Button size="lg" className="w-full" asChild onClick={closeCart}>
+                  <Link to="/checkout">Zur Kasse</Link>
                 </Button>
                 <Button variant="outline" size="lg" className="w-full" onClick={closeCart}>
                   Weiter einkaufen

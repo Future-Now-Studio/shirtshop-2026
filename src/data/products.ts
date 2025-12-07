@@ -2,6 +2,17 @@ import productPolo from "@/assets/product-polo.jpg";
 import productTshirt from "@/assets/product-tshirt.jpg";
 import productHoodie from "@/assets/product-hoodie.jpg";
 
+export interface PlacementZone {
+  id: string;
+  name: string;
+  x: number;      // 0-1 (percentage of canvas width)
+  y: number;      // 0-1 (percentage of canvas height)
+  width: number;  // 0-1 (percentage of canvas width)
+  height: number; // 0-1 (percentage of canvas height)
+  minSize?: number; // Optional: minimum element size in pixels
+  maxSize?: number; // Optional: maximum element size in pixels
+}
+
 export interface Product {
   id: number;
   name: string;
@@ -14,6 +25,17 @@ export interface Product {
   category: string;
   description: string;
   features: string[];
+  tags?: Array<{
+    id: number;
+    name: string;
+    slug: string;
+  }>;
+  placementZones?: {
+    front?: PlacementZone[];
+    back?: PlacementZone[];
+    left?: PlacementZone[];
+    right?: PlacementZone[];
+  };
 }
 
 export const products: Product[] = [
