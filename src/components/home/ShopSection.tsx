@@ -4,6 +4,8 @@ import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import browsingVideo from "@/assets/browsing3.mp4";
 import mobileVideo from "@/assets/mobile-video.mp4";
+import masseImage from "@/assets/ryoji-hayasaka-gkb-ayjimvda-unsplash@3x-1024x684.jpg";
+import leistungenImage from "@/assets/naomi-august-ZQPekfTkImw-unsplash (1).jpg";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 const categories = [
@@ -20,6 +22,7 @@ const categories = [
     description: "Großbestellungen mit Mengenrabatt",
     link: "/grossbestellung",
     linkText: "jetzt mehr",
+    image: masseImage,
     gradient: "from-secondary/20 to-secondary/5",
     span: "lg:col-span-1",
   },
@@ -27,7 +30,8 @@ const categories = [
     title: "das können wir.",
     description: "Unsere professionellen Leistungen",
     link: "/leistungen",
-    linkText: "jetzt wissen",
+    linkText: "mehr erfahren",
+    image: leistungenImage,
     gradient: "from-primary/10 to-primary/5",
     span: "lg:col-span-1",
   },
@@ -73,7 +77,15 @@ export const ShopSection = () => {
                         >
                           <source src={videoSource} type="video/mp4" />
                         </video>
-                        <div className="absolute inset-0 bg-gradient-to-t from-foreground/80 via-foreground/20 to-transparent" />
+                        {/* Smooth, professional gradient for better text readability */}
+                        <div 
+                          className="absolute inset-0"
+                          style={{
+                            background: isMobile
+                              ? 'linear-gradient(to top, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0.5) 30%, rgba(0, 0, 0, 0.2) 60%, transparent 100%)'
+                              : 'linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.65) 25%, rgba(0, 0, 0, 0.35) 50%, rgba(0, 0, 0, 0.15) 75%, transparent 100%)'
+                          }}
+                        />
                       </>
                     )}
                     {'image' in category && category.image && !videoSource && (
@@ -83,7 +95,15 @@ export const ShopSection = () => {
                           alt={category.title}
                           className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                         />
-                        <div className="absolute inset-0 bg-gradient-to-t from-foreground/80 via-foreground/20 to-transparent" />
+                        {/* Smooth, professional gradient for better text readability */}
+                        <div 
+                          className="absolute inset-0"
+                          style={{
+                            background: isMobile
+                              ? 'linear-gradient(to top, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0.5) 30%, rgba(0, 0, 0, 0.2) 60%, transparent 100%)'
+                              : 'linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.65) 25%, rgba(0, 0, 0, 0.35) 50%, rgba(0, 0, 0, 0.15) 75%, transparent 100%)'
+                          }}
+                        />
                       </>
                     )}
                     
@@ -105,7 +125,11 @@ export const ShopSection = () => {
                       <Button
                         variant={videoSource || ('image' in category && category.image) ? "glass" : "outline"}
                         size="default"
-                        className="group/btn"
+                        className={`group/btn ${
+                          category.title === "shop, shop, hooray." || category.title === "du brauchst masse?" || category.title === "das können wir."
+                            ? "!bg-white !text-foreground hover:!bg-white/90 !border-white/50 !shadow-lg hover:!shadow-xl"
+                            : ""
+                        }`}
                       >
                         {category.linkText}
                         <ArrowRight className="w-4 h-4 transition-transform group-hover/btn:translate-x-1" />

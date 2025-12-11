@@ -33,9 +33,9 @@ const ProduktDetail = () => {
 
     const images: string[] = [];
 
-    // If variations exist, get images from matching variations
-    if (variations.length > 0) {
-      const matchingVariations = variations.filter(variation => {
+    // If variations exist, get images from the exact matching variation
+    if (variations.length > 0 && (selectedColor || selectedSize)) {
+      const matchingVariation = variations.find(variation => {
         const colorAttr = variation.attributes?.find(attr => 
           attr.name.toLowerCase().includes('color') || 
           attr.name.toLowerCase().includes('farbe') ||
@@ -50,41 +50,72 @@ const ProduktDetail = () => {
 
         const colorMatch = colorAttr && selectedColor 
           ? colorAttr.option.toLowerCase() === selectedColor.toLowerCase()
-          : false;
+          : !selectedColor; // If no color selected, match any
         
         const sizeMatch = sizeAttr && selectedSize
           ? sizeAttr.option.toLowerCase() === selectedSize.toLowerCase()
-          : false;
+          : !selectedSize; // If no size selected, match any
 
-        // If both color and size are selected, match both
-        if (selectedColor && selectedSize) {
-          return colorMatch && sizeMatch;
-        } 
-        // If only color is selected, match color
-        else if (selectedColor && !selectedSize) {
-          return colorMatch;
+        // Match the exact variation when both are selected, or match when one matches
+        return colorMatch && sizeMatch;
+      });
+
+      // If we found an exact matching variation, use its gallery images
+      if (matchingVariation) {
+        // Check if variation has a gallery (images array from Smart Variations Images plugin)
+        if (matchingVariation.images && matchingVariation.images.length > 0) {
+          // Use the variation's gallery images
+          matchingVariation.images.forEach(img => {
+            if (img.src && !images.includes(img.src)) {
+              images.push(img.src);
+            }
+          });
+        }
+        // Check meta_data for gallery images (some plugins store it there)
+        else if (matchingVariation.meta_data && matchingVariation.meta_data.length > 0) {
+          // Look for gallery images in meta_data
+          const galleryMeta = matchingVariation.meta_data.find((meta: any) => 
+            meta.key === '_variation_image_gallery' || 
+            meta.key === 'variation_image_gallery' ||
+            meta.key === '_gallery_images' ||
+            meta.key === 'gallery_images'
+          );
+          
+          if (galleryMeta && galleryMeta.value) {
+            // Gallery might be stored as comma-separated IDs or JSON
+            try {
+              const galleryIds = typeof galleryMeta.value === 'string' 
+                ? galleryMeta.value.split(',').map(id => id.trim()).filter(Boolean)
+                : Array.isArray(galleryMeta.value) 
+                  ? galleryMeta.value 
+                  : [];
+              
+              // If we have image IDs, we'd need to fetch them, but for now use the main image
+              // The plugin should provide the images array directly
+            } catch (e) {
+              console.log('Could not parse gallery meta:', e);
+            }
+          }
         }
         
-        return false;
-      });
-
-      // Add variation images
-      matchingVariations.forEach(variation => {
-        if (variation.image?.src && !images.includes(variation.image.src)) {
-          images.push(variation.image.src);
+        // Fallback to variation's main image if no gallery found
+        if (images.length === 0 && matchingVariation.image?.src) {
+          images.push(matchingVariation.image.src);
         }
-      });
+      }
     }
 
-    // Add product images (if not already included)
-    if (product.images && product.images.length > 0) {
-      product.images.forEach(img => {
-        if (!images.includes(img)) {
-          images.push(img);
-        }
-      });
-    } else if (product.image && !images.includes(product.image)) {
-      images.push(product.image);
+    // If no variation images found, fall back to product images
+    if (images.length === 0) {
+      if (product.images && product.images.length > 0) {
+        product.images.forEach(img => {
+          if (!images.includes(img)) {
+            images.push(img);
+          }
+        });
+      } else if (product.image && !images.includes(product.image)) {
+        images.push(product.image);
+      }
     }
 
     return images.length > 0 ? images : [product.image];

@@ -189,6 +189,12 @@ export interface WooCommerceVariation {
     name: string;
     alt: string;
   } | null;
+  images?: Array<{
+    id: number;
+    src: string;
+    name: string;
+    alt: string;
+  }>;
   attributes: Array<{
     id: number;
     name: string;
@@ -199,6 +205,7 @@ export interface WooCommerceVariation {
 
 // Fetch product variations
 export async function fetchWooCommerceVariations(productId: number): Promise<WooCommerceVariation[]> {
+  // Include images in the response (Smart Variations Images plugin stores gallery in images array)
   const url = `${WOOCOMMERCE_CONFIG.baseUrl}/products/${productId}/variations?per_page=100`;
   
   const response = await fetch(url, {
@@ -213,7 +220,11 @@ export async function fetchWooCommerceVariations(productId: number): Promise<Woo
     throw new Error(`WooCommerce API error: ${response.status} ${response.statusText}`);
   }
 
-  return response.json();
+  const variations = await response.json();
+  
+  // The Smart Variations Images plugin may store gallery in meta_data or images array
+  // WooCommerce REST API should return images array if available
+  return variations;
 }
 
 // Fetch product categories

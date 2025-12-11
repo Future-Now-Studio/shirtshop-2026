@@ -10,7 +10,8 @@ export interface CartItem {
   color: string;
   size: string;
   quantity: number;
-  customDesign?: string; // Base64 of final design image (with shirt)
+  customDesign?: string; // Base64 of final design image (with shirt) - deprecated, use customDesigns
+  customDesigns?: Record<string, string>; // Object with view keys (front, back, left, right) and base64 images
   customDesignRaw?: string; // JSON string of raw canvas elements (text, images, etc.)
   designElementCount?: number; // Number of design elements (text, images, etc.) - each adds 10€
 }

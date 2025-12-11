@@ -6,6 +6,7 @@ import express from 'express';
 import cors from 'cors';
 import Stripe from 'stripe';
 import dotenv from 'dotenv';
+import nodemailer from 'nodemailer';
 
 // Load environment variables
 dotenv.config();
@@ -147,9 +148,46 @@ app.post('/api/create-order', async (req, res) => {
         { key: 'Size', value: item.size || 'Standard' },
       ];
       
-      // Add custom design if present
-      if (item.customDesign) {
-        // Store design image - if too large, we'll store a reference instead
+      // Add custom design if present - support both old format (customDesign) and new format (customDesigns)
+      if (item.customDesigns && Object.keys(item.customDesigns).length > 0) {
+        // New format: multiple images per view (front, back, left, right)
+        itemMeta.push({ key: 'Custom Design', value: 'Yes (Multiple Views)' });
+        
+        // Store each view's design image
+        Object.entries(item.customDesigns).forEach(([view, imageBase64]) => {
+          const designImageSize = imageBase64.length;
+          const viewKey = `custom_design_${view}`;
+          
+          // Only store base64 if it's not too large (WooCommerce might have limits)
+          if (designImageSize < 500000) { // Less than ~500KB
+            itemMeta.push({ key: viewKey, value: imageBase64 });
+          } else {
+            // For large images, store a truncated version and note
+            itemMeta.push({ 
+              key: viewKey, 
+              value: imageBase64.substring(0, 1000) + '... [TRUNCATED - See order notes for full data]' 
+            });
+          }
+        });
+        
+        // Store raw design elements (text, images, etc.) as JSON
+        if (item.customDesignRaw) {
+          const rawDataSize = item.customDesignRaw.length;
+          if (rawDataSize < 500000) { // Less than ~500KB
+            itemMeta.push({ 
+              key: 'custom_design_raw_elements', 
+              value: item.customDesignRaw 
+            });
+          } else {
+            // For large JSON, store truncated version
+            itemMeta.push({ 
+              key: 'custom_design_raw_elements', 
+              value: item.customDesignRaw.substring(0, 1000) + '... [TRUNCATED - See order notes for full data]' 
+            });
+          }
+        }
+      } else if (item.customDesign) {
+        // Old format: single design image (backward compatibility)
         const designImageBase64 = item.customDesign;
         const designImageSize = designImageBase64.length;
         
@@ -479,12 +517,89 @@ app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, 
   res.json({ received: true });
 });
 
+// Contact form email endpoint
+app.post('/api/send-contact-email', async (req, res) => {
+  try {
+    const { name, email, phone, message } = req.body;
+
+    if (!name || !email || !message) {
+      return res.status(400).json({ error: 'Name, email, and message are required' });
+    }
+
+    // Create transporter using WordPress/WooCommerce SMTP settings
+    // For production, configure SMTP settings in .env file
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || 'smtp.timob10.sg-host.com',
+      port: parseInt(process.env.SMTP_PORT || '587'),
+      secure: process.env.SMTP_SECURE === 'true', // true for 465, false for other ports
+      auth: {
+        user: process.env.SMTP_USER || process.env.WP_EMAIL_USER,
+        pass: process.env.SMTP_PASS || process.env.WP_EMAIL_PASS,
+      },
+    });
+
+    // Email content
+    const mailOptions = {
+      from: `"Private Shirt Contact Form" <${process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@private-shirt.de'}>`,
+      to: 'timobeyer_@outlook.de',
+      subject: `Neue Kontaktanfrage von ${name}`,
+      html: `
+        <h2>Neue Kontaktanfrage</h2>
+        <p><strong>Name:</strong> ${name}</p>
+        <p><strong>E-Mail:</strong> ${email}</p>
+        ${phone ? `<p><strong>Telefon:</strong> ${phone}</p>` : ''}
+        <p><strong>Nachricht:</strong></p>
+        <p>${message.replace(/\n/g, '<br>')}</p>
+        <hr>
+        <p style="color: #666; font-size: 12px;">
+          Diese E-Mail wurde über das Kontaktformular auf private-shirt.de gesendet.
+        </p>
+      `,
+      text: `
+Neue Kontaktanfrage
+
+Name: ${name}
+E-Mail: ${email}
+${phone ? `Telefon: ${phone}` : ''}
+
+Nachricht:
+${message}
+
+---
+Diese E-Mail wurde über das Kontaktformular auf private-shirt.de gesendet.
+      `,
+    };
+
+    // Send email
+    const info = await transporter.sendMail(mailOptions);
+    
+    console.log('Contact email sent:', info.messageId);
+
+    res.json({ 
+      success: true,
+      message: 'Email sent successfully',
+      messageId: info.messageId
+    });
+  } catch (error) {
+    console.error('Error sending contact email:', error);
+    res.status(500).json({ 
+      error: error.message || 'Failed to send email',
+      success: false
+    });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 Stripe backend server running on http://localhost:${PORT}`);
   console.log(`📝 API endpoint: http://localhost:${PORT}/api/create-payment-intent`);
+  console.log(`📧 Contact email endpoint: http://localhost:${PORT}/api/send-contact-email`);
   console.log(`🔑 Using Stripe API: https://api.stripe.com/v1/`);
   if (!process.env.STRIPE_SECRET_KEY) {
     console.warn('⚠️  WARNING: STRIPE_SECRET_KEY not found in .env file!');
+  }
+  if (!process.env.SMTP_USER && !process.env.WP_EMAIL_USER) {
+    console.warn('⚠️  WARNING: SMTP credentials not found in .env file!');
+    console.warn('   Add SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS to .env for email functionality');
   }
 });
 

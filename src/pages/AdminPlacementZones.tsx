@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Canvas as FabricCanvas, Rect, FabricText } from "fabric";
 import { Layout } from "@/components/layout/Layout";
@@ -11,11 +11,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useProducts, useProduct } from "@/hooks/useProducts";
+import { useProducts, useProduct, useProductVariations, useWooCommerceProduct } from "@/hooks/useProducts";
 import { PlacementZone } from "@/data/products";
 import { toast } from "sonner";
 import { Save, Trash2, ArrowLeft, Shirt } from "lucide-react";
 import { WOOCOMMERCE_CONFIG } from "@/lib/woocommerce";
+import { useQueryClient } from "@tanstack/react-query";
 
 type ViewType = "front" | "back" | "left" | "right";
 
@@ -35,14 +36,24 @@ function getWooCommerceAuthHeader(): string {
 const AdminPlacementZones = () => {
   const { productId } = useParams<{ productId?: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { data: products = [] } = useProducts({ per_page: 100 });
   const { data: product } = useProduct(productId ? Number(productId) : 0);
+  const { data: wcProduct } = useWooCommerceProduct(productId ? Number(productId) : 0);
+  const { data: variations = [] } = useProductVariations(productId ? Number(productId) : 0);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [fabricCanvas, setFabricCanvas] = useState<FabricCanvas | null>(null);
   const [selectedProductId, setSelectedProductId] = useState<string>(productId || "");
   const [currentView, setCurrentView] = useState<ViewType>("front");
+  const [selectedColor, setSelectedColor] = useState<string>("");
+  const [viewImages, setViewImages] = useState<Record<ViewType, string>>({
+    front: product?.image || "",
+    back: product?.image || "",
+    left: product?.image || "",
+    right: product?.image || "",
+  });
   const [zones, setZones] = useState<Record<ViewType, PlacementZone[]>>({
     front: [],
     back: [],
@@ -52,6 +63,72 @@ const AdminPlacementZones = () => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPoint, setStartPoint] = useState<{ x: number; y: number } | null>(null);
   const [currentRect, setCurrentRect] = useState<Rect | null>(null);
+
+  // Get available colors from product attributes
+  const availableColors = useMemo(() => {
+    if (!wcProduct?.attributes) return [];
+    const colorAttribute = wcProduct.attributes.find(attr => 
+      attr.name.toLowerCase().includes('color') || 
+      attr.name.toLowerCase().includes('farbe') ||
+      attr.slug.toLowerCase().includes('color') ||
+      attr.slug.toLowerCase().includes('farbe')
+    );
+    return colorAttribute?.options || [];
+  }, [wcProduct]);
+
+  // Organize SVI images by view type for selected color
+  const viewImagesForColor = useMemo(() => {
+    const views: Record<ViewType, string> = {
+      front: product?.image || "",
+      back: product?.image || "",
+      left: product?.image || "",
+      right: product?.image || "",
+    };
+
+    if (selectedColor && wcProduct) {
+      const sviMeta = wcProduct.meta_data?.find((meta: any) => meta.key === 'woosvi_slug');
+      
+      if (sviMeta && sviMeta.value && Array.isArray(sviMeta.value)) {
+        // Find the entry that matches the selected color
+        const matchingSviEntry = sviMeta.value.find((entry: any) => {
+          if (!entry.slugs || !Array.isArray(entry.slugs)) return false;
+          return entry.slugs.some((slug: string) => String(slug).trim() === String(selectedColor).trim());
+        });
+        
+        if (matchingSviEntry && matchingSviEntry.imgs && Array.isArray(matchingSviEntry.imgs)) {
+          // Get image IDs from SVI data
+          const imageIds = matchingSviEntry.imgs.map((id: any) => String(id));
+          
+          // Find images in product.images array that match these IDs
+          const matchingImages = wcProduct.images?.filter(img => 
+            imageIds.includes(String(img.id))
+          ) || [];
+          
+          // Organize images by view type based on filename - use first matching image for each view
+          matchingImages.forEach(img => {
+            const name = img.name || img.src || '';
+            // Check filename for view indicators: _F (front), _B (back), _SL (left), _SR (right)
+            if ((name.includes('_F') || name.includes('-F')) && views.front === (product?.image || "")) {
+              views.front = img.src;
+            } else if ((name.includes('_B') || name.includes('-B')) && views.back === (product?.image || "")) {
+              views.back = img.src;
+            } else if ((name.includes('_SL') || name.includes('-SL')) && views.left === (product?.image || "")) {
+              views.left = img.src;
+            } else if ((name.includes('_SR') || name.includes('-SR')) && views.right === (product?.image || "")) {
+              views.right = img.src;
+            }
+          });
+        }
+      }
+    }
+
+    return views;
+  }, [selectedColor, wcProduct, product?.image]);
+
+  // Update view images when color or view changes
+  useEffect(() => {
+    setViewImages(viewImagesForColor);
+  }, [viewImagesForColor]);
 
   // Load zones from product
   useEffect(() => {
@@ -74,7 +151,10 @@ const AdminPlacementZones = () => {
 
   // Initialize canvas
   useEffect(() => {
-    if (!canvasRef.current || !containerRef.current || !product?.image) return;
+    if (!canvasRef.current || !containerRef.current) return;
+    
+    const currentImage = viewImages[currentView] || product?.image;
+    if (!currentImage) return;
 
     const containerWidth = containerRef.current.offsetWidth;
     const canvasSize = Math.min(containerWidth, 600);
@@ -86,7 +166,7 @@ const AdminPlacementZones = () => {
       selection: true,
     });
 
-    // Load product image as background
+    // Load current view image as background
     const img = new window.Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
@@ -94,7 +174,7 @@ const AdminPlacementZones = () => {
       const scale = Math.min(canvasSize / img.width, canvasSize / img.height);
       
       canvas.setBackgroundImage(
-        product.image,
+        currentImage,
         canvas.renderAll.bind(canvas),
         {
           scaleX: scale,
@@ -105,14 +185,14 @@ const AdminPlacementZones = () => {
       );
       canvas.renderAll();
     };
-    img.src = product.image;
+    img.src = currentImage;
 
     setFabricCanvas(canvas);
 
     return () => {
       canvas.dispose();
     };
-  }, [product?.image, product?.id]);
+  }, [viewImages, currentView, product?.image, product?.id]);
 
   // Render zones on canvas
   useEffect(() => {
@@ -327,12 +407,17 @@ const AdminPlacementZones = () => {
     }
 
     try {
+      // Ensure all views are included, even if empty
       const zonesData = {
-        front: zones.front,
-        back: zones.back,
-        left: zones.left,
-        right: zones.right,
+        front: zones.front || [],
+        back: zones.back || [],
+        left: zones.left || [],
+        right: zones.right || [],
       };
+
+      // Debug: Log zones being saved
+      console.log("Saving zones:", zonesData);
+      console.log("Back zones count:", zonesData.back.length);
 
       // Get current product meta_data
       const productResponse = await fetch(
@@ -387,6 +472,30 @@ const AdminPlacementZones = () => {
       if (!updateResponse.ok) {
         const errorText = await updateResponse.text();
         throw new Error(`Failed to save: ${errorText}`);
+      }
+
+      const savedData = await updateResponse.json();
+      const savedZonesMeta = savedData.meta_data?.find((m: any) => m.key === "design_placement_zones");
+      console.log("Saved product meta_data:", savedZonesMeta);
+      
+      if (savedZonesMeta?.value) {
+        try {
+          const parsedSavedZones = typeof savedZonesMeta.value === 'string' 
+            ? JSON.parse(savedZonesMeta.value) 
+            : savedZonesMeta.value;
+          console.log("Parsed saved zones:", parsedSavedZones);
+          console.log("Back zones in saved data:", parsedSavedZones.back?.length || 0);
+        } catch (e) {
+          console.error("Error parsing saved zones:", e);
+        }
+      }
+
+      // Invalidate queries to force refetch of product data
+      if (selectedProductId) {
+        const productIdNum = Number(selectedProductId);
+        queryClient.invalidateQueries({ queryKey: ['product', productIdNum] });
+        queryClient.invalidateQueries({ queryKey: ['woocommerce-product', productIdNum] });
+        queryClient.invalidateQueries({ queryKey: ['products'] });
       }
 
       toast.success("Placement Zones gespeichert!");
@@ -446,6 +555,38 @@ const AdminPlacementZones = () => {
 
         {product && (
           <>
+            {/* Variation/Color Selector */}
+            {availableColors.length > 0 && (
+              <div className="glass-card p-6 mb-6">
+                <Label htmlFor="color-select" className="mb-2 block">
+                  Variante auswählen (für alle Varianten gültig)
+                </Label>
+                <Select
+                  value={selectedColor || "default"}
+                  onValueChange={(value) => {
+                    setSelectedColor(value === "default" ? "" : value);
+                    // Reset to front view when color changes
+                    setCurrentView("front");
+                  }}
+                >
+                  <SelectTrigger id="color-select" className="w-full">
+                    <SelectValue placeholder="Variante wählen (optional - für Bildreferenz)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="default">Standard (Produktbild)</SelectItem>
+                    {availableColors.map((color) => (
+                      <SelectItem key={color} value={color}>
+                        {color}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Wähle eine Variante, um deren Bilder als Referenz für die Zonen zu verwenden. Die Zonen gelten für alle Varianten.
+                </p>
+              </div>
+            )}
+
             {/* View Selector */}
             <div className="mb-4 flex gap-2 flex-wrap">
               {(["front", "back", "left", "right"] as ViewType[]).map((view) => (
@@ -480,8 +621,8 @@ const AdminPlacementZones = () => {
                   >
                     <div className="relative w-full max-w-[600px] aspect-square">
                       <img
-                        src={product.image}
-                        alt={product.name}
+                        src={viewImages[currentView] || product.image}
+                        alt={`${product.name} - ${viewLabels[currentView]}`}
                         className="absolute inset-0 w-full h-full object-contain pointer-events-none"
                       />
                       <canvas

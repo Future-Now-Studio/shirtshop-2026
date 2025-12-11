@@ -149,3 +149,15 @@ export function useProductVariations(productId: number) {
   });
 }
 
+// Fetch raw WooCommerce product (unmapped) - useful for accessing meta_data
+export function useWooCommerceProduct(id: number) {
+  return useQuery({
+    queryKey: ['woocommerce-product', id],
+    queryFn: async () => {
+      return fetchWooCommerceProductById(id);
+    },
+    enabled: !!id,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+

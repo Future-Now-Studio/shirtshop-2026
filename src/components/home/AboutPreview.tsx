@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import hamburgImage from "@/assets/hamburg-city.jpg";
+import hamburgImage from "@/assets/julia-solonina-4fLxfNI3ohE-unsplash.jpg";
 
 export const AboutPreview = () => {
   return (

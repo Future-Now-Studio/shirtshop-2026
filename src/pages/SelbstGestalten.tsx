@@ -43,7 +43,7 @@ const DesignerProductsGrid = () => {
       {products.map((product, index) => (
         <Link
           key={product.id}
-          to={`/designer?productImage=${encodeURIComponent(product.image)}`}
+          to={`/designer?productImage=${encodeURIComponent(product.image)}&productId=${product.id}`}
         >
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -124,13 +124,27 @@ const SelbstGestalten = () => {
             transition={{ delay: 0.4 }}
             className="flex flex-col sm:flex-row gap-4 justify-center"
           >
-            <Link to="/designer">
-              <Button variant="hero" size="xl" className="group">
-                <Sparkles className="w-5 h-5" />
-                Creator starten
-                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-              </Button>
-            </Link>
+            <Button 
+              variant="hero" 
+              size="xl" 
+              className="group"
+              onClick={() => {
+                const element = document.getElementById('product-selection');
+                if (element) {
+                  const offset = 100; // Account for navbar and spacing
+                  const elementPosition = element.getBoundingClientRect().top;
+                  const offsetPosition = elementPosition + window.pageYOffset - offset;
+                  window.scrollTo({
+                    top: offsetPosition,
+                    behavior: 'smooth'
+                  });
+                }
+              }}
+            >
+              <Sparkles className="w-5 h-5" />
+              Creator starten
+              <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+            </Button>
           </motion.div>
         </div>
       </section>
@@ -172,7 +186,7 @@ const SelbstGestalten = () => {
       </section>
 
       {/* Product Selection */}
-      <section className="section-padding bg-background">
+      <section id="product-selection" className="section-padding bg-background">
         <div className="container-wide">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -192,39 +206,6 @@ const SelbstGestalten = () => {
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="section-padding bg-muted/30">
-        <div className="container-wide">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            viewport={{ once: true }}
-            className="glass-card p-12 text-center"
-          >
-            <h2 className="text-3xl lg:text-4xl font-bold text-primary mb-4">
-              Bereit für dein eigenes Design?
-            </h2>
-            <p className="text-lg text-muted-foreground mb-8 max-w-xl mx-auto">
-              Starte jetzt mit unserem intuitiven Creator und erstelle 
-              einzigartige Textilien für dich oder dein Team.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link to="/designer">
-                <Button size="xl" className="group">
-                  <Sparkles className="w-5 h-5" />
-                  Jetzt Creator öffnen
-                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                </Button>
-              </Link>
-              <Link to="/produkte">
-                <Button variant="outline" size="xl">
-                  Produkte ansehen
-                </Button>
-              </Link>
-            </div>
-          </motion.div>
-        </div>
-      </section>
     </Layout>
   );
 };

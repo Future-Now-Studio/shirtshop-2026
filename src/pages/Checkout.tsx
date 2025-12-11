@@ -19,7 +19,11 @@ import type { StripeElementsOptions } from "@stripe/stripe-js";
 // - Get your publishable key from: https://dashboard.stripe.com/test/apikeys
 const stripePromise = loadStripe(
   import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || ""
-);
+).catch((error) => {
+  console.error('Stripe initialization error:', error);
+  // Return null to indicate Stripe failed to load
+  return null;
+});
 
 interface ShippingFormData {
   firstName: string;
@@ -541,11 +545,28 @@ const Checkout = () => {
   const navigate = useNavigate();
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null);
+  const [stripeError, setStripeError] = useState<string | null>(null);
 
   const subtotal = getTotalPrice();
   const hasFreeShipping = subtotal >= FREE_SHIPPING_THRESHOLD;
   const shipping = items.length > 0 && !hasFreeShipping ? SHIPPING_COST : 0;
   const total = subtotal + shipping;
+
+  // Check if Stripe is blocked
+  useEffect(() => {
+    if (stripePromise) {
+      stripePromise.then((stripe) => {
+        if (!stripe) {
+          setStripeError('Stripe konnte nicht geladen werden. Bitte deaktivieren Sie Ad-Blocker oder Privacy-Erweiterungen.');
+        }
+      }).catch((error) => {
+        console.error('Stripe load error:', error);
+        if (error.message?.includes('Failed to fetch') || error.message?.includes('blocked')) {
+          setStripeError('Stripe-Anfragen werden blockiert. Bitte deaktivieren Sie Ad-Blocker oder Privacy-Erweiterungen.');
+        }
+      });
+    }
+  }, []);
 
   useEffect(() => {
     // Create PaymentIntent on backend
@@ -572,16 +593,21 @@ const Checkout = () => {
         const data = await response.json();
         setClientSecret(data.clientSecret);
         setPaymentIntentId(data.paymentIntentId);
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error creating payment intent:", error);
-        toast.error("Fehler beim Laden der Zahlungsoptionen. Bitte konfigurieren Sie einen Backend-Endpoint.");
+        // Check if it's a network/blocking error
+        if (error.message?.includes('Failed to fetch') || error.message?.includes('blocked') || error.name === 'TypeError') {
+          setStripeError('Netzwerkanfragen werden blockiert. Bitte deaktivieren Sie Ad-Blocker oder Privacy-Erweiterungen.');
+        } else {
+          toast.error("Fehler beim Laden der Zahlungsoptionen. Bitte konfigurieren Sie einen Backend-Endpoint.");
+        }
       }
     };
 
-    if (items.length > 0 && total > 0) {
+    if (items.length > 0 && total > 0 && !stripeError) {
       createPaymentIntent();
     }
-  }, [total, items]);
+  }, [total, items, stripeError]);
 
   const options: StripeElementsOptions = {
     clientSecret: clientSecret || undefined,
@@ -624,7 +650,30 @@ const Checkout = () => {
           </p>
         </motion.div>
 
-        {!stripePromise ? (
+        {stripeError ? (
+          <div className="text-center py-12">
+            <div className="glass-card p-8 max-w-md mx-auto border-2 border-destructive/20">
+              <div className="text-destructive mb-4">
+                <Lock className="w-12 h-12 mx-auto mb-2" />
+                <p className="font-semibold text-lg mb-2">Stripe wurde blockiert</p>
+              </div>
+              <p className="text-muted-foreground mb-4">
+                Stripe-Zahlungsanfragen werden blockiert. Dies kann durch folgende Ursachen verursacht werden:
+              </p>
+              <ul className="text-left text-sm text-muted-foreground space-y-2 mb-4">
+                <li>• Ad-Blocker oder Browser-Erweiterungen blockieren Stripe</li>
+                <li>• Privacy-Erweiterungen blockieren externe Anfragen</li>
+                <li>• Netzwerk-Firewall blockiert Stripe-Domains</li>
+              </ul>
+              <p className="text-sm text-muted-foreground mb-4">
+                <strong>Lösung:</strong> Bitte deaktivieren Sie Ad-Blocker oder Privacy-Erweiterungen für diese Seite und laden Sie die Seite neu.
+              </p>
+              <Button onClick={() => window.location.reload()} variant="outline">
+                Seite neu laden
+              </Button>
+            </div>
+          </div>
+        ) : !stripePromise ? (
           <div className="text-center py-12">
             <div className="glass-card p-8 max-w-md mx-auto">
               <p className="text-muted-foreground mb-4">Stripe nicht konfiguriert</p>

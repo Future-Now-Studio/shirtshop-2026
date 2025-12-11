@@ -12,7 +12,7 @@ const locations = [
     phone: "040 328 738 04",
     fax: "040 328 738 15",
     email: "europa-passage@private-shirt.de",
-    mapEmbedUrl: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2369.5!2d10.001!3d53.551!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zNTPCsDMzJzAzLjYiTiAxMMKwMDAnMDMuNiJF!5e0!3m2!1sde!2sde!4v1234567890&q=Ballindamm+40,+20095+Hamburg",
+    mapEmbedUrl: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2370.3681842109295!2d9.993753077509476!3d53.55119465937556!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x47b18f1dc6346d17%3A0xb2e7e85ab405c7a7!2sPrivate%20Shirt!5e0!3m2!1sde!2sus!4v1765191779388!5m2!1sde!2sus",
     image: europaPassage,
   },
   {
@@ -22,7 +22,7 @@ const locations = [
     phone: "040 399 077 78",
     fax: "040 399 081 16",
     email: "altona@private-shirt.de",
-    mapEmbedUrl: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2369.5!2d9.935!3d53.550!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zNTPCsDMzJzAwLjAiTiA5wrA1NicyMC4wIkU!5e0!3m2!1sde!2sde!4v1234567890&q=Ottenser+Hauptstraße+10,+22765+Hamburg",
+    mapEmbedUrl: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2370.3038069233694!2d9.93002827750953!3d53.55234395928927!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x47b18585ff23b8bb%3A0x3a3a59770b6ae2fa!2sPrivate%20Shirt%20Hamburg%20Altona!5e0!3m2!1sde!2sus!4v1765191827970!5m2!1sde!2sus",
     image: altona,
   },
 ];

@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Mail, Phone, MapPin, Instagram, Facebook } from "lucide-react";
+import { Mail, Phone, MapPin, Instagram } from "lucide-react";
 import logo from "@/assets/group-25.svg";
 
 export const Footer = () => {
@@ -26,13 +26,9 @@ export const Footer = () => {
             </p>
             <div className="flex gap-3">
               <a
-                href="#"
-                className="w-10 h-10 bg-background/10 hover:bg-primary rounded-full flex items-center justify-center transition-colors"
-              >
-                <Facebook className="w-5 h-5" />
-              </a>
-              <a
-                href="#"
+                href="https://www.instagram.com/privateshirt/"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="w-10 h-10 bg-background/10 hover:bg-primary rounded-full flex items-center justify-center transition-colors"
               >
                 <Instagram className="w-5 h-5" />
@@ -49,10 +45,16 @@ export const Footer = () => {
           >
             <h4 className="font-bold text-lg mb-6">Navigation</h4>
             <ul className="space-y-3">
-              {["Home", "Produkte", "Leistungen", "Unternehmen"].map((item) => (
+              {["Home", "Produkte", "Leistungen", "Über uns"].map((item) => (
                 <li key={item}>
                   <Link
-                    to={`/${item.toLowerCase() === "home" ? "" : item.toLowerCase()}`}
+                    to={`/${
+                      item.toLowerCase() === "home" 
+                        ? "" 
+                        : item === "Über uns"
+                        ? "unternehmen"
+                        : item.toLowerCase()
+                    }`}
                     className="text-background/70 hover:text-secondary transition-colors"
                   >
                     {item}
@@ -71,7 +73,7 @@ export const Footer = () => {
           >
             <h4 className="font-bold text-lg mb-6">Services</h4>
             <ul className="space-y-3">
-              {["Selbst gestalten", "Großbestellung", "Filialen", "Kontakt"].map((item) => (
+              {["Selbst gestalten", "Großbestellung", "Filialen"].map((item) => (
                 <li key={item}>
                   <Link
                     to={`/${item.toLowerCase().replace(/\s+/g, "-").replace("ß", "ss")}`}
@@ -121,20 +123,35 @@ export const Footer = () => {
           </motion.div>
         </div>
 
-        <div className="border-t border-background/10 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
-          <p className="text-background/50 text-sm">
-            © 2026 Private Shirt. Alle Rechte vorbehalten.
-          </p>
-          <div className="flex gap-6 text-sm">
-            <Link to="/datenschutz" className="text-background/50 hover:text-secondary transition-colors">
-              Datenschutz
-            </Link>
-            <Link to="/impressum" className="text-background/50 hover:text-secondary transition-colors">
-              Impressum
-            </Link>
-            <Link to="/agb" className="text-background/50 hover:text-secondary transition-colors">
-              AGB
-            </Link>
+        <div className="border-t border-background/10 mt-12 pt-8">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-4">
+            <p className="text-background/50 text-sm">
+              © 2026 Private Shirt. Alle Rechte vorbehalten.
+            </p>
+            <div className="flex gap-6 text-sm">
+              <Link to="/datenschutz" className="text-background/50 hover:text-secondary transition-colors">
+                Datenschutz
+              </Link>
+              <Link to="/impressum" className="text-background/50 hover:text-secondary transition-colors">
+                Impressum
+              </Link>
+              <Link to="/agb" className="text-background/50 hover:text-secondary transition-colors">
+                AGB
+              </Link>
+            </div>
+          </div>
+          <div className="text-center">
+            <p className="text-background/40 text-xs">
+              Webshop erstellt von{" "}
+              <a
+                href="https://future-now.studio/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-background/60 hover:text-secondary transition-colors underline"
+              >
+                Future-Now Studio
+              </a>
+            </p>
           </div>
         </div>
       </div>

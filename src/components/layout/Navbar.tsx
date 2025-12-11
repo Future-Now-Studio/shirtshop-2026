@@ -1,18 +1,18 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, ShoppingBag, User, MapPin } from "lucide-react";
+import { Menu, X, ShoppingBag, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCartStore } from "@/stores/cartStore";
 import logo from "@/assets/group-25.svg";
 
 const navLinks = [
-  { name: "Filialen", path: "/filialen" },
-  { name: "Unternehmen", path: "/unternehmen" },
-  { name: "Leistungen", path: "/leistungen" },
   { name: "Produkte", path: "/produkte" },
-  { name: "Großbestellung", path: "/grossbestellung" },
   { name: "Selbst gestalten", path: "/selbst-gestalten" },
+  { name: "Filialen", path: "/#filialen" },
+  { name: "Über uns", path: "/unternehmen" },
+  { name: "Leistungen", path: "/leistungen" },
+  { name: "Großbestellung", path: "/grossbestellung" },
 ];
 
 export const Navbar = () => {
@@ -21,6 +21,10 @@ export const Navbar = () => {
   const location = useLocation();
   const { openCart, getTotalItems } = useCartStore();
   const totalItems = getTotalItems();
+
+  const handleOpenChat = () => {
+    window.dispatchEvent(new CustomEvent('open-chat'));
+  };
 
   // Check if notification bar is visible
   useEffect(() => {
@@ -62,59 +66,94 @@ export const Navbar = () => {
 
           {/* Desktop Navigation */}
           <div className="hidden lg:flex items-center gap-2">
-            {navLinks.map((link) => (
-              <Link key={link.path} to={link.path}>
-                <Button
-                  variant="nav"
-                  className={`relative text-base px-5 py-2 ${
-                    location.pathname === link.path ? "text-primary" : ""
-                  }`}
-                >
-                  {link.name}
-                  {location.pathname === link.path && (
-                    <motion.div
-                      layoutId="navbar-indicator"
-                      className="absolute -bottom-1 left-0 right-0 h-0.5 bg-primary rounded-full"
-                    />
-                  )}
-                </Button>
-              </Link>
-            ))}
+            {navLinks.map((link) => {
+              const isAnchor = link.path.startsWith('/#');
+              const isActive = isAnchor
+                ? location.pathname === '/' && location.hash === link.path.substring(1)
+                : location.pathname === link.path;
+              
+              const handleClick = (e: React.MouseEvent) => {
+                if (isAnchor) {
+                  e.preventDefault();
+                  if (location.pathname !== '/') {
+                    window.location.href = link.path;
+                  } else {
+                    const element = document.querySelector(link.path.substring(1));
+                    if (element) {
+                      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                  }
+                }
+              };
+              
+              return (
+                <Link key={link.path} to={link.path} onClick={handleClick}>
+                  <Button
+                    variant="nav"
+                    className={`relative text-base px-5 py-2 ${
+                      isActive ? "text-primary" : ""
+                    }`}
+                  >
+                    {link.name}
+                    {isActive && (
+                      <motion.div
+                        layoutId="navbar-indicator"
+                        className="absolute -bottom-1 left-0 right-0 h-0.5 bg-primary rounded-full"
+                      />
+                    )}
+                  </Button>
+                </Link>
+              );
+            })}
+            <Button
+              variant="nav"
+              onClick={handleOpenChat}
+              className="text-base px-5 py-2"
+            >
+              Kontakt
+            </Button>
           </div>
 
           {/* Right Icons */}
           <div className="flex items-center gap-3">
-            <div className="hidden md:flex items-center gap-3">
-              <Button variant="ghost" size="icon" className="h-11 w-11">
-                <User className="w-6 h-6" />
-              </Button>
-              <Button variant="ghost" size="icon" className="h-11 w-11">
-                <MapPin className="w-6 h-6" />
-              </Button>
-              <Button variant="ghost" size="icon" className="relative h-11 w-11" onClick={openCart}>
-                <ShoppingBag className="w-6 h-6" />
+            {/* Desktop Cart */}
+            <Button 
+              variant="outline" 
+              size="icon" 
+              className="hidden md:flex relative h-12 w-12 border-2 hover:bg-accent hover:text-primary" 
+              onClick={openCart}
+            >
+              <ShoppingBag className="w-7 h-7" />
+              {totalItems > 0 && (
                 <motion.span
                   key={totalItems}
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
-                  className="absolute -top-1 -right-1 w-6 h-6 bg-primary text-primary-foreground text-sm font-bold rounded-full flex items-center justify-center"
+                  className="absolute -top-1 -right-1 w-6 h-6 bg-primary text-primary-foreground text-sm font-bold rounded-full flex items-center justify-center shadow-lg"
                 >
                   {totalItems}
                 </motion.span>
-              </Button>
-            </div>
+              )}
+            </Button>
 
             {/* Mobile Cart */}
-            <Button variant="ghost" size="icon" className="relative md:hidden h-11 w-11" onClick={openCart}>
-              <ShoppingBag className="w-6 h-6" />
-              <motion.span
-                key={totalItems}
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                className="absolute -top-1 -right-1 w-6 h-6 bg-primary text-primary-foreground text-sm font-bold rounded-full flex items-center justify-center"
-              >
-                {totalItems}
-              </motion.span>
+            <Button 
+              variant="outline" 
+              size="icon" 
+              className="relative md:hidden h-12 w-12 border-2 hover:bg-accent hover:text-primary" 
+              onClick={openCart}
+            >
+              <ShoppingBag className="w-7 h-7" />
+              {totalItems > 0 && (
+                <motion.span
+                  key={totalItems}
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  className="absolute -top-1 -right-1 w-6 h-6 bg-primary text-primary-foreground text-sm font-bold rounded-full flex items-center justify-center shadow-lg"
+                >
+                  {totalItems}
+                </motion.span>
+              )}
             </Button>
 
             {/* Mobile Menu Button */}
@@ -141,34 +180,63 @@ export const Navbar = () => {
             className="lg:hidden bg-background border-t border-border"
           >
             <div className="container-wide py-6 flex flex-col gap-2">
-              {navLinks.map((link, index) => (
-                <motion.div
-                  key={link.path}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                >
-                  <Link
-                    to={link.path}
-                    onClick={() => setIsOpen(false)}
-                    className={`block py-4 px-5 rounded-xl font-medium text-base transition-colors ${
-                      location.pathname === link.path
-                        ? "bg-accent text-primary"
-                        : "hover:bg-muted"
-                    }`}
+              {navLinks.map((link, index) => {
+                const isAnchor = link.path.startsWith('/#');
+                const isActive = isAnchor
+                  ? location.pathname === '/' && location.hash === link.path.substring(1)
+                  : location.pathname === link.path;
+                
+                const handleClick = (e: React.MouseEvent) => {
+                  setIsOpen(false);
+                  if (isAnchor) {
+                    e.preventDefault();
+                    if (location.pathname !== '/') {
+                      window.location.href = link.path;
+                    } else {
+                      const element = document.querySelector(link.path.substring(1));
+                      if (element) {
+                        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }
+                    }
+                  }
+                };
+                
+                return (
+                  <motion.div
+                    key={link.path}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.05 }}
                   >
-                    {link.name}
-                  </Link>
-                </motion.div>
-              ))}
-              <div className="flex gap-2 pt-4 border-t border-border mt-4">
-                <Button variant="ghost" size="icon">
-                  <User className="w-5 h-5" />
-                </Button>
-                <Button variant="ghost" size="icon">
-                  <MapPin className="w-5 h-5" />
-                </Button>
-              </div>
+                    <Link
+                      to={link.path}
+                      onClick={handleClick}
+                      className={`block py-4 px-5 rounded-xl font-medium text-base transition-colors ${
+                        isActive
+                          ? "bg-accent text-primary"
+                          : "hover:bg-muted"
+                      }`}
+                    >
+                      {link.name}
+                    </Link>
+                  </motion.div>
+                );
+              })}
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: navLinks.length * 0.05 }}
+              >
+                <button
+                  onClick={() => {
+                    setIsOpen(false);
+                    handleOpenChat();
+                  }}
+                  className="w-full py-4 px-5 rounded-xl font-medium text-base transition-colors hover:bg-muted text-left"
+                >
+                  Kontakt
+                </button>
+              </motion.div>
             </div>
           </motion.div>
         )}

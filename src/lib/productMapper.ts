@@ -80,6 +80,32 @@ export function mapWooCommerceToProduct(wcProduct: WooCommerceProduct): Product 
     }
   }
 
+  // Extract geschlecht from meta_data
+  let geschlecht: string | undefined;
+  const geschlechtMeta = wcProduct.meta_data?.find(
+    (meta: any) => meta.key === 'geschlecht' || meta.key === '_geschlecht'
+  );
+  
+  if (geschlechtMeta && geschlechtMeta.value) {
+    geschlecht = typeof geschlechtMeta.value === 'string' 
+      ? geschlechtMeta.value 
+      : String(geschlechtMeta.value);
+  }
+
+  // Extract verfügbare größen from meta_data (comma-separated)
+  let verfuegbareGroessen: string[] | undefined;
+  const groessenMeta = wcProduct.meta_data?.find(
+    (meta: any) => meta.key === 'verfügbare größen' || meta.key === 'verfuegbare_groessen' || meta.key === '_verfügbare größen' || meta.key === '_verfuegbare_groessen'
+  );
+  
+  if (groessenMeta && groessenMeta.value) {
+    const groessenValue = typeof groessenMeta.value === 'string' 
+      ? groessenMeta.value 
+      : String(groessenMeta.value);
+    // Split by comma and trim each size
+    verfuegbareGroessen = groessenValue.split(',').map(s => s.trim()).filter(s => s.length > 0);
+  }
+
   return {
     id: wcProduct.id,
     name: wcProduct.name,
@@ -94,6 +120,8 @@ export function mapWooCommerceToProduct(wcProduct: WooCommerceProduct): Product 
     features: features.length > 0 ? features : ['Hochwertige Qualität'],
     tags: wcProduct.tags || [],
     placementZones: placementZones,
+    geschlecht: geschlecht,
+    verfuegbareGroessen: verfuegbareGroessen,
   };
 }
 

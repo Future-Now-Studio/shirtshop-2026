@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import { motion } from "framer-motion";
 import { ShoppingBag, Palette, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,7 @@ interface ProductCardProps {
   index: number;
 }
 
-export const ProductCard = ({ product, index }: ProductCardProps) => {
+export const ProductCard = forwardRef<HTMLDivElement, ProductCardProps>(({ product, index }, ref) => {
   const addItem = useCartStore((state) => state.addItem);
 
   const handleQuickAdd = (e: React.MouseEvent) => {
@@ -40,6 +41,7 @@ export const ProductCard = ({ product, index }: ProductCardProps) => {
 
   return (
     <motion.div
+      ref={ref}
       layout
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
@@ -138,4 +140,6 @@ export const ProductCard = ({ product, index }: ProductCardProps) => {
       </div>
     </motion.div>
   );
-};
+});
+
+ProductCard.displayName = "ProductCard";

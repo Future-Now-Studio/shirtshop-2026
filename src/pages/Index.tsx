@@ -4,18 +4,17 @@ import { ShopSection } from "@/components/home/ShopSection";
 import { ProductSlider } from "@/components/home/ProductSlider";
 import { AboutPreview } from "@/components/home/AboutPreview";
 import { FAQSection } from "@/components/home/FAQSection";
-import { ContactBanner } from "@/components/home/ContactBanner";
+import { LocationsSection } from "@/components/home/LocationsSection";
 
 const Index = () => {
   return (
     <Layout>
       <HeroSection />
       <ProductSlider />
-
       <ShopSection />
       <AboutPreview />
       <FAQSection />
-      <ContactBanner />
+      <LocationsSection />
     </Layout>
   );
 };

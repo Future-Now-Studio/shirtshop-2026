@@ -9,16 +9,15 @@ import {
   CarouselPrevious,
 } from "@/components/ui/carousel";
 import { ProductCard } from "@/components/products/ProductCard";
-import { useHighlightedProducts, useProducts } from "@/hooks/useProducts";
+import { useHighlightedProducts } from "@/hooks/useProducts";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export const ProductSlider = () => {
   const { data: highlightedProducts = [], isLoading: isLoadingHighlighted, error: highlightedError } = useHighlightedProducts();
-  const { data: allProducts = [] } = useProducts({ per_page: 8 });
   
-  // Use highlighted products if available, otherwise show first 8 products as fallback
-  const products = highlightedProducts.length > 0 ? highlightedProducts : allProducts.slice(0, 8);
+  // Only show products with "highlight" tag - no fallback
+  const products = highlightedProducts;
   const isLoading = isLoadingHighlighted;
   const error = highlightedError;
 

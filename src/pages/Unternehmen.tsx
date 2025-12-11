@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { Layout } from "@/components/layout/Layout";
 import { Check } from "lucide-react";
-import hamburgImage from "@/assets/hamburg-city.jpg";
+import hamburgImage from "@/assets/julia-solonina-4fLxfNI3ohE-unsplash.jpg";
 import lifestyleImage from "@/assets/lifestyle-woman.jpg";
 
 const values = [

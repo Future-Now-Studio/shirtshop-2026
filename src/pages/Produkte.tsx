@@ -6,14 +6,35 @@ import { ProductCard } from "@/components/products/ProductCard";
 import { useProductsByCategory, useWooCommerceCategories } from "@/hooks/useProducts";
 import { Loader2 } from "lucide-react";
 
-const targetGroups = ["Damen", "Herren", "Kinder & Babys"];
+const targetGroups = ["Alle", "Damen", "Herren", "Kinder & Babys"];
 
 const Produkte = () => {
   const [selectedCategory, setSelectedCategory] = useState<string | number>("alle produkte");
-  const [selectedTarget, setSelectedTarget] = useState("Herren");
+  const [selectedTarget, setSelectedTarget] = useState<string | null>("Alle");
 
   const { data: categories = [], isLoading: categoriesLoading } = useWooCommerceCategories();
   const { data: products = [], isLoading: productsLoading, error } = useProductsByCategory(selectedCategory);
+  
+  // Map target groups to geschlecht values
+  const geschlechtMap: Record<string, string[]> = {
+    "Damen": ["Damen", "Frau", "weiblich", "female"],
+    "Herren": ["Herren", "Mann", "männlich", "male"],
+    "Kinder & Babys": ["Kinder", "Kinder & Babys", "Baby", "Babys", "Unisex", "unisex"],
+  };
+
+  // Filter products by geschlecht
+  const filteredProducts = products.filter(product => {
+    // If "Alle" is selected or no target selected, show all products
+    if (!selectedTarget || selectedTarget === "Alle" || selectedTarget === "alle") return true;
+    
+    const geschlechtValues = geschlechtMap[selectedTarget] || [];
+    if (!product.geschlecht) return false;
+    
+    return geschlechtValues.some(value => 
+      product.geschlecht?.toLowerCase().includes(value.toLowerCase()) ||
+      value.toLowerCase().includes(product.geschlecht.toLowerCase())
+    );
+  });
   
   const isLoading = categoriesLoading || productsLoading;
 
@@ -50,7 +71,7 @@ const Produkte = () => {
                 key={target}
                 variant={selectedTarget === target ? "default" : "ghost"}
                 size="sm"
-                onClick={() => setSelectedTarget(target)}
+                onClick={() => setSelectedTarget(target === "Alle" ? "Alle" : target)}
               >
                 {target}
               </Button>
@@ -103,14 +124,14 @@ const Produkte = () => {
                 <Button onClick={() => window.location.reload()}>Neu laden</Button>
               </div>
             </div>
-          ) : products.length === 0 ? (
+          ) : filteredProducts.length === 0 ? (
             <div className="flex items-center justify-center min-h-[400px]">
               <p className="text-muted-foreground">Keine Produkte gefunden</p>
             </div>
           ) : (
             <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               <AnimatePresence mode="popLayout">
-                {products.map((product, index) => (
+                {filteredProducts.map((product, index) => (
                   <ProductCard key={product.id} product={product} index={index} />
                 ))}
               </AnimatePresence>

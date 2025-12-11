@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageCircle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,18 @@ export const ChatButton = () => {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Listen for custom event to open chat from navbar
+  useEffect(() => {
+    const handleOpenChat = () => {
+      setIsOpen(true);
+    };
+    
+    window.addEventListener('open-chat', handleOpenChat);
+    return () => {
+      window.removeEventListener('open-chat', handleOpenChat);
+    };
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -26,13 +38,36 @@ export const ChatButton = () => {
 
     setIsSubmitting(true);
 
-    // Simulate form submission (replace with actual API call)
-    setTimeout(() => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${apiUrl}/api/send-contact-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          message: formData.message,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Fehler beim Senden der Nachricht');
+      }
+
       toast.success("Ihre Nachricht wurde erfolgreich gesendet!");
       setFormData({ name: "", email: "", phone: "", message: "" });
       setIsOpen(false);
+    } catch (error) {
+      console.error('Error sending contact form:', error);
+      toast.error(error instanceof Error ? error.message : "Fehler beim Senden der Nachricht. Bitte versuchen Sie es später erneut.");
+    } finally {
       setIsSubmitting(false);
-    }, 1000);
+    }
   };
 
   const handleChange = (field: string, value: string) => {
@@ -48,10 +83,10 @@ export const ChatButton = () => {
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.95 }}
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-4 sm:right-6 z-50 w-14 h-14 bg-primary text-primary-foreground rounded-full shadow-lg flex items-center justify-center hover:shadow-xl transition-shadow"
+        className="fixed bottom-6 right-4 sm:right-6 z-50 w-16 h-16 bg-primary text-primary-foreground rounded-full shadow-lg flex items-center justify-center hover:shadow-xl transition-shadow"
         aria-label="Kontaktformular öffnen"
       >
-        <MessageCircle className="w-6 h-6" />
+        <MessageCircle className="w-7 h-7" />
       </motion.button>
 
       {/* Contact Form Dialog */}

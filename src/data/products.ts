@@ -36,6 +36,8 @@ export interface Product {
     left?: PlacementZone[];
     right?: PlacementZone[];
   };
+  geschlecht?: string;
+  verfuegbareGroessen?: string[]; // Comma-separated sizes from custom field "verfügbare größen"
 }
 
 export const products: Product[] = [
