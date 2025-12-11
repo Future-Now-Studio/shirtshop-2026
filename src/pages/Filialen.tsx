@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { Layout } from "@/components/layout/Layout";
-import { MapPin, Phone, Mail, Printer } from "lucide-react";
-import europaPassage from "@/assets/Altona-Store.webp";
+import { MapPin, Phone, Mail } from "lucide-react";
+import europaPassage from "@/assets/20210421_001_Private_Shirt_Hamburg.webp";
 import altona from "@/assets/Altona-Store.webp";
 
 const locations = [
@@ -10,7 +10,6 @@ const locations = [
     address: "Ballindamm 40",
     city: "20095 Hamburg",
     phone: "040 328 738 04",
-    fax: "040 328 738 15",
     email: "europa-passage@private-shirt.de",
     mapEmbedUrl: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2370.3681842109295!2d9.993753077509476!3d53.55119465937556!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x47b18f1dc6346d17%3A0xb2e7e85ab405c7a7!2sPrivate%20Shirt!5e0!3m2!1sde!2sus!4v1765191779388!5m2!1sde!2sus",
     image: europaPassage,
@@ -20,7 +19,6 @@ const locations = [
     address: "Ottenser Hauptstraße 10",
     city: "22765 Hamburg",
     phone: "040 399 077 78",
-    fax: "040 399 081 16",
     email: "altona@private-shirt.de",
     mapEmbedUrl: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2370.3038069233694!2d9.93002827750953!3d53.55234395928927!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x47b18585ff23b8bb%3A0x3a3a59770b6ae2fa!2sPrivate%20Shirt%20Hamburg%20Altona!5e0!3m2!1sde!2sus!4v1765191827970!5m2!1sde!2sus",
     image: altona,
@@ -110,11 +108,6 @@ const Filialen = () => {
                       >
                         {location.phone}
                       </a>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <Printer className="w-5 h-5 text-foreground flex-shrink-0" />
-                      <span className="text-foreground">{location.fax}</span>
                     </div>
                     
                     <div className="flex items-center gap-3">
