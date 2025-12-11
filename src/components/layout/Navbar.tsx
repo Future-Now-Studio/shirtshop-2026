@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X, ShoppingBag, MessageCircle } from "lucide-react";
@@ -17,31 +17,13 @@ const navLinks = [
 
 export const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const [hasNotificationBar, setHasNotificationBar] = useState(false);
   const location = useLocation();
   const { openCart, getTotalItems } = useCartStore();
   const totalItems = getTotalItems();
 
   const handleOpenChat = () => {
     window.dispatchEvent(new CustomEvent('open-chat'));
-  };
-
-  // Check if notification bar is visible
-  useEffect(() => {
-    const checkNotificationBar = () => {
-      const dismissed = localStorage.getItem("notification-bar-dismissed");
-      setHasNotificationBar(!dismissed);
     };
-    checkNotificationBar();
-    // Listen for custom event when notification is dismissed
-    window.addEventListener("notification-bar-dismissed", checkNotificationBar);
-    // Also listen for storage changes (for cross-tab sync)
-    window.addEventListener("storage", checkNotificationBar);
-    return () => {
-      window.removeEventListener("notification-bar-dismissed", checkNotificationBar);
-      window.removeEventListener("storage", checkNotificationBar);
-    };
-  }, []);
 
   return (
     <motion.header
@@ -49,7 +31,7 @@ export const Navbar = () => {
       animate={{ y: 0 }}
       transition={{ duration: 0.6, ease: "easeOut" }}
       className="fixed left-0 right-0 z-50 glass-nav"
-      style={{ top: hasNotificationBar ? "44px" : "0px" }}
+      style={{ top: "0px" }}
     >
       <nav className="container-wide">
         <div className="flex items-center justify-between h-24">
@@ -88,21 +70,21 @@ export const Navbar = () => {
               
               return (
                 <Link key={link.path} to={link.path} onClick={handleClick}>
-                  <Button
-                    variant="nav"
-                    className={`relative text-base px-5 py-2 ${
+                <Button
+                  variant="nav"
+                  className={`relative text-base px-5 py-2 ${
                       isActive ? "text-primary" : ""
-                    }`}
-                  >
-                    {link.name}
+                  }`}
+                >
+                  {link.name}
                     {isActive && (
-                      <motion.div
-                        layoutId="navbar-indicator"
-                        className="absolute -bottom-1 left-0 right-0 h-0.5 bg-primary rounded-full"
-                      />
-                    )}
-                  </Button>
-                </Link>
+                    <motion.div
+                      layoutId="navbar-indicator"
+                      className="absolute -bottom-1 left-0 right-0 h-0.5 bg-primary rounded-full"
+                    />
+                  )}
+                </Button>
+              </Link>
               );
             })}
             <Button
@@ -134,7 +116,7 @@ export const Navbar = () => {
                   {totalItems}
                 </motion.span>
               )}
-            </Button>
+              </Button>
 
             {/* Mobile Cart */}
             <Button 
@@ -145,14 +127,14 @@ export const Navbar = () => {
             >
               <ShoppingBag className="w-7 h-7" />
               {totalItems > 0 && (
-                <motion.span
-                  key={totalItems}
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
+              <motion.span
+                key={totalItems}
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
                   className="absolute -top-1 -right-1 w-6 h-6 bg-primary text-primary-foreground text-sm font-bold rounded-full flex items-center justify-center shadow-lg"
-                >
-                  {totalItems}
-                </motion.span>
+              >
+                {totalItems}
+              </motion.span>
               )}
             </Button>
 
@@ -202,24 +184,24 @@ export const Navbar = () => {
                 };
                 
                 return (
-                  <motion.div
-                    key={link.path}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                  >
-                    <Link
-                      to={link.path}
+                <motion.div
+                  key={link.path}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                >
+                  <Link
+                    to={link.path}
                       onClick={handleClick}
-                      className={`block py-4 px-5 rounded-xl font-medium text-base transition-colors ${
+                    className={`block py-4 px-5 rounded-xl font-medium text-base transition-colors ${
                         isActive
-                          ? "bg-accent text-primary"
-                          : "hover:bg-muted"
-                      }`}
-                    >
-                      {link.name}
-                    </Link>
-                  </motion.div>
+                        ? "bg-accent text-primary"
+                        : "hover:bg-muted"
+                    }`}
+                  >
+                    {link.name}
+                  </Link>
+                </motion.div>
                 );
               })}
               <motion.div
