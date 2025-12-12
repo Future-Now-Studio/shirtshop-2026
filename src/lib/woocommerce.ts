@@ -200,6 +200,7 @@ export interface WooCommerceVariation {
     name: string;
     option: string;
   }>;
+  description?: string;
   meta_data: any[];
 }
 

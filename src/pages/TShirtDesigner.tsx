@@ -56,12 +56,45 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCartStore } from "@/stores/cartStore";
 import { toast } from "sonner";
 import { useProduct, useProductVariations, useWooCommerceProduct } from "@/hooks/useProducts";
 import { PlacementZone } from "@/data/products";
 import tshirtWhite from "@/assets/tshirt-mockup-white.png";
 import tshirtBlack from "@/assets/tshirt-mockup-black.png";
+import { Check } from "lucide-react";
+
+// Helper function to extract hex color from variation description
+function extractHexFromDescription(description?: string): string | null {
+  if (!description) return null;
+  // Look for hex color patterns: #RRGGBB or #RGB
+  const hexMatch = description.match(/#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})\b/);
+  return hexMatch ? hexMatch[0] : null;
+}
+
+// Helper function to find color attribute (more robust matching)
+function findColorAttribute(attributes: any[]) {
+  if (!attributes) return null;
+  return attributes.find(attr => {
+    const nameLower = (attr.name || '').toLowerCase();
+    const slugLower = (attr.slug || '').toLowerCase();
+    return (
+      nameLower === 'farbe' ||
+      nameLower === 'color' ||
+      nameLower === 'colour' ||
+      nameLower.includes('farbe') ||
+      nameLower.includes('color') ||
+      nameLower.includes('colour') ||
+      slugLower === 'farbe' ||
+      slugLower === 'color' ||
+      slugLower === 'colour' ||
+      slugLower.includes('farbe') ||
+      slugLower.includes('color') ||
+      slugLower.includes('colour')
+    );
+  });
+}
 
 const shirtColors = [
   { name: "Weiß", value: "#FFFFFF", image: tshirtWhite },
@@ -160,6 +193,7 @@ const TShirtDesigner = () => {
   const [textInput, setTextInput] = useState("");
   const [selectedFont, setSelectedFont] = useState("Outfit");
   const [textBold, setTextBold] = useState(false);
+  const [outOfBoundsWarning, setOutOfBoundsWarning] = useState<string | null>(null);
   const [textItalic, setTextItalic] = useState(false);
   const [textStrikethrough, setTextStrikethrough] = useState(false);
   const [textColor, setTextColor] = useState(
@@ -314,33 +348,43 @@ const TShirtDesigner = () => {
     const maxHeight = canvasHeight * 0.8;
     const isTooBig = objWidth > maxWidth || objHeight > maxHeight;
 
-    // Save original stroke if not already saved
-    if (!obj._originalStroke) {
-      obj._originalStroke = obj.stroke;
-      obj._originalStrokeWidth = obj.strokeWidth;
+    // Save original stroke if not already saved (only save if it's not already red)
+    if (obj._originalStroke === undefined) {
+      // Only save if current stroke is not the red warning stroke
+      if (obj.stroke !== "#dc2626" && obj.stroke !== "#ef4444") {
+        obj._originalStroke = obj.stroke || undefined;
+        obj._originalStrokeWidth = obj.strokeWidth || 0;
+      } else {
+        // If it's already red, save undefined so we remove it when in zone
+        obj._originalStroke = undefined;
+        obj._originalStrokeWidth = 0;
+      }
     }
 
     if (!zones || zones.length === 0) {
       // No zones - only check size
       if (isTooBig) {
-        if (obj.stroke !== "#ef4444") {
+        if (obj.stroke !== "#dc2626" || obj.strokeWidth !== 4) {
           obj.set({
-            stroke: "#ef4444",
-            strokeWidth: 3,
+            stroke: "#dc2626", // Brighter red
+            strokeWidth: 4, // Thicker border
           });
           if (shouldRender) {
             fabricCanvas.renderAll();
-            toast.error("Element ist zu groß. Bitte verkleinern Sie das Element.");
+            setOutOfBoundsWarning("Element ist zu groß. Bitte verkleinern Sie das Element.");
           }
         }
       } else {
         // Remove red border if size is OK
-        if (obj.stroke === "#ef4444") {
+        if (obj.stroke === "#dc2626" || obj.stroke === "#ef4444") {
           obj.set({
             stroke: obj._originalStroke || undefined,
             strokeWidth: obj._originalStrokeWidth || 0,
           });
-          if (shouldRender) fabricCanvas?.renderAll();
+          if (shouldRender) {
+            fabricCanvas?.renderAll();
+            setOutOfBoundsWarning(null);
+          }
         }
       }
       return;
@@ -373,95 +417,49 @@ const TShirtDesigner = () => {
       return objWidth <= zoneWidth && objHeight <= zoneHeight;
     });
 
-    if (!inZone || isTooBig || !fitsInAnyZone) {
+    // Only show red border if object is OUTSIDE zone OR too big
+    const shouldShowRedBorder = !inZone || isTooBig || !fitsInAnyZone;
+    const currentStroke = obj.stroke;
+    const currentStrokeWidth = obj.strokeWidth || 0;
+    const hasRedBorder = currentStroke === "#dc2626" || currentStroke === "#ef4444";
+    
+    if (shouldShowRedBorder) {
       // Add red border to indicate out of bounds or too big
-      if (obj.stroke !== "#ef4444") {
+      // Only apply if not already red
+      if (!hasRedBorder || currentStrokeWidth !== 4) {
         obj.set({
-          stroke: "#ef4444",
-          strokeWidth: 3,
+          stroke: "#dc2626", // Brighter red for better visibility
+          strokeWidth: 4, // Thicker border
         });
-        if (shouldRender) {
-          fabricCanvas.renderAll();
-          if (!inZone) {
-            toast.error("Element befindet sich außerhalb der erlaubten Bereiche. Bitte innerhalb der blauen Zonen platzieren.");
-          } else if (isTooBig || !fitsInAnyZone) {
-            toast.error("Element ist zu groß. Bitte verkleinern Sie das Element.");
-          }
-        }
-      }
-
-      // Find nearest zone and snap to it
-      let nearestZone: PlacementZone | null = null;
-      let minDistance = Infinity;
-
-      zones.forEach(zone => {
-        const zoneLeft = zone.x * canvasWidth;
-        const zoneTop = zone.y * canvasHeight;
-        const zoneRight = zoneLeft + (zone.width * canvasWidth);
-        const zoneBottom = zoneTop + (zone.height * canvasHeight);
-        const zoneCenterX = zoneLeft + (zone.width * canvasWidth) / 2;
-        const zoneCenterY = zoneTop + (zone.height * canvasHeight) / 2;
-
-        const distance = Math.sqrt(
-          Math.pow(centerX - zoneCenterX, 2) + Math.pow(centerY - zoneCenterY, 2)
-        );
-
-        if (distance < minDistance) {
-          minDistance = distance;
-          nearestZone = zone;
-        }
-      });
-
-      if (nearestZone) {
-        const zoneLeft = nearestZone.x * canvasWidth;
-        const zoneTop = nearestZone.y * canvasHeight;
-        const zoneRight = zoneLeft + (nearestZone.width * canvasWidth);
-        const zoneBottom = zoneTop + (nearestZone.height * canvasHeight);
-
-        // Constrain to zone bounds
-        const newX = Math.max(
-          zoneLeft + objWidth / 2,
-          Math.min(zoneRight - objWidth / 2, centerX)
-        );
-        const newY = Math.max(
-          zoneTop + objHeight / 2,
-          Math.min(zoneBottom - objHeight / 2, centerY)
-        );
-
-        obj.set({
-          left: newX,
-          top: newY,
-        });
-        
-        // Check size after constraining
-        const constrainedWidth = (obj.width || 0) * (obj.scaleX || 1);
-        const constrainedHeight = (obj.height || 0) * (obj.scaleY || 1);
-        const stillTooBig = constrainedWidth > maxWidth || constrainedHeight > maxHeight;
-        
-        if (!stillTooBig) {
-          // Remove red border after constraining if size is OK
-          obj.set({
-            stroke: obj._originalStroke || undefined,
-            strokeWidth: obj._originalStrokeWidth || 0,
-          });
-        }
-        
         if (shouldRender) {
           fabricCanvas.renderAll();
         }
       }
+      
+      // Show warning in creator area when element goes outside
+      if (shouldRender && !obj._hasShownWarning) {
+        if (!inZone) {
+          setOutOfBoundsWarning("Element befindet sich außerhalb der Druckbereiche. Bitte innerhalb der blauen Zonen platzieren.");
+        } else if (isTooBig || !fitsInAnyZone) {
+          setOutOfBoundsWarning("Element ist zu groß. Bitte verkleinern Sie das Element.");
+        }
+        obj._hasShownWarning = true;
+      }
+      // DO NOT automatically move objects - allow free movement anywhere
     } else {
-      // Object is in zone - check if size is OK
-      if (!isTooBig && fitsInAnyZone) {
-        // Remove red border if size and position are OK
-        if (obj.stroke === "#ef4444") {
-          obj.set({
-            stroke: obj._originalStroke || undefined,
-            strokeWidth: obj._originalStrokeWidth || 0,
-          });
-          if (shouldRender) fabricCanvas.renderAll();
+      // Object is in zone and size is OK - remove red border
+      if (hasRedBorder) {
+        obj.set({
+          stroke: obj._originalStroke !== undefined ? obj._originalStroke : undefined,
+          strokeWidth: obj._originalStrokeWidth !== undefined ? obj._originalStrokeWidth : 0,
+        });
+        if (shouldRender) {
+          fabricCanvas.renderAll();
         }
       }
+      // Reset warning flag and clear warning message when object is back in valid position
+      obj._hasShownWarning = false;
+      setOutOfBoundsWarning(null);
     }
   }, [fabricCanvas]);
 
@@ -548,7 +546,7 @@ const TShirtDesigner = () => {
     };
   }, []);
 
-  // Add zone constraint handlers after canvas and zones are available
+  // Add zone validation handlers (visual feedback only, no auto-constraining)
   useEffect(() => {
     if (!fabricCanvas || !placementZones) return;
 
@@ -556,14 +554,72 @@ const TShirtDesigner = () => {
       const obj = e.target;
       if (!obj) return;
       const currentZones = placementZones[currentView];
-      // Only constrain during actual movement, not on initial placement
+      // Show visual feedback (red border) during movement, don't constrain
       if (currentZones && currentZones.length > 0) {
         // Use a flag to track if this is the first move
         if (!obj._isBeingMoved) {
           obj._isBeingMoved = true;
           return; // Skip first move to allow initial placement
         }
-        constrainToZones(obj, currentZones, false); // Don't render during move for performance
+        // Validate and show red border during movement (but don't show toast warnings during move)
+        // We'll use a modified version that applies border but skips toast
+        const canvasWidth = fabricCanvas.getWidth();
+        const canvasHeight = fabricCanvas.getHeight();
+        const objWidth = (obj.width || 0) * (obj.scaleX || 1);
+        const objHeight = (obj.height || 0) * (obj.scaleY || 1);
+        const objLeft = (obj.left || 0) - objWidth / 2;
+        const objTop = (obj.top || 0) - objHeight / 2;
+        const objRight = objLeft + objWidth;
+        const objBottom = objTop + objHeight;
+        
+        const inZone = currentZones.some(zone => {
+          const zoneLeft = zone.x * canvasWidth;
+          const zoneTop = zone.y * canvasHeight;
+          const zoneRight = zoneLeft + (zone.width * canvasWidth);
+          const zoneBottom = zoneTop + (zone.height * canvasHeight);
+          return objLeft >= zoneLeft && objRight <= zoneRight && 
+                 objTop >= zoneTop && objBottom <= zoneBottom;
+        });
+        
+        // Save original stroke if not already saved (only save if it's not already red)
+        if (obj._originalStroke === undefined) {
+          // Only save if current stroke is not the red warning stroke
+          if (obj.stroke !== "#dc2626" && obj.stroke !== "#ef4444") {
+            obj._originalStroke = obj.stroke || undefined;
+            obj._originalStrokeWidth = obj.strokeWidth || 0;
+          } else {
+            // If it's already red, save undefined so we remove it when in zone
+            obj._originalStroke = undefined;
+            obj._originalStrokeWidth = 0;
+          }
+        }
+        
+        // Apply or remove red border during movement
+        // Red border when OUTSIDE zone (!inZone), remove when INSIDE (inZone)
+        if (!inZone) {
+          // Object is OUTSIDE zone - show red border (thicker and more visible)
+          const currentStroke = obj.stroke;
+          const currentStrokeWidth = obj.strokeWidth || 0;
+          if (currentStroke !== "#dc2626" || currentStrokeWidth !== 4) {
+            obj.set({
+              stroke: "#dc2626", // Brighter red
+              strokeWidth: 4, // Thicker border
+            });
+            fabricCanvas.renderAll();
+            setOutOfBoundsWarning("Element befindet sich außerhalb der Druckbereiche");
+          }
+        } else {
+          // Object is INSIDE zone - remove red border and restore original
+          const currentStroke = obj.stroke;
+          if (currentStroke === "#dc2626" || currentStroke === "#ef4444") {
+            obj.set({
+              stroke: obj._originalStroke !== undefined ? obj._originalStroke : undefined,
+              strokeWidth: obj._originalStrokeWidth !== undefined ? obj._originalStrokeWidth : 0,
+            });
+            fabricCanvas.renderAll();
+            setOutOfBoundsWarning(null);
+          }
+        }
       }
     };
 
@@ -571,14 +627,13 @@ const TShirtDesigner = () => {
       const obj = e.target;
       if (!obj) return;
       const currentZones = placementZones[currentView];
-      // Only constrain after user has finished modifying (scaling, rotating, etc.)
       // Reset the movement flag
       if (obj._isBeingMoved) {
         obj._isBeingMoved = false;
       }
-      // Constrain after modification is complete
+      // Only validate (show visual feedback) after modification, don't constrain
       if (currentZones && currentZones.length > 0) {
-      constrainToZones(obj, currentZones);
+        constrainToZones(obj, currentZones);
       }
     };
 
@@ -635,26 +690,22 @@ const TShirtDesigner = () => {
     }
   }, [currentView, fabricCanvas]); // Removed viewData - it causes canvas to clear when elements are added!
 
-  // Get available colors from variations
+  // Get available colors from variations with hex codes and names
   const availableColors = useMemo(() => {
     if (!variations || variations.length === 0) return [];
     
-    const colors = new Set<string>();
+    const colorMap = new Map<string, { name: string; hex: string | null }>();
     variations.forEach(variation => {
-      const colorAttr = variation.attributes?.find(attr => 
-        attr.name.toLowerCase().includes('color') || 
-        attr.name.toLowerCase().includes('farbe') ||
-        attr.name.toLowerCase().includes('colour')
-      );
+      const colorAttr = findColorAttribute(variation.attributes || []);
       if (colorAttr?.option) {
-        // Remove spaces from color names
-        const cleanColor = colorAttr.option.trim();
-        if (cleanColor) {
-          colors.add(cleanColor);
+        const cleanColor = String(colorAttr.option).trim();
+        if (cleanColor && !colorMap.has(cleanColor)) {
+          const hex = extractHexFromDescription(variation.description);
+          colorMap.set(cleanColor, { name: cleanColor, hex });
         }
       }
     });
-    return Array.from(colors);
+    return Array.from(colorMap.values());
   }, [variations]);
 
   // Get available sizes from custom field "verfügbare größen" or from variations
@@ -748,6 +799,24 @@ const TShirtDesigner = () => {
     return views;
   }, [selectedColor, wcProduct]);
 
+  // Check if there are actual design elements (not just empty canvas states)
+  const hasAnyDesign = useMemo(() => {
+    return Object.values(viewData).some(v => {
+      if (!v) return false;
+      try {
+        const parsed = JSON.parse(v);
+        const objects = parsed.objects || [];
+        // Check if there are actual objects (excluding placement zones)
+        return objects.some((obj: any) => {
+          const objName = obj.name || '';
+          return !objName.startsWith('placement-zone-') && !objName.startsWith('zone-');
+        });
+      } catch (error) {
+        return false;
+      }
+    });
+  }, [viewData]);
+
   const variationImages = useMemo(() => {
     // Return all images for current view
     return viewImages[currentView] || [];
@@ -772,11 +841,7 @@ const TShirtDesigner = () => {
     // Fallback: If color is selected, find the exact matching variation and use its image
     if (selectedColor && variations && variations.length > 0) {
       const matchingVariation = variations.find(variation => {
-        const colorAttr = variation.attributes?.find(attr => 
-          attr.name.toLowerCase().includes('color') || 
-          attr.name.toLowerCase().includes('farbe') ||
-          attr.name.toLowerCase().includes('colour')
-        );
+        const colorAttr = findColorAttribute(variation.attributes || []);
         if (!colorAttr || !colorAttr.option) return false;
         
         // Convert both to strings and compare (handles numbers like "741")
@@ -874,7 +939,7 @@ const TShirtDesigner = () => {
   useEffect(() => {
     if (availableColors.length > 0 && !selectedColor && productId) {
       // Auto-select first color if product has variations
-      setSelectedColor(availableColors[0]);
+      setSelectedColor(availableColors[0].name);
     }
   }, [availableColors, selectedColor, productId]);
 
@@ -1478,58 +1543,125 @@ const TShirtDesigner = () => {
           };
 
           shirtImg.onload = () => {
+            // Draw shirt image at full size (800x800) - same as handleAddToCart
             ctx.drawImage(shirtImg, 0, 0, 800, 800);
 
-            // Create a temporary fabric canvas for this view
-            const exportCanvas = document.createElement("canvas");
-            exportCanvas.width = fabricCanvas.getWidth();
-            exportCanvas.height = fabricCanvas.getHeight();
-            const tempFabricCanvas = new FabricCanvas(exportCanvas, {
-              width: fabricCanvas.getWidth(),
-              height: fabricCanvas.getHeight(),
+            // Create a temporary fabric canvas for this view with the same dimensions as the main canvas
+            const canvasWidth = fabricCanvas.getWidth();
+            const canvasHeight = fabricCanvas.getHeight();
+            const designCanvas = document.createElement("canvas");
+            designCanvas.width = canvasWidth;
+            designCanvas.height = canvasHeight;
+            const tempFabricCanvas = new FabricCanvas(designCanvas, {
+              width: canvasWidth,
+              height: canvasHeight,
               backgroundColor: "transparent",
             });
 
             // Load view data and filter out placement zones
+            // Same approach as handleAddToCart
             tempFabricCanvas.loadFromJSON(viewJson, () => {
+              console.log(`Loading design for ${view}...`);
+              
               // Filter out placement zones
-              const objects = tempFabricCanvas.getObjects();
-              objects.forEach(obj => {
+              const allObjects = tempFabricCanvas.getObjects();
+              console.log(`Total objects in ${view}:`, allObjects.length);
+              
+              const objectsToRemove: any[] = [];
+              allObjects.forEach(obj => {
                 const objName = (obj as any).name || '';
                 if (objName.startsWith('placement-zone-') || objName.startsWith('zone-')) {
-                  tempFabricCanvas.remove(obj);
+                  objectsToRemove.push(obj);
                 }
               });
               
-              tempFabricCanvas.renderAll();
+              objectsToRemove.forEach(obj => tempFabricCanvas.remove(obj));
               
-              // Draw design on shirt
-              const designDataUrl = tempFabricCanvas.toDataURL({
-                format: "png",
-                multiplier: 800 / fabricCanvas.getWidth(),
+              const remainingObjects = tempFabricCanvas.getObjects();
+              console.log(`Objects after filtering (${view}):`, remainingObjects.length, remainingObjects.map((o: any) => ({ type: o.type, name: o.name })));
+              
+              // Wait for all images to load before rendering
+              const imageObjects = remainingObjects.filter((obj: any) => {
+                return obj.type === 'image' || obj.type === 'fabric-image';
               });
-
-              const designImg = new Image();
-              designImg.onerror = () => {
-                console.error(`Error loading design for ${view}`);
-                tempFabricCanvas.dispose();
-                resolve();
-              };
               
-              designImg.onload = () => {
-                ctx.drawImage(designImg, 0, 0, 800, 800);
-
-                // Download this view
-                const link = document.createElement("a");
-                link.download = `mein-design-${viewLabels[view].toLowerCase().replace(/\s+/g, '-')}.png`;
-                link.href = tempCanvas.toDataURL("image/png");
-                link.click();
+              console.log(`Image objects in ${view}:`, imageObjects.length);
+              
+              const imageLoadPromises = imageObjects.map((obj: any) => {
+                return new Promise<void>((imgResolve) => {
+                  // Try to get the image element
+                  const imgElement = (obj as any)._element;
+                  if (!imgElement) {
+                    console.log(`No image element found for object in ${view}`);
+                    imgResolve();
+                    return;
+                  }
+                  
+                  if (imgElement.complete && imgElement.naturalWidth > 0) {
+                    console.log(`Image already loaded for ${view}`);
+                    imgResolve();
+                  } else {
+                    imgElement.onload = () => {
+                      console.log(`Image loaded for ${view}`);
+                      imgResolve();
+                    };
+                    imgElement.onerror = () => {
+                      console.error(`Image failed to load for ${view}`);
+                      imgResolve(); // Continue even if image fails
+                    };
+                    // Timeout after 2 seconds
+                    setTimeout(() => {
+                      console.log(`Image load timeout for ${view}`);
+                      imgResolve();
+                    }, 2000);
+                  }
+                });
+              });
+              
+              // Wait for all images to load, then render
+              Promise.all(imageLoadPromises).then(() => {
+                console.log(`All images loaded for ${view}, rendering...`);
+                // Render all objects after images are loaded
+                tempFabricCanvas.renderAll();
                 
-                exportedCount++;
-                tempFabricCanvas.dispose();
-                resolve();
-              };
-              designImg.src = designDataUrl;
+                // Small delay to ensure rendering is complete
+                setTimeout(() => {
+                  // Export design at the correct scale to match the 800x800 output
+                  // Same multiplier as handleAddToCart: 800 / canvasWidth
+                  const designDataUrl = tempFabricCanvas.toDataURL({
+                    format: "png",
+                    multiplier: 800 / canvasWidth,
+                  });
+
+                  console.log(`Design exported for ${view}, data URL length:`, designDataUrl.length);
+
+                  const designImg = new Image();
+                  designImg.onerror = () => {
+                    console.error(`Error loading design image for ${view}`);
+                    tempFabricCanvas.dispose();
+                    resolve();
+                  };
+                  
+                  designImg.onload = () => {
+                    console.log(`Design image loaded for ${view}, drawing on shirt...`);
+                    // Draw design on top of shirt at the same size (800x800)
+                    // This ensures design elements are positioned correctly on the product
+                    ctx.drawImage(designImg, 0, 0, 800, 800);
+
+                    // Download this view
+                    const link = document.createElement("a");
+                    link.download = `mein-design-${viewLabels[view].toLowerCase().replace(/\s+/g, '-')}.png`;
+                    link.href = tempCanvas.toDataURL("image/png");
+                    link.click();
+                    
+                    console.log(`Downloaded design for ${view}`);
+                    exportedCount++;
+                    tempFabricCanvas.dispose();
+                    resolve();
+                  };
+                  designImg.src = designDataUrl;
+                }, 50);
+              });
             });
           };
           
@@ -1549,19 +1681,22 @@ const TShirtDesigner = () => {
 
   // Add to cart
   const handleAddToCart = () => {
-    if (!importantPointsAccepted) {
-      toast.error("Bitte bestätige, dass du die wichtigen Punkte beachtet hast");
-      return;
-    }
-    
-    const totalQuantity = Object.values(sizeQuantities).reduce(
-      (sum, qty) => sum + qty,
-      0
-    );
-    if (totalQuantity === 0) {
-      toast.error("Bitte wähle mindestens eine Größe mit Menge");
-      return;
-    }
+    try {
+      console.log('handleAddToCart called');
+      
+      const totalQuantity = Object.values(sizeQuantities).reduce(
+        (sum, qty) => sum + qty,
+        0
+      );
+      console.log('Total quantity:', totalQuantity);
+      console.log('sizeQuantities:', sizeQuantities);
+      console.log('hasAnyDesign:', hasAnyDesign);
+      console.log('importantPointsAccepted:', importantPointsAccepted);
+      
+      if (totalQuantity === 0) {
+        toast.error("Bitte wähle mindestens eine Größe mit Menge");
+        return;
+      }
 
     // Save current view before processing
     if (fabricCanvas) {
@@ -1576,9 +1711,18 @@ const TShirtDesigner = () => {
       }
     }
 
-    // Check if any view has design elements
+    // Use the memoized hasAnyDesign value
+    console.log('hasAnyDesign:', hasAnyDesign);
+    
+    // Get all views data for processing
     const allViewsData = Object.values(viewData).filter(v => v !== null);
-    const hasAnyDesign = allViewsData.length > 0;
+    
+    // Only require checkbox acceptance if there are custom designs
+    if (hasAnyDesign && !importantPointsAccepted) {
+      console.log('Blocked: hasAnyDesign && !importantPointsAccepted');
+      toast.error("Bitte bestätige, dass du die wichtigen Punkte beachtet hast");
+      return;
+    }
 
     // Generate preview image and save raw design data
     let previewImage = selectedShirt.image;
@@ -1607,87 +1751,153 @@ const TShirtDesigner = () => {
       });
 
       // Generate images for each customized view
-      const customDesigns: Record<string, string> = {};
-      const views: ViewType[] = ["front", "back", "left", "right"];
-      
-      // Create a combined preview image for thumbnail
-      const tempCanvas = document.createElement("canvas");
-      tempCanvas.width = 800;
-      tempCanvas.height = 800;
-      const ctx = tempCanvas.getContext("2d");
-      if (ctx) {
-        const shirtImg = new Image();
-        shirtImg.crossOrigin = "anonymous";
-        shirtImg.onload = async () => {
-          // Generate individual images for each view
-          for (const view of views) {
-            const viewJson = viewData[view];
-            if (!viewJson) continue; // Skip views without design
+      if (!fabricCanvas) {
+        toast.error("Canvas nicht verfügbar. Bitte lade die Seite neu.");
+        return;
+      }
 
-            try {
-              // Get the shirt image for this view
-              const viewImgs = viewImages[view];
-              const shirtImageUrl = viewImgs && viewImgs.length > 0 
-                ? viewImgs[0] 
-                : selectedShirt.image;
-
-              // Create canvas for this view
-              const viewCanvas = document.createElement("canvas");
-              viewCanvas.width = 800;
-              viewCanvas.height = 800;
-              const viewCtx = viewCanvas.getContext("2d");
-              if (!viewCtx) continue;
-
-              await new Promise<void>((resolve) => {
-                const viewShirtImg = new Image();
-                viewShirtImg.crossOrigin = "anonymous";
-                viewShirtImg.onload = () => {
-                  viewCtx.drawImage(viewShirtImg, 0, 0, 800, 800);
-
-                  // Create fabric canvas for design
-                  const designCanvas = document.createElement("canvas");
-                  designCanvas.width = fabricCanvas.getWidth();
-                  designCanvas.height = fabricCanvas.getHeight();
-                  const tempFabricCanvas = new FabricCanvas(designCanvas, {
-                    width: fabricCanvas.getWidth(),
-                    height: fabricCanvas.getHeight(),
-                    backgroundColor: "transparent",
-                  });
-
-                  tempFabricCanvas.loadFromJSON(viewJson, () => {
-                    // Filter out placement zones
-                    const objects = tempFabricCanvas.getObjects();
-                    objects.forEach(obj => {
-                      const objName = (obj as any).name || '';
-                      if (objName.startsWith('placement-zone-') || objName.startsWith('zone-')) {
-                        tempFabricCanvas.remove(obj);
-                      }
-                    });
-                    
-                    tempFabricCanvas.renderAll();
-                    
-                    const designDataUrl = tempFabricCanvas.toDataURL({
-                      format: "png",
-                      multiplier: 800 / fabricCanvas.getWidth(),
-                    });
-
-                    const designImg = new Image();
-                    designImg.onload = () => {
-                      viewCtx.drawImage(designImg, 0, 0, 800, 800);
-                      customDesigns[view] = viewCanvas.toDataURL("image/png");
-                      tempFabricCanvas.dispose();
-                      resolve();
-                    };
-                    designImg.src = designDataUrl;
-                  });
-                };
-                viewShirtImg.src = shirtImageUrl;
-              });
-            } catch (error) {
-              console.error(`Error generating image for ${view}:`, error);
+      const generateDesignImages = async () => {
+        console.log('generateDesignImages: Starting...');
+        const customDesigns: Record<string, string> = {};
+        const views: ViewType[] = ["front", "back", "left", "right"];
+        
+        // Generate individual images for each view
+        for (const view of views) {
+          const viewJson = viewData[view];
+          console.log(`Checking view ${view}:`, viewJson ? 'has data' : 'no data');
+          if (!viewJson) continue; // Skip views without design
+          
+          // Check if view actually has design elements (not just empty canvas)
+          try {
+            const parsed = JSON.parse(viewJson);
+            const objects = parsed.objects || [];
+            const hasElements = objects.some((obj: any) => {
+              const objName = obj.name || '';
+              return !objName.startsWith('placement-zone-') && !objName.startsWith('zone-');
+            });
+            if (!hasElements) {
+              console.log(`View ${view} has no design elements, skipping`);
+              continue;
             }
+            console.log(`View ${view} has ${objects.length} objects, processing...`);
+          } catch (e) {
+            console.log(`View ${view} parse error, skipping:`, e);
+            continue;
           }
 
+          try {
+            // Get the shirt image for this view
+            const viewImgs = viewImages[view];
+            const shirtImageUrl = viewImgs && viewImgs.length > 0 
+              ? viewImgs[0] 
+              : selectedShirt.image;
+
+            // Create canvas for this view
+            const viewCanvas = document.createElement("canvas");
+            viewCanvas.width = 800;
+            viewCanvas.height = 800;
+            const viewCtx = viewCanvas.getContext("2d");
+            if (!viewCtx) continue;
+
+            await new Promise<void>((resolve) => {
+              const viewShirtImg = new Image();
+              viewShirtImg.crossOrigin = "anonymous";
+              
+              viewShirtImg.onerror = () => {
+                console.error(`Error loading shirt image for ${view}`);
+                // Continue even if image fails - just use empty design
+                resolve();
+              };
+              
+              viewShirtImg.onload = () => {
+                viewCtx.drawImage(viewShirtImg, 0, 0, 800, 800);
+
+                // Create fabric canvas for design
+                const designCanvas = document.createElement("canvas");
+                designCanvas.width = fabricCanvas.getWidth();
+                designCanvas.height = fabricCanvas.getHeight();
+                const tempFabricCanvas = new FabricCanvas(designCanvas, {
+                  width: fabricCanvas.getWidth(),
+                  height: fabricCanvas.getHeight(),
+                  backgroundColor: "transparent",
+                });
+
+                tempFabricCanvas.loadFromJSON(viewJson, () => {
+                  // Filter out placement zones
+                  const objects = tempFabricCanvas.getObjects();
+                  objects.forEach(obj => {
+                    const objName = (obj as any).name || '';
+                    if (objName.startsWith('placement-zone-') || objName.startsWith('zone-')) {
+                      tempFabricCanvas.remove(obj);
+                    }
+                  });
+                  
+                  tempFabricCanvas.renderAll();
+                  
+                  const designDataUrl = tempFabricCanvas.toDataURL({
+                    format: "png",
+                    multiplier: 800 / fabricCanvas.getWidth(),
+                  });
+
+                  const designImg = new Image();
+                  designImg.onerror = () => {
+                    console.error(`Error loading design image for ${view}`);
+                    tempFabricCanvas.dispose();
+                    // Continue even if design image fails
+                    resolve();
+                  };
+                  
+                  designImg.onload = () => {
+                    viewCtx.drawImage(designImg, 0, 0, 800, 800);
+                    customDesigns[view] = viewCanvas.toDataURL("image/png");
+                    tempFabricCanvas.dispose();
+                    resolve();
+                  };
+                  designImg.src = designDataUrl;
+                });
+              };
+              viewShirtImg.src = shirtImageUrl;
+            });
+          } catch (error) {
+            console.error(`Error generating image for ${view}:`, error);
+            // Continue with other views even if one fails
+          }
+        }
+
+        return customDesigns;
+      };
+
+      // Generate images and add to cart
+      console.log('Starting generateDesignImages...');
+      console.log('totalDesignElementCount:', totalDesignElementCount);
+      
+      // If no actual design elements, skip image generation and add directly
+      if (totalDesignElementCount === 0) {
+        console.log('No design elements found, adding items directly (no image generation)');
+        let addedCount = 0;
+        Object.entries(sizeQuantities).forEach(([size, quantity]) => {
+          if (quantity > 0) {
+            console.log(`Adding item (no design): size=${size}, quantity=${quantity}`);
+            addItem({
+              productId: 999,
+              name: "Custom T-Shirt",
+              price: 24.95,
+              image: selectedShirt.image,
+              color: selectedShirt.name,
+              size: size,
+              quantity: quantity,
+            });
+            addedCount += quantity;
+          }
+        });
+        console.log(`Successfully added ${addedCount} items (no design)`);
+        toast.success(`${addedCount} Artikel${addedCount !== 1 ? '' : ''} zum Warenkorb hinzugefügt!`);
+        return;
+      }
+      
+      generateDesignImages()
+        .then((customDesigns) => {
+          console.log('generateDesignImages completed, customDesigns:', Object.keys(customDesigns));
           // Create preview image (use front view or first available)
           previewImage = customDesigns.front || customDesigns.back || customDesigns.left || customDesigns.right || selectedShirt.image;
 
@@ -1695,45 +1905,92 @@ const TShirtDesigner = () => {
           let addedCount = 0;
           Object.entries(sizeQuantities).forEach(([size, quantity]) => {
             if (quantity > 0) {
-          addItem({
-            productId: 999,
-            name: "Custom T-Shirt",
-            price: 24.95,
-            image: selectedShirt.image,
-            color: selectedShirt.name,
+              console.log(`Adding item with design: size=${size}, quantity=${quantity}`);
+              addItem({
+                productId: 999,
+                name: "Custom T-Shirt",
+                price: 24.95,
+                image: selectedShirt.image,
+                color: selectedShirt.name,
                 size: size,
                 quantity: quantity,
-            customDesign: previewImage, // Keep for backward compatibility
-            customDesigns: customDesigns, // New: multiple images per view
-            customDesignRaw: rawDesignData,
-            designElementCount: totalDesignElementCount,
+                customDesign: previewImage, // Keep for backward compatibility
+                customDesigns: customDesigns, // New: multiple images per view
+                customDesignRaw: rawDesignData,
+                designElementCount: totalDesignElementCount,
               });
               addedCount += quantity;
             }
           });
 
+          console.log(`Successfully added ${addedCount} items with designs`);
           toast.success(`${addedCount} Artikel${addedCount !== 1 ? '' : ''} zum Warenkorb hinzugefügt! (${totalDesignElementCount} Design-Element${totalDesignElementCount !== 1 ? 'e' : ''})`);
-        };
-        shirtImg.src = selectedShirt.image;
-      }
-    } else {
+        })
+        .catch((error) => {
+          console.error('Error generating design images:', error);
+          // Even if image generation fails, add items with basic design data
+          let addedCount = 0;
+          Object.entries(sizeQuantities).forEach(([size, quantity]) => {
+            if (quantity > 0) {
+              console.log(`Adding item after error: size=${size}, quantity=${quantity}`);
+              addItem({
+                productId: 999,
+                name: "Custom T-Shirt",
+                price: 24.95,
+                image: selectedShirt.image,
+                color: selectedShirt.name,
+                size: size,
+                quantity: quantity,
+                customDesign: selectedShirt.image, // Fallback to shirt image
+                customDesigns: {}, // Empty designs object
+                customDesignRaw: rawDesignData,
+                designElementCount: totalDesignElementCount,
+              });
+              addedCount += quantity;
+            }
+          });
+          console.log(`Added ${addedCount} items after error`);
+          toast.warning(`${addedCount} Artikel${addedCount !== 1 ? '' : ''} zum Warenkorb hinzugefügt, aber Design-Bilder konnten nicht generiert werden.`);
+        });
+    }
+    
+    if (!hasAnyDesign) {
       // Add items for each size with quantity > 0 (no design)
+      console.log('No design path - adding items directly');
+      console.log('selectedShirt:', selectedShirt);
+      console.log('sizeQuantities:', sizeQuantities);
       let addedCount = 0;
       Object.entries(sizeQuantities).forEach(([size, quantity]) => {
         if (quantity > 0) {
-      addItem({
-        productId: 999,
-        name: "Custom T-Shirt",
-        price: 24.95,
-        image: selectedShirt.image,
-        color: selectedShirt.name,
-            size: size,
-            quantity: quantity,
-      });
-          addedCount += quantity;
+          console.log(`Adding item: size=${size}, quantity=${quantity}`);
+          try {
+            const itemToAdd = {
+              productId: 999,
+              name: "Custom T-Shirt",
+              price: 24.95,
+              image: selectedShirt.image,
+              color: selectedShirt.name,
+              size: size,
+              quantity: quantity,
+            };
+            console.log('Item to add:', itemToAdd);
+            addItem(itemToAdd);
+            addedCount += quantity;
+            console.log(`Successfully added item. Total added: ${addedCount}`);
+          } catch (error) {
+            console.error('Error adding item to cart:', error);
+            toast.error(`Fehler beim Hinzufügen: ${error}`);
+          }
         }
       });
-      toast.success(`${addedCount} Artikel${addedCount !== 1 ? '' : ''} zum Warenkorb hinzugefügt!`);
+      console.log(`Added ${addedCount} items to cart`);
+      if (addedCount > 0) {
+        toast.success(`${addedCount} Artikel${addedCount !== 1 ? '' : ''} zum Warenkorb hinzugefügt!`);
+      }
+    }
+    } catch (error) {
+      console.error('Error in handleAddToCart:', error);
+      toast.error(`Fehler beim Hinzufügen zum Warenkorb: ${error}`);
     }
   };
 
@@ -1766,6 +2023,14 @@ const TShirtDesigner = () => {
               className="relative bg-muted/30 rounded-2xl p-2 sm:p-4 flex items-center justify-center"
               style={{ minHeight: '500px' }}
             >
+              {/* Warning Message - shown inside creator area */}
+              {outOfBoundsWarning && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+                  <Info className="w-4 h-4" />
+                  <span className="text-sm font-medium">{outOfBoundsWarning}</span>
+                </div>
+              )}
+              
               {/* Product Background - CSS background, not canvas element */}
               <div 
                 className="relative w-full max-w-[800px] aspect-square flex-shrink-0"
@@ -2196,37 +2461,51 @@ const TShirtDesigner = () => {
                     {availableColors.length > 0 && (
                       <div className="mb-4">
                     <label className="text-sm text-muted-foreground mb-2 block">Farbe</label>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        onClick={() => {
-                          setSelectedColor("");
-                          setSelectedVariationImageIndex(0);
-                        }}
-                        className={`px-4 py-2 rounded-full border-2 text-sm font-medium transition-all ${
-                          !selectedColor
-                            ? "border-primary bg-primary/10 text-primary"
-                            : "border-border hover:border-primary/50"
-                        }`}
-                      >
-                        Alle
-                      </button>
-                      {availableColors.map((color) => (
+                    <TooltipProvider>
+                      <div className="flex flex-wrap gap-3 items-center">
                         <button
-                          key={color}
                           onClick={() => {
-                            setSelectedColor(color);
+                            setSelectedColor("");
                             setSelectedVariationImageIndex(0);
                           }}
                           className={`px-4 py-2 rounded-full border-2 text-sm font-medium transition-all ${
-                            selectedColor === color
+                            !selectedColor
                               ? "border-primary bg-primary/10 text-primary"
                               : "border-border hover:border-primary/50"
                           }`}
                         >
-                          {color}
+                          Alle
                         </button>
-                      ))}
-                    </div>
+                        {availableColors.map((color) => (
+                          <Tooltip key={color.name}>
+                            <TooltipTrigger asChild>
+                              <button
+                                onClick={() => {
+                                  setSelectedColor(color.name);
+                                  setSelectedVariationImageIndex(0);
+                                }}
+                                className={`w-10 h-10 rounded-full border-2 transition-all flex items-center justify-center ${
+                                  selectedColor === color.name
+                                    ? "border-primary ring-2 ring-primary/20 scale-110"
+                                    : "border-border hover:border-primary/50 hover:scale-105"
+                                }`}
+                                style={{
+                                  backgroundColor: color.hex || "#ccc",
+                                }}
+                                aria-label={color.name}
+                              >
+                                {selectedColor === color.name && (
+                                  <Check className="w-5 h-5 text-white drop-shadow-md" />
+                                )}
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>{color.name}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        ))}
+                      </div>
+                    </TooltipProvider>
                   </div>
                 )}
                 
@@ -2401,41 +2680,55 @@ const TShirtDesigner = () => {
                       </p>
                     )}
                     <div className="space-y-3">
-                      <div className="flex items-start gap-2 p-3 rounded-lg border bg-background/50">
-                        <Checkbox
-                          id="important-points"
-                          checked={importantPointsAccepted}
-                          onCheckedChange={(checked) => setImportantPointsAccepted(checked === true)}
-                          className="mt-0.5"
-                        />
-                        <label
-                          htmlFor="important-points"
-                          className="text-sm cursor-pointer flex-1 flex items-center gap-2"
-                        >
-                          <span>Ich habe die folgenden, wichtigen Punkte beachtet</span>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              setShowImportantPointsDialog(true);
-                            }}
-                            className="text-primary hover:text-primary/80 transition-colors"
-                            title="Informationen anzeigen"
+                      {hasAnyDesign && (
+                        <div className="flex items-start gap-2 p-3 rounded-lg border bg-background/50">
+                          <Checkbox
+                            id="important-points"
+                            checked={importantPointsAccepted}
+                            onCheckedChange={(checked) => setImportantPointsAccepted(checked === true)}
+                            className="mt-0.5"
+                          />
+                          <label
+                            htmlFor="important-points"
+                            className="text-sm cursor-pointer flex-1 flex items-center gap-2"
                           >
-                            <Info className="w-4 h-4" />
-                          </button>
-                        </label>
-                      </div>
+                            <span>Ich habe die folgenden, wichtigen Punkte beachtet</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                setShowImportantPointsDialog(true);
+                              }}
+                              className="text-primary hover:text-primary/80 transition-colors"
+                              title="Informationen anzeigen"
+                            >
+                              <Info className="w-4 h-4" />
+                            </button>
+                          </label>
+                        </div>
+                      )}
                       <Button 
                         size="default" 
                         className="w-full" 
-                        onClick={handleAddToCart}
-                        disabled={!importantPointsAccepted}
+                        onClick={(e) => {
+                          console.log('Button clicked!', {
+                            hasAnyDesign,
+                            importantPointsAccepted,
+                            disabled: hasAnyDesign && !importantPointsAccepted,
+                            totalQuantity: Object.values(sizeQuantities).reduce((sum, qty) => sum + qty, 0),
+                            sizeQuantities
+                          });
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleAddToCart();
+                        }}
+                        type="button"
+                        disabled={hasAnyDesign && !importantPointsAccepted}
                       >
                         <ShoppingBag className="w-4 h-4 mr-2" />
                         In den Warenkorb
                       </Button>
-                      {Object.values(viewData).some(v => v !== null) && (
+                      {hasAnyDesign && (
                         <Button
                           variant="outline"
                           size="default"

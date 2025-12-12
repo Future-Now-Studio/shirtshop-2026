@@ -38,11 +38,18 @@ export const useCartStore = create<CartStore>()(
       isOpen: false,
 
       addItem: (item) => {
+        console.log('cartStore.addItem called with:', item);
         const id = `${item.productId}-${item.color}-${item.size}-${Date.now()}`;
-        set((state) => ({
-          items: [...state.items, { ...item, id }],
-          isOpen: true,
-        }));
+        console.log('Generated ID:', id);
+        set((state) => {
+          const newItems = [...state.items, { ...item, id }];
+          console.log('New cart items:', newItems);
+          return {
+            items: newItems,
+            isOpen: true,
+          };
+        });
+        console.log('Cart state updated');
       },
 
       removeItem: (id) => {
