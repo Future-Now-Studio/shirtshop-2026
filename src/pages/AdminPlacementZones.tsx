@@ -89,10 +89,29 @@ const AdminPlacementZones = () => {
       const sviMeta = wcProduct.meta_data?.find((meta: any) => meta.key === 'woosvi_slug');
       
       if (sviMeta && sviMeta.value && Array.isArray(sviMeta.value)) {
-        // Find the entry that matches the selected color
+        // Find the entry that matches the selected color (case-insensitive, handles multi-word)
+        const normalizeString = (str: string): string => {
+          return str
+            .toLowerCase()
+            .trim()
+            .replace(/[()]/g, '') // Remove parentheses
+            .replace(/[-\s]+/g, ' ') // Normalize dashes and multiple spaces to single space
+            .trim();
+        };
+        
         const matchingSviEntry = sviMeta.value.find((entry: any) => {
           if (!entry.slugs || !Array.isArray(entry.slugs)) return false;
-          return entry.slugs.some((slug: string) => String(slug).trim() === String(selectedColor).trim());
+          return entry.slugs.some((slug: string) => {
+            const slugStr = normalizeString(String(slug));
+            const colorStr = normalizeString(String(selectedColor));
+            // Try exact match first
+            let matches = slugStr === colorStr;
+            // If no exact match, try partial match
+            if (!matches) {
+              matches = slugStr.includes(colorStr) || colorStr.includes(slugStr);
+            }
+            return matches;
+          });
         });
         
         if (matchingSviEntry && matchingSviEntry.imgs && Array.isArray(matchingSviEntry.imgs)) {

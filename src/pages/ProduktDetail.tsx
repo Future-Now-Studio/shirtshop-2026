@@ -114,12 +114,29 @@ const ProduktDetail = () => {
           console.log('  Checking SVI entry with slugs:', entry.slugs);
           console.log('  Comparing against selected color value:', selectedColor);
           
-          // Match by comparing the selected color value with slugs in SVI data
+          // Match by comparing the selected color value with slugs in SVI data (case-insensitive)
+          // Handle multi-word colors by normalizing both strings (remove special chars, normalize spaces)
+          const normalizeString = (str: string): string => {
+            return str
+              .toLowerCase()
+              .trim()
+              .replace(/[()]/g, '') // Remove parentheses
+              .replace(/[-\s]+/g, ' ') // Normalize dashes and multiple spaces to single space
+              .trim();
+          };
+          
           const match = entry.slugs.some((slug: string) => {
-            const slugStr = String(slug).trim();
-            const colorStr = String(selectedColor).trim();
-            const matches = slugStr === colorStr;
-            console.log(`    Comparing SVI slug "${slugStr}" with color "${colorStr}": ${matches}`);
+            const slugStr = normalizeString(String(slug));
+            const colorStr = normalizeString(String(selectedColor));
+            // Try exact match first
+            let matches = slugStr === colorStr;
+            
+            // If no exact match, try partial match (slug contains color or color contains slug)
+            if (!matches) {
+              matches = slugStr.includes(colorStr) || colorStr.includes(slugStr);
+            }
+            
+            console.log(`    Comparing SVI slug "${String(slug).trim()}" (normalized: "${slugStr}") with color "${String(selectedColor).trim()}" (normalized: "${colorStr}"): ${matches}`);
             return matches;
           });
           
@@ -133,20 +150,34 @@ const ProduktDetail = () => {
           console.log('✓ Matching SVI gallery entry found with', matchingSviEntry.imgs.length, 'image IDs');
           console.log('  SVI Image IDs:', matchingSviEntry.imgs);
           
-          // Get image IDs from SVI data
-          const imageIds = matchingSviEntry.imgs.map((id: any) => String(id));
+          // Get image IDs from SVI data (convert to strings for comparison)
+          const imageIds = matchingSviEntry.imgs.map((id: any) => String(id).trim());
           
           console.log('  Looking for images with these IDs in wcProduct.images...');
-          console.log('  Available image IDs in wcProduct:', wcProduct.images?.map(img => ({ id: img.id, name: img.name })));
+          console.log('  SVI Image IDs (as strings):', imageIds);
+          console.log('  Available image IDs in wcProduct:', wcProduct.images?.map(img => ({ id: img.id, idAsString: String(img.id), name: img.name })));
           
           // Find images in product.images array that match these IDs
           const matchingImages = wcProduct.images?.filter(img => {
-            const matches = imageIds.includes(String(img.id));
+            const imgIdStr = String(img.id).trim();
+            const matches = imageIds.includes(imgIdStr);
             if (matches) {
-              console.log(`    ✓ Found SVI gallery image: ID ${img.id}, name: ${img.name}, src: ${img.src}`);
+              console.log(`    ✓ Found SVI gallery image: ID ${img.id} (${imgIdStr}), name: ${img.name}, src: ${img.src}`);
+            } else {
+              console.log(`    ✗ Image ID ${img.id} (${imgIdStr}) not in SVI IDs list`);
             }
             return matches;
           }) || [];
+          
+          console.log('  Image ID matching details:');
+          imageIds.forEach(id => {
+            const found = wcProduct.images?.find(img => String(img.id).trim() === id);
+            if (found) {
+              console.log(`    ✓ ID ${id}: Found image "${found.name}"`);
+            } else {
+              console.log(`    ✗ ID ${id}: NOT FOUND in wcProduct.images`);
+            }
+          });
           
           console.log('✓ Found', matchingImages.length, 'SVI gallery images');
           
@@ -214,6 +245,18 @@ const ProduktDetail = () => {
       // Collect images from all matching variations
       matchingVariations.forEach(variation => {
         console.log('Processing variation', variation.id);
+        
+        // First check for svi_gallery (from PHP script)
+        if ((variation as any).svi_gallery && Array.isArray((variation as any).svi_gallery) && (variation as any).svi_gallery.length > 0) {
+          console.log('  Variation has', (variation as any).svi_gallery.length, 'SVI gallery images');
+          (variation as any).svi_gallery.forEach((img: any) => {
+            if (img.src && !images.includes(img.src)) {
+              console.log('  Adding SVI gallery image:', img.src);
+              images.push(img.src);
+            }
+          });
+        }
+        
         // Check if variation has a gallery (images array from Smart Variations Images plugin)
         if (variation.images && variation.images.length > 0) {
           console.log('  Variation has', variation.images.length, 'gallery images');

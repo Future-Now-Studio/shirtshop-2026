@@ -195,6 +195,10 @@ export interface WooCommerceVariation {
     name: string;
     alt: string;
   }>;
+  svi_gallery?: Array<{
+    id: number;
+    src: string;
+  }>;
   attributes: Array<{
     id: number;
     name: string;
