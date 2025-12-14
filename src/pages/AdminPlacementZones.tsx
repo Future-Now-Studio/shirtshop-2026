@@ -14,9 +14,17 @@ import {
 import { useProducts, useProduct, useProductVariations, useWooCommerceProduct } from "@/hooks/useProducts";
 import { PlacementZone } from "@/data/products";
 import { toast } from "sonner";
-import { Save, Trash2, ArrowLeft, Shirt } from "lucide-react";
+import { Save, Trash2, ArrowLeft, Shirt, Search, Lock } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { WOOCOMMERCE_CONFIG } from "@/lib/woocommerce";
 import { useQueryClient } from "@tanstack/react-query";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 type ViewType = "front" | "back" | "left" | "right";
 
@@ -32,6 +40,57 @@ function getWooCommerceAuthHeader(): string {
   const credentials = `${WOOCOMMERCE_CONFIG.consumerKey}:${WOOCOMMERCE_CONFIG.consumerSecret}`;
   return `Basic ${btoa(credentials)}`;
 }
+
+// Password for Placement Zones access
+const PLACEMENT_ZONES_PASSWORD = "$PS2025$-PZ";
+const AUTH_STORAGE_KEY = "placement_zones_auth";
+
+// Simple hash function for password verification (not cryptographically secure, but sufficient for this use case)
+const createHash = (input: string): string => {
+  let hash = 0;
+  for (let i = 0; i < input.length; i++) {
+    const char = input.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  return Math.abs(hash).toString(36);
+};
+
+// Check if user is authenticated
+const isAuthenticated = (): boolean => {
+  if (typeof window === "undefined") return false;
+  const authData = sessionStorage.getItem(AUTH_STORAGE_KEY);
+  if (!authData) return false;
+  
+  try {
+    const { timestamp, hash, sessionId } = JSON.parse(authData);
+    
+    // Session expires after 8 hours
+    const eightHours = 8 * 60 * 60 * 1000;
+    if (Date.now() - timestamp > eightHours) {
+      sessionStorage.removeItem(AUTH_STORAGE_KEY);
+      return false;
+    }
+    
+    // Verify hash (password + timestamp + sessionId)
+    const expectedHash = createHash(PLACEMENT_ZONES_PASSWORD + timestamp + sessionId);
+    return hash === expectedHash;
+  } catch {
+    return false;
+  }
+};
+
+// Authenticate user
+const authenticate = (password: string): boolean => {
+  if (password === PLACEMENT_ZONES_PASSWORD) {
+    const timestamp = Date.now();
+    const sessionId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    const hash = createHash(PLACEMENT_ZONES_PASSWORD + timestamp + sessionId);
+    sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ timestamp, hash, sessionId }));
+    return true;
+  }
+  return false;
+};
 
 const AdminPlacementZones = () => {
   const { productId } = useParams<{ productId?: string }>();
@@ -63,6 +122,42 @@ const AdminPlacementZones = () => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPoint, setStartPoint] = useState<{ x: number; y: number } | null>(null);
   const [currentRect, setCurrentRect] = useState<Rect | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [isAuthenticatedState, setIsAuthenticatedState] = useState<boolean>(false);
+  const [password, setPassword] = useState<string>("");
+  const [loginError, setLoginError] = useState<string>("");
+  const [selectedZoneIndex, setSelectedZoneIndex] = useState<number | null>(null);
+  const [initTrigger, setInitTrigger] = useState(0);
+
+  // Check authentication on mount
+  useEffect(() => {
+    setIsAuthenticatedState(isAuthenticated());
+  }, []);
+
+  // Handle login
+  const handleLogin = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setLoginError("");
+    
+    if (authenticate(password)) {
+      setIsAuthenticatedState(true);
+      setPassword("");
+      toast.success("Erfolgreich angemeldet");
+    } else {
+      setLoginError("Falsches Passwort. Bitte versuche es erneut.");
+      setPassword("");
+    }
+  };
+
+  // Filter products based on search query
+  const filteredProducts = useMemo(() => {
+    if (!searchQuery.trim()) return products;
+    const query = searchQuery.toLowerCase().trim();
+    return products.filter(product => 
+      product.name.toLowerCase().includes(query) ||
+      product.id.toString().includes(query)
+    );
+  }, [products, searchQuery]);
 
   // Get available colors from product attributes
   const availableColors = useMemo(() => {
@@ -151,14 +246,19 @@ const AdminPlacementZones = () => {
 
   // Load zones from product
   useEffect(() => {
+    console.log("Loading zones from product:", product?.placementZones);
     if (product?.placementZones) {
-      setZones({
+      const loadedZones = {
         front: product.placementZones.front || [],
         back: product.placementZones.back || [],
         left: product.placementZones.left || [],
         right: product.placementZones.right || [],
-      });
+      };
+      console.log("Loaded zones:", loadedZones);
+      console.log("Back zones count:", loadedZones.back.length);
+      setZones(loadedZones);
     } else {
+      console.log("No placement zones found in product");
       setZones({
         front: [],
         back: [],
@@ -168,67 +268,121 @@ const AdminPlacementZones = () => {
     }
   }, [product]);
 
-  // Initialize canvas
+  // Initialize canvas once when refs are available
   useEffect(() => {
-    if (!canvasRef.current || !containerRef.current) return;
+    if (fabricCanvas) {
+      console.log('[CANVAS INIT] Canvas already exists');
+      return;
+    }
     
-    const currentImage = viewImages[currentView] || product?.image;
-    if (!currentImage) return;
+    if (!canvasRef.current || !containerRef.current) {
+      console.log('[CANVAS INIT] Refs not available yet', { canvasRef: !!canvasRef.current, containerRef: !!containerRef.current });
+      // Retry after a short delay if refs are not available
+      const timeout = setTimeout(() => {
+        if (!fabricCanvas && canvasRef.current && containerRef.current) {
+          console.log('[CANVAS INIT] Refs available, triggering re-check');
+          setInitTrigger(prev => prev + 1);
+        }
+      }, 200);
+      return () => clearTimeout(timeout);
+    }
 
+    console.log('[CANVAS INIT] Initializing canvas');
     const containerWidth = containerRef.current.offsetWidth;
-    const canvasSize = Math.min(containerWidth, 600);
+    // Use same canvas size as TShirtDesigner for consistency
+    const canvasSize = Math.min(containerWidth, 800);
 
     const canvas = new FabricCanvas(canvasRef.current, {
       width: canvasSize,
       height: canvasSize,
       backgroundColor: "transparent",
       selection: true,
+      preserveObjectStacking: true,
+    });
+    
+    console.log('[CANVAS INIT] Canvas created', { width: canvasSize, height: canvasSize });
+    
+    // Enable selection tracking for zones
+    canvas.on('selection:created', (e) => {
+      const activeObject = e.selected?.[0] as any;
+      if (activeObject && activeObject.name?.startsWith('zone-')) {
+        const index = activeObject.data?.index;
+        if (index !== undefined) {
+          setSelectedZoneIndex(index);
+        }
+      }
+    });
+    
+    canvas.on('selection:updated', (e) => {
+      const activeObject = e.selected?.[0] as any;
+      if (activeObject && activeObject.name?.startsWith('zone-')) {
+        const index = activeObject.data?.index;
+        if (index !== undefined) {
+          setSelectedZoneIndex(index);
+        }
+      }
+    });
+    
+    canvas.on('selection:cleared', () => {
+      setSelectedZoneIndex(null);
     });
 
-    // Load current view image as background
-    const img = new window.Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      // Scale image to fit canvas
-      const scale = Math.min(canvasSize / img.width, canvasSize / img.height);
-      
-      canvas.setBackgroundImage(
-        currentImage,
-        canvas.renderAll.bind(canvas),
-        {
-          scaleX: scale,
-          scaleY: scale,
-          originX: "left",
-          originY: "top",
-        }
-      );
-      canvas.renderAll();
-    };
-    img.src = currentImage;
+    // Note: Background image is handled via CSS (same as TShirtDesigner)
+    // This ensures consistent scaling between configurator and creator
+    // The canvas is transparent and overlays the CSS background image
 
     setFabricCanvas(canvas);
+    console.log('[CANVAS INIT] Canvas set in state');
 
     return () => {
+      console.log('[CANVAS INIT] Cleaning up canvas');
       canvas.dispose();
     };
-  }, [viewImages, currentView, product?.image, product?.id]);
+  }, [fabricCanvas, initTrigger]); // Include initTrigger to retry when refs become available
+
+  // Reset selection when view changes
+  useEffect(() => {
+    setSelectedZoneIndex(null);
+  }, [currentView]);
 
   // Render zones on canvas
   useEffect(() => {
-    if (!fabricCanvas) return;
+    if (!fabricCanvas) {
+      console.log("[RENDER ZONES] No fabricCanvas available");
+      return;
+    }
 
-    // Clear existing zone rectangles
+    // Clear existing zone rectangles and labels
     const objectsToRemove = fabricCanvas.getObjects().filter(
-      (obj: any) => obj.name?.startsWith("zone-")
+      (obj: any) => obj.name?.startsWith("zone-") || obj.name?.startsWith("zone-label-")
     );
     objectsToRemove.forEach((obj) => fabricCanvas.remove(obj));
+    
+    // Clear selection
+    fabricCanvas.discardActiveObject();
+    setSelectedZoneIndex(null);
+    fabricCanvas.renderAll();
 
     // Add zones for current view
-    const currentZones = zones[currentView];
+    const currentZones = zones[currentView] || [];
     const canvasWidth = fabricCanvas.getWidth();
     const canvasHeight = fabricCanvas.getHeight();
+    
+    // Debug: Log zones for current view
+    console.log(`[RENDER ZONES] View: ${currentView}`, currentZones);
+    console.log(`[RENDER ZONES] Number of zones: ${currentZones.length}`);
+    console.log(`[RENDER ZONES] All zones state:`, zones);
+    console.log(`[RENDER ZONES] Back zones specifically:`, zones.back);
+    console.log(`[RENDER ZONES] Zones keys:`, Object.keys(zones));
+
+    if (currentZones.length === 0) {
+      console.log(`[RENDER ZONES] No zones to render for view: ${currentView}`);
+      fabricCanvas.renderAll();
+      return;
+    }
 
     currentZones.forEach((zone, index) => {
+      console.log(`Adding zone ${index} for ${currentView}:`, zone);
       const rect = new Rect({
         left: zone.x * canvasWidth,
         top: zone.y * canvasHeight,
@@ -240,6 +394,9 @@ const AdminPlacementZones = () => {
         strokeDashArray: [5, 5],
         selectable: true,
         evented: true,
+        hasControls: true,
+        hasBorders: true,
+        lockRotation: true,
         name: `zone-${currentView}-${index}`,
         data: { view: currentView, index },
       });
@@ -260,7 +417,7 @@ const AdminPlacementZones = () => {
       fabricCanvas.add(rect);
       fabricCanvas.add(label);
 
-      // Make rect editable
+      // Make rect editable - update on move/resize
       rect.on("modified", () => {
         const updatedZones = [...zones[currentView]];
         const canvasWidth = fabricCanvas.getWidth();
@@ -270,13 +427,50 @@ const AdminPlacementZones = () => {
           ...updatedZones[index],
           x: rect.left! / canvasWidth,
           y: rect.top! / canvasHeight,
-          width: (rect.width! * rect.scaleX!) / canvasWidth,
-          height: (rect.height! * rect.scaleY!) / canvasHeight,
+          width: (rect.width! * (rect.scaleX || 1)) / canvasWidth,
+          height: (rect.height! * (rect.scaleY || 1)) / canvasHeight,
         };
+        
+        // Reset scale after updating
+        rect.set({ scaleX: 1, scaleY: 1 });
+        rect.setCoords();
+        
         setZones((prev) => ({
           ...prev,
           [currentView]: updatedZones,
         }));
+        
+        // Update label position
+        const label = fabricCanvas.getObjects().find((obj: any) => obj.name === `zone-label-${currentView}-${index}`) as FabricText;
+        if (label) {
+          label.set({
+            left: updatedZones[index].x * canvasWidth + 5,
+            top: updatedZones[index].y * canvasHeight + 5,
+          });
+        }
+        
+        fabricCanvas.renderAll();
+      });
+      
+      // Update on moving (without scaling)
+      rect.on("moving", () => {
+        const label = fabricCanvas.getObjects().find((obj: any) => obj.name === `zone-label-${currentView}-${index}`) as FabricText;
+        if (label) {
+          label.set({
+            left: rect.left! + 5,
+            top: rect.top! + 5,
+          });
+          fabricCanvas.renderAll();
+        }
+      });
+      
+      // Update selection state
+      rect.on("selected", () => {
+        setSelectedZoneIndex(index);
+      });
+      
+      rect.on("deselected", () => {
+        setSelectedZoneIndex(null);
       });
     });
 
@@ -286,8 +480,25 @@ const AdminPlacementZones = () => {
   // Handle canvas click to start drawing
   const handleCanvasMouseDown = useCallback(
     (e: any) => {
-      if (!fabricCanvas || isDrawing) return;
+      console.log('[ZONE DRAW] Mouse down', { fabricCanvas: !!fabricCanvas, isDrawing, target: e.target?.name });
+      
+      if (!fabricCanvas || isDrawing) {
+        console.log('[ZONE DRAW] Early return: no canvas or already drawing');
+        return;
+      }
+      
+      // Don't start drawing if clicking on an existing zone or label
+      const target = e.target;
+      if (target && (target.name?.startsWith('zone-') || target.name?.startsWith('zone-label-'))) {
+        console.log('[ZONE DRAW] Clicked on existing zone/label, not starting draw');
+        return;
+      }
+      
+      // Clear any active selection before starting to draw
+      fabricCanvas.discardActiveObject();
+      
       const pointer = fabricCanvas.getPointer(e.e);
+      console.log('[ZONE DRAW] Starting draw at', pointer);
       setStartPoint(pointer);
       setIsDrawing(true);
 
@@ -301,10 +512,14 @@ const AdminPlacementZones = () => {
         strokeWidth: 2,
         strokeDashArray: [5, 5],
         selectable: false,
+        evented: false, // Don't interfere with mouse events
       });
 
       fabricCanvas.add(rect);
+      fabricCanvas.bringObjectToFront(rect);
       setCurrentRect(rect);
+      fabricCanvas.renderAll();
+      console.log('[ZONE DRAW] Rect added, isDrawing set to true');
     },
     [fabricCanvas, isDrawing]
   );
@@ -338,9 +553,8 @@ const AdminPlacementZones = () => {
     setIsDrawing(false);
     setStartPoint(null);
 
-    // Prompt for zone name
-    const name = prompt("Zone Name (e.g., 'Brustbereich'):");
-    if (!name) {
+    // Check if rectangle has minimum size
+    if (currentRect.width! < 10 || currentRect.height! < 10) {
       fabricCanvas.remove(currentRect);
       fabricCanvas.renderAll();
       setCurrentRect(null);
@@ -351,21 +565,30 @@ const AdminPlacementZones = () => {
     const canvasWidth = fabricCanvas.getWidth();
     const canvasHeight = fabricCanvas.getHeight();
 
+    // Generate default name
+    const zoneNumber = zones[currentView].length + 1;
+    const defaultName = `Zone ${zoneNumber}`;
+
     const newZone: PlacementZone = {
       id: `zone-${Date.now()}`,
-      name: name.trim(),
+      name: defaultName,
       x: currentRect.left! / canvasWidth,
       y: currentRect.top! / canvasHeight,
       width: currentRect.width! / canvasWidth,
       height: currentRect.height! / canvasHeight,
     };
 
+    const zoneIndex = zones[currentView].length;
+
     // Make it selectable and editable
     currentRect.set({
       selectable: true,
       evented: true,
-      name: `zone-${currentView}-${zones[currentView].length}`,
-      data: { view: currentView, index: zones[currentView].length },
+      hasControls: true,
+      hasBorders: true,
+      lockRotation: true,
+      name: `zone-${currentView}-${zoneIndex}`,
+      data: { view: currentView, index: zoneIndex },
     });
 
     // Add label
@@ -378,10 +601,57 @@ const AdminPlacementZones = () => {
       fontWeight: "bold",
       selectable: false,
       evented: false,
-      name: `zone-label-${currentView}-${zones[currentView].length}`,
+      name: `zone-label-${currentView}-${zoneIndex}`,
     });
 
     fabricCanvas.add(label);
+
+    // Add event listeners for this new zone
+    currentRect.on("modified", () => {
+      const updatedZones = [...zones[currentView], newZone];
+      const canvasWidth = fabricCanvas.getWidth();
+      const canvasHeight = fabricCanvas.getHeight();
+      
+      updatedZones[zoneIndex] = {
+        ...updatedZones[zoneIndex],
+        x: currentRect.left! / canvasWidth,
+        y: currentRect.top! / canvasHeight,
+        width: (currentRect.width! * (currentRect.scaleX || 1)) / canvasWidth,
+        height: (currentRect.height! * (currentRect.scaleY || 1)) / canvasHeight,
+      };
+      
+      currentRect.set({ scaleX: 1, scaleY: 1 });
+      currentRect.setCoords();
+      
+      setZones((prev) => ({
+        ...prev,
+        [currentView]: updatedZones,
+      }));
+      
+      // Update label position
+      label.set({
+        left: updatedZones[zoneIndex].x * canvasWidth + 5,
+        top: updatedZones[zoneIndex].y * canvasHeight + 5,
+      });
+      
+      fabricCanvas.renderAll();
+    });
+    
+    currentRect.on("moving", () => {
+      label.set({
+        left: currentRect.left! + 5,
+        top: currentRect.top! + 5,
+      });
+      fabricCanvas.renderAll();
+    });
+    
+    currentRect.on("selected", () => {
+      setSelectedZoneIndex(zoneIndex);
+    });
+    
+    currentRect.on("deselected", () => {
+      setSelectedZoneIndex(null);
+    });
 
     // Update zones state
     setZones((prev) => ({
@@ -390,18 +660,23 @@ const AdminPlacementZones = () => {
     }));
 
     setCurrentRect(null);
-    toast.success("Zone hinzugefügt!");
+    toast.success("Zone hinzugefügt! Du kannst sie jetzt verschieben und in der Größe anpassen.");
   }, [fabricCanvas, isDrawing, currentRect, currentView, zones]);
 
   // Setup canvas event listeners
   useEffect(() => {
-    if (!fabricCanvas) return;
+    if (!fabricCanvas) {
+      console.log('[ZONE DRAW] No fabricCanvas, not setting up listeners');
+      return;
+    }
 
+    console.log('[ZONE DRAW] Setting up event listeners');
     fabricCanvas.on("mouse:down", handleCanvasMouseDown);
     fabricCanvas.on("mouse:move", handleCanvasMouseMove);
     fabricCanvas.on("mouse:up", handleCanvasMouseUp);
 
     return () => {
+      console.log('[ZONE DRAW] Cleaning up event listeners');
       fabricCanvas.off("mouse:down", handleCanvasMouseDown);
       fabricCanvas.off("mouse:move", handleCanvasMouseMove);
       fabricCanvas.off("mouse:up", handleCanvasMouseUp);
@@ -530,6 +805,58 @@ const AdminPlacementZones = () => {
     navigate(`/admin/placement-zones/${productId}`);
   };
 
+  // Show login dialog if not authenticated
+  if (!isAuthenticatedState) {
+    return (
+      <Layout>
+        <div className="container-wide py-8">
+          <Dialog open={true} onOpenChange={() => {}}>
+            <DialogContent className="sm:max-w-md" onEscapeKeyDown={(e) => e.preventDefault()} onPointerDownOutside={(e) => e.preventDefault()}>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Lock className="w-5 h-5" />
+                  Placement Zones Zugriff
+                </DialogTitle>
+                <DialogDescription>
+                  Bitte geben Sie das Passwort ein, um auf die Placement Zones Konfiguration zuzugreifen.
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleLogin} className="space-y-4 mt-4">
+                <div>
+                  <Label htmlFor="password">Passwort</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      setLoginError("");
+                    }}
+                    placeholder="Passwort eingeben..."
+                    className="mt-2"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handleLogin();
+                      }
+                    }}
+                  />
+                  {loginError && (
+                    <p className="text-sm text-destructive mt-2">{loginError}</p>
+                  )}
+                </div>
+                <Button type="submit" className="w-full" size="lg">
+                  <Lock className="w-4 h-4 mr-2" />
+                  Anmelden
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
       <div className="container-wide py-8">
@@ -550,26 +877,76 @@ const AdminPlacementZones = () => {
           </p>
         </div>
 
-        {/* Product Selection */}
+        {/* Product Selection with Search */}
         <div className="glass-card p-6 mb-6">
-          <Label htmlFor="product-select" className="mb-2 block">
+          <Label htmlFor="product-search" className="mb-2 block">
             Produkt auswählen
           </Label>
-          <Select
-            value={selectedProductId}
-            onValueChange={handleProductSelect}
-          >
-            <SelectTrigger id="product-select" className="w-full">
-              <SelectValue placeholder="Produkt wählen..." />
-            </SelectTrigger>
-            <SelectContent>
-              {products.map((product) => (
-                <SelectItem key={product.id} value={product.id.toString()}>
-                  {product.name} (ID: {product.id})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="relative mb-4">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+            <Input
+              id="product-search"
+              type="text"
+              placeholder="Produkt suchen (Name oder ID)..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          <div className="max-h-[400px] overflow-y-auto border rounded-lg">
+            {filteredProducts.length === 0 ? (
+              <div className="p-8 text-center text-muted-foreground">
+                <p>Keine Produkte gefunden</p>
+                {searchQuery && (
+                  <p className="text-sm mt-2">Versuche einen anderen Suchbegriff</p>
+                )}
+              </div>
+            ) : (
+              <div className="divide-y">
+                {filteredProducts.map((product) => (
+                  <button
+                    key={product.id}
+                    onClick={() => handleProductSelect(product.id.toString())}
+                    className={`w-full p-4 flex items-center gap-4 hover:bg-muted/50 transition-colors text-left ${
+                      selectedProductId === product.id.toString() 
+                        ? 'bg-primary/10 border-l-4 border-l-primary' 
+                        : ''
+                    }`}
+                  >
+                    <div className="flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden bg-muted">
+                      {product.image ? (
+                        <img
+                          src={product.image}
+                          alt={product.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <Shirt className="w-6 h-6 text-muted-foreground" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold truncate">{product.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        ID: {product.id}
+                      </p>
+                    </div>
+                    {selectedProductId === product.id.toString() && (
+                      <div className="flex-shrink-0">
+                        <div className="w-2 h-2 rounded-full bg-primary" />
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {searchQuery && (
+            <p className="text-sm text-muted-foreground mt-2">
+              {filteredProducts.length} Produkt{filteredProducts.length !== 1 ? 'e' : ''} gefunden
+            </p>
+          )}
         </div>
 
         {product && (
@@ -638,12 +1015,16 @@ const AdminPlacementZones = () => {
                     ref={containerRef}
                     className="relative bg-muted/30 rounded-3xl p-4 flex items-center justify-center"
                   >
-                    <div className="relative w-full max-w-[600px] aspect-square">
-                      <img
-                        src={viewImages[currentView] || product.image}
-                        alt={`${product.name} - ${viewLabels[currentView]}`}
-                        className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-                      />
+                    <div 
+                      className="relative w-full max-w-[800px] aspect-square"
+                      style={{
+                        backgroundImage: `url(${viewImages[currentView] || product.image})`,
+                        backgroundSize: 'contain',
+                        backgroundPosition: 'center',
+                        backgroundRepeat: 'no-repeat',
+                        backgroundColor: 'transparent',
+                      }}
+                    >
                       <canvas
                         ref={canvasRef}
                         className="absolute inset-0 cursor-crosshair"
@@ -664,6 +1045,47 @@ const AdminPlacementZones = () => {
                   <h3 className="font-bold mb-4">
                     Zonen für {viewLabels[currentView]}
                   </h3>
+                  
+                  {/* Zone Name Editor - shown when a zone is selected */}
+                  {selectedZoneIndex !== null && zones[currentView][selectedZoneIndex] && (
+                    <div className="mb-4 p-3 bg-primary/10 rounded-lg border border-primary/20">
+                      <Label htmlFor="zone-name" className="text-sm font-semibold mb-2 block">
+                        Zone-Name bearbeiten
+                      </Label>
+                      <Input
+                        id="zone-name"
+                        value={zones[currentView][selectedZoneIndex].name}
+                        onChange={(e) => {
+                          const updatedZones = [...zones[currentView]];
+                          updatedZones[selectedZoneIndex] = {
+                            ...updatedZones[selectedZoneIndex],
+                            name: e.target.value,
+                          };
+                          setZones((prev) => ({
+                            ...prev,
+                            [currentView]: updatedZones,
+                          }));
+                          
+                          // Update label on canvas
+                          if (fabricCanvas) {
+                            const label = fabricCanvas.getObjects().find(
+                              (obj: any) => obj.name === `zone-label-${currentView}-${selectedZoneIndex}`
+                            ) as FabricText;
+                            if (label) {
+                              label.set({ text: e.target.value });
+                              fabricCanvas.renderAll();
+                            }
+                          }
+                        }}
+                        placeholder="Zone-Name eingeben..."
+                        className="mb-2"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Klicke auf eine Zone im Bild, um sie auszuwählen und den Namen zu bearbeiten.
+                      </p>
+                    </div>
+                  )}
+                  
                   {zones[currentView].length === 0 ? (
                     <p className="text-sm text-muted-foreground">
                       Noch keine Zonen erstellt. Zeichne eine Zone auf dem Bild.
@@ -673,9 +1095,26 @@ const AdminPlacementZones = () => {
                       {zones[currentView].map((zone, index) => (
                         <div
                           key={zone.id}
-                          className="flex items-center justify-between p-3 bg-muted rounded-lg"
+                          className={`flex items-center justify-between p-3 rounded-lg transition-colors cursor-pointer ${
+                            selectedZoneIndex === index
+                              ? 'bg-primary/20 border-2 border-primary'
+                              : 'bg-muted hover:bg-muted/80'
+                          }`}
+                          onClick={() => {
+                            // Select zone on canvas
+                            if (fabricCanvas) {
+                              const rect = fabricCanvas.getObjects().find(
+                                (obj: any) => obj.name === `zone-${currentView}-${index}`
+                              );
+                              if (rect) {
+                                fabricCanvas.setActiveObject(rect);
+                                fabricCanvas.renderAll();
+                                setSelectedZoneIndex(index);
+                              }
+                            }
+                          }}
                         >
-                          <div>
+                          <div className="flex-1">
                             <p className="font-semibold">{zone.name}</p>
                             <p className="text-xs text-muted-foreground">
                               {Math.round(zone.x * 100)}%, {Math.round(zone.y * 100)}% -{" "}
@@ -685,7 +1124,10 @@ const AdminPlacementZones = () => {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleDeleteZone(currentView, index)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteZone(currentView, index);
+                            }}
                           >
                             <Trash2 className="w-4 h-4 text-destructive" />
                           </Button>

@@ -187,6 +187,7 @@ const TShirtDesigner = () => {
   const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
   const [importantPointsAccepted, setImportantPointsAccepted] = useState(false);
   const [showImportantPointsDialog, setShowImportantPointsDialog] = useState(false);
+  const [showTextDialog, setShowTextDialog] = useState(false);
   const [currentStep, setCurrentStep] = useState<1 | 2>(1);
   const [basePrice, setBasePrice] = useState(0);
   const [hasSelectedObject, setHasSelectedObject] = useState(false);
@@ -673,8 +674,8 @@ const TShirtDesigner = () => {
       if (fabricCanvas.getContext && fabricCanvas.getWidth && fabricCanvas.getHeight) {
         try {
           console.log('Loading view data, clearing canvas');
-    fabricCanvas.clear();
-    fabricCanvas.backgroundColor = "transparent";
+          fabricCanvas.clear();
+          fabricCanvas.backgroundColor = "transparent";
         } catch (error) {
           console.warn('Error clearing canvas:', error);
         }
@@ -682,13 +683,56 @@ const TShirtDesigner = () => {
     
       try {
         fabricCanvas.loadFromJSON(viewJson, () => {
+          // Re-render placement zones after loading view data
+          if (placementZones && placementZones[currentView]) {
+            const currentZones = placementZones[currentView];
+            const canvasWidth = fabricCanvas.getWidth();
+            const canvasHeight = fabricCanvas.getHeight();
+            
+            currentZones.forEach((zone, index) => {
+              const rect = new Rect({
+                left: zone.x * canvasWidth,
+                top: zone.y * canvasHeight,
+                width: zone.width * canvasWidth,
+                height: zone.height * canvasHeight,
+                fill: "rgba(59, 130, 246, 0.15)",
+                stroke: "rgba(59, 130, 246, 0.6)",
+                strokeWidth: 2,
+                strokeDashArray: [8, 4],
+                selectable: false,
+                evented: false,
+                hoverCursor: "default",
+                name: `placement-zone-${currentView}-${index}`,
+                excludeFromExport: true,
+              });
+
+              const label = new FabricText(zone.name, {
+                left: zone.x * canvasWidth + 5,
+                top: zone.y * canvasHeight + 5,
+                fontSize: 12,
+                fill: "rgba(59, 130, 246, 0.9)",
+                fontFamily: "Outfit",
+                fontWeight: "bold",
+                selectable: false,
+                evented: false,
+                hoverCursor: "default",
+                name: `placement-zone-label-${currentView}-${index}`,
+                excludeFromExport: true,
+              });
+
+              fabricCanvas.add(rect);
+              fabricCanvas.add(label);
+              fabricCanvas.sendObjectToBack(rect);
+              fabricCanvas.sendObjectToBack(label);
+            });
+          }
           fabricCanvas.renderAll();
         });
       } catch (error) {
         console.error('Error loading view data:', error);
       }
     }
-  }, [currentView, fabricCanvas]); // Removed viewData - it causes canvas to clear when elements are added!
+  }, [currentView, fabricCanvas, placementZones]); // Added placementZones to ensure zones are re-rendered
 
   // Get available colors from variations with hex codes and names
   const availableColors = useMemo(() => {
@@ -2029,32 +2073,93 @@ const TShirtDesigner = () => {
 
   return (
     <Layout>
-      <div className="container-wide py-8">
+      <div className="container-wide py-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
+          className="mb-6"
         >
-          <h1 className="text-3xl lg:text-5xl font-bold text-primary mb-2">
-            <span className="text-secondary">Creator</span>
-          </h1>
-          <p className="text-muted-foreground">
-            Lade dein eigenes Design hoch und platziere es auf deinem Produkt
-          </p>
+          <div className="mb-8">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+              <h1 className="text-3xl lg:text-5xl font-bold text-primary">
+                <span className="text-secondary">Creator</span>
+              </h1>
+              {product && (
+                <h2 className="text-xl lg:text-2xl font-semibold text-muted-foreground">
+                  {product.name}
+                </h2>
+              )}
+            </div>
+            <p className="text-muted-foreground">
+              Lade dein eigenes Design hoch und platziere es auf deinem Produkt
+            </p>
+          </div>
         </motion.div>
 
-        <div className="grid lg:grid-cols-5 gap-4">
+        <div className="grid lg:grid-cols-12 gap-6">
+          {/* Left Sidebar - Action Buttons */}
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="lg:col-span-2"
+          >
+            <div className="space-y-4">
+              {/* Upload Image Button */}
+              <label className="block">
+                <Button
+                  variant="default"
+                  size="lg"
+                  className="w-full flex flex-row items-center justify-center gap-3 h-auto py-4 px-4 hover:bg-primary/90 transition-all shadow-md hover:shadow-lg rounded-lg whitespace-nowrap"
+                  asChild
+                >
+                  <span className="cursor-pointer flex items-center gap-3">
+                    <Upload className="w-5 h-5 flex-shrink-0" />
+                    <span className="text-base font-medium">Hochladen</span>
+                  </span>
+                </Button>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  className="hidden"
+                />
+              </label>
+
+              {/* Add Text Button */}
+              <Button
+                variant="default"
+                size="lg"
+                className="w-full flex flex-row items-center justify-center gap-3 h-auto py-4 px-4 hover:bg-primary/90 transition-all shadow-md hover:shadow-lg rounded-lg whitespace-nowrap"
+                onClick={() => setShowTextDialog(true)}
+              >
+                <Type className="w-5 h-5 flex-shrink-0" />
+                <span className="text-base font-medium">Text</span>
+              </Button>
+
+              {/* Reset Button */}
+              <Button
+                variant="outline"
+                size="lg"
+                className="w-full flex flex-row items-center justify-center gap-3 h-auto py-4 px-4 hover:bg-destructive hover:text-destructive-foreground transition-all rounded-lg whitespace-nowrap"
+                onClick={handleClearAll}
+              >
+                <RotateCcw className="w-5 h-5 flex-shrink-0" />
+                <span className="text-base font-medium">Zurücksetzen</span>
+              </Button>
+            </div>
+          </motion.div>
+
           {/* Canvas Area */}
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="lg:col-span-3"
+            className="lg:col-span-6"
           >
 
             <div
               ref={containerRef}
-              className="relative bg-muted/30 rounded-2xl p-2 sm:p-4 flex items-center justify-center"
-              style={{ minHeight: '500px' }}
+              className="relative bg-muted/30 rounded-2xl p-4 sm:p-6 flex items-center justify-center"
+              style={{ minHeight: '500px', maxHeight: '600px' }}
             >
               {/* Warning Message - shown inside creator area */}
               {outOfBoundsWarning && (
@@ -2091,9 +2196,9 @@ const TShirtDesigner = () => {
 
               {/* View Thumbnail Gallery - Show all variation views */}
               {selectedColor && (viewImages.front.length > 0 || viewImages.back.length > 0 || viewImages.left.length > 0 || viewImages.right.length > 0) && (
-                <div className="mt-4 glass-card p-4">
-                  <h3 className="font-semibold text-sm mb-3">Ansichten</h3>
-                  <div className="grid grid-cols-4 gap-2">
+                <div className="mt-6 glass-card p-4">
+                  <h3 className="font-semibold text-sm mb-4">Ansichten</h3>
+                  <div className="grid grid-cols-4 gap-3">
                     {(['front', 'back', 'left', 'right'] as ViewType[]).map((view) => {
                       const viewImgs = viewImages[view];
                       const firstImg = viewImgs[0];
@@ -2134,98 +2239,6 @@ const TShirtDesigner = () => {
             {/* Step 1: Design Tools */}
             {currentStep === 1 && (
               <>
-                {/* Elements List - Always visible */}
-                <div className="glass-card p-4 mt-3">
-                  <Accordion type="single" collapsible className="w-full">
-                    <AccordionItem value="elements" className="border-none">
-                      <AccordionTrigger className="py-2 hover:no-underline">
-                        <h3 className="font-bold flex items-center gap-2 text-sm">
-                          <Layers className="w-4 h-4" />
-                          Elemente ({canvasObjects.length})
-                        </h3>
-                      </AccordionTrigger>
-                      <AccordionContent>
-                    {canvasObjects.length > 0 ? (
-                      <div className="space-y-2">
-                  {canvasObjects.map((obj, index) => {
-                    const objType = obj.type === 'image' ? 'Bild' : obj.type === 'text' ? 'Text' : 'Element';
-                    const objName = obj.type === 'text' ? (obj.text || 'Text') : (obj.name || `Element ${index + 1}`);
-                    const isSelected = fabricCanvas?.getActiveObject() === obj;
-                    // Get the actual index in the canvas (reverse order for display - top to bottom)
-                    const canvasIndex = fabricCanvas ? fabricCanvas.getObjects().indexOf(obj) : index;
-                    const totalObjects = canvasObjects.length;
-                    
-                    return (
-                      <div
-                        key={obj.name || `obj-${index}`}
-                        className={`p-2 rounded-lg border transition-all ${
-                          isSelected ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1.5">
-                          <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                            {obj.type === 'image' ? (
-                              <Upload className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                            ) : (
-                              <Type className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                            )}
-                            <span className="font-medium text-xs">{objType}</span>
-                            <span className="text-xs text-muted-foreground truncate">({objName.length > 15 ? objName.substring(0, 15) + '...' : objName})</span>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-5 w-5 p-0 flex-shrink-0"
-                            onClick={() => handleDeleteObject(obj)}
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
-                        </div>
-                        <div className="flex gap-1">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-6 text-xs flex-1 px-2"
-                            onClick={() => handleSelectObject(obj)}
-                            title="Auswählen"
-                          >
-                            <Eye className="w-3 h-3" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-6 px-2"
-                            onClick={() => handleMoveForward(obj)}
-                            title="Eine Ebene nach oben"
-                            disabled={canvasIndex === totalObjects - 1}
-                          >
-                            <ArrowUp className="w-3 h-3" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-6 px-2"
-                            onClick={() => handleMoveBackward(obj)}
-                            title="Eine Ebene nach unten"
-                            disabled={canvasIndex === 0}
-                          >
-                            <ArrowDown className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                      })}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground text-center py-4">
-                        Noch keine Elemente hinzugefügt. Füge ein Bild oder Text hinzu.
-                      </p>
-                    )}
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-            </div>
-
                 {/* Quick Tools - Only show when object is selected */}
                 {hasSelectedObject && (
                   <div className="glass-card p-4 mt-4">
@@ -2274,28 +2287,21 @@ const TShirtDesigner = () => {
                     </div>
                   </div>
                 )}
-                
-                {/* Clear All Button - Always visible */}
-                <div className="mt-4">
-                  <Button variant="outline" size="sm" className="w-full" onClick={handleClearAll}>
-                    <RotateCcw className="w-4 h-4 mr-2" />
-                    Alles zurücksetzen
-                  </Button>
-                </div>
               </>
             )}
 
           </motion.div>
 
-          {/* Controls - Unified Panel */}
+          {/* Right Sidebar - Product Info & Options */}
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="lg:col-span-2"
+            className="lg:col-span-4"
           >
-            <div className="glass-card p-4 space-y-4">
+            <div className="space-y-8 max-h-[calc(100vh-12rem)] overflow-y-auto pr-2">
               {/* Step Visualization - Clickable */}
-              <div className="flex items-center justify-center border-b border-border pb-4">
+              <div className="p-5">
+                <div className="flex items-center justify-center">
                 <div className="flex items-center gap-4">
                   <button
                     onClick={() => setCurrentStep(1)}
@@ -2338,177 +2344,226 @@ const TShirtDesigner = () => {
               {/* Step 1 Content */}
               {currentStep === 1 ? (
                 <>
-                  <Accordion type="multiple" defaultValue={["upload", "text"]} className="space-y-3">
-              {/* Upload */}
-              <AccordionItem value="upload" className="glass-card border-none rounded-lg">
-                <AccordionTrigger className="px-4 py-3 hover:no-underline">
-                  <h3 className="font-bold flex items-center gap-2 text-sm">
-                    <Upload className="w-4 h-4 text-primary" />
-                    Design hochladen
-                  </h3>
-                </AccordionTrigger>
-                <AccordionContent className="px-4 pb-4">
-                  <label className="block">
-                    <div className="border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer hover:border-primary transition-colors">
-                      <Upload className="w-6 h-6 mx-auto text-muted-foreground mb-1" />
-                      <p className="text-xs text-muted-foreground">
-                        Klicke oder ziehe ein Bild hierher
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        PNG, JPG bis 10MB
-                      </p>
-                    </div>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageUpload}
-                      className="hidden"
-                    />
-                  </label>
-                </AccordionContent>
-              </AccordionItem>
-
-              {/* Add Text */}
-              <AccordionItem value="text" className="glass-card border-none rounded-lg">
-                <AccordionTrigger className="px-4 py-3 hover:no-underline">
-                  <h3 className="font-bold flex items-center gap-2 text-sm">
-                    <Type className="w-4 h-4 text-primary" />
-                    Text hinzufügen
-                  </h3>
-                </AccordionTrigger>
-                <AccordionContent className="px-4 pb-4">
-              
-              {/* Font Selection */}
-              <div className="mb-2">
-                <label className="text-xs text-muted-foreground mb-1.5 block">Schriftart</label>
-                <Select value={selectedFont} onValueChange={handleFontChange}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {fonts.map((font) => (
-                      <SelectItem key={font.value} value={font.value}>
-                        <span style={{ fontFamily: font.value }}>{font.name}</span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Text Color */}
-              <div className="mb-3">
-                <label className="text-sm text-muted-foreground mb-2 block">Textfarbe</label>
-                <div className="flex gap-2 items-center">
-                  <div className="flex-1 flex gap-1 flex-wrap">
-                    {presetColors.map((color) => (
-                      <button
-                        key={color.value}
-                        type="button"
-                        onClick={() => handleColorChange(color.value)}
-                        className={`w-8 h-8 rounded-md border-2 transition-all ${
-                          textColor === color.value
-                            ? "border-primary scale-110"
-                            : "border-border hover:border-primary/50"
-                        }`}
-                        style={{ backgroundColor: color.value }}
-                        title={color.name}
-                      />
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Palette className="w-4 h-4 text-muted-foreground" />
-                    <input
-                      type="color"
-                      value={textColor}
-                      onChange={(e) => handleColorChange(e.target.value)}
-                      className="w-10 h-10 rounded-md border-2 border-border cursor-pointer"
-                      title="Benutzerdefinierte Farbe"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Formatting Buttons */}
-              <div className="mb-3">
-                <label className="text-sm text-muted-foreground mb-2 block">Formatierung</label>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant={textBold ? "secondary" : "outline"}
-                    size="sm"
-                    onClick={() => handleApplyFormatting("bold")}
-                    title="Fett"
-                  >
-                    <Bold className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={textItalic ? "secondary" : "outline"}
-                    size="sm"
-                    onClick={() => handleApplyFormatting("italic")}
-                    title="Kursiv"
-                  >
-                    <Italic className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={textStrikethrough ? "secondary" : "outline"}
-                    size="sm"
-                    onClick={() => handleApplyFormatting("strikethrough")}
-                    title="Durchgestrichen"
-                  >
-                    <Strikethrough className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-
-              {/* Text Input */}
-              <div className="flex gap-2">
-                <Input
-                  value={textInput}
-                  onChange={(e) => setTextInput(e.target.value)}
-                  placeholder="Dein Text..."
-                  onKeyDown={(e) => e.key === "Enter" && handleAddText()}
-                />
-                <Button onClick={handleAddText}>
-                  <Type className="w-4 h-4" />
-                </Button>
-              </div>
-                </AccordionContent>
-              </AccordionItem>
-
-              {/* Variation Selection - Show if product has variations */}
-              {productId ? (
-                <AccordionItem value="variations" className="glass-card border-none rounded-lg">
-                  <AccordionTrigger className="px-4 py-3 hover:no-underline">
-                    <h3 className="font-bold">
-                  {selectedColor ? (
-                    <>Farbe: <span className="text-primary">{selectedColor}</span></>
-                  ) : (
-                    "Variation auswählen"
-                  )}
-                  </h3>
-                  </AccordionTrigger>
-                  <AccordionContent className="px-4 pb-4">
-                    {/* Color Selection */}
-                    {availableColors.length > 0 && (
-                      <div className="mb-4">
-                    <label className="text-sm text-muted-foreground mb-2 block">Farbe</label>
-                    <TooltipProvider>
-                      <div className="flex flex-wrap gap-3 items-center">
-                        <button
-                          onClick={() => {
-                            setSelectedColor("");
-                            setSelectedVariationImageIndex(0);
+                  {/* Text Toolbox - Show when text is selected */}
+                  {hasSelectedObject && fabricCanvas?.getActiveObject()?.type === "text" && (
+                    <div className="glass-card p-6 space-y-6">
+                      <h3 className="font-bold text-sm mb-5">Text bearbeiten</h3>
+                      
+                      {/* Text Input */}
+                      <div>
+                        <label className="text-sm font-medium mb-3 block">Text</label>
+                        <Input
+                          value={(fabricCanvas.getActiveObject() as FabricText)?.text || ""}
+                          onChange={(e) => {
+                            const activeObject = fabricCanvas.getActiveObject();
+                            if (activeObject && activeObject.type === "text") {
+                              const text = activeObject as FabricText;
+                              text.set("text", e.target.value);
+                              fabricCanvas.renderAll();
+                            }
                           }}
-                          className={`px-4 py-2 rounded-full border-2 text-sm font-medium transition-all ${
-                            !selectedColor
-                              ? "border-primary bg-primary/10 text-primary"
-                              : "border-border hover:border-primary/50"
-                          }`}
-                        >
-                          Alle
-                        </button>
+                          placeholder="Dein Text..."
+                        />
+                      </div>
+
+                      {/* Font Selection */}
+                      <div>
+                        <label className="text-sm font-medium mb-3 block">Schriftart</label>
+                        <Select value={selectedFont} onValueChange={handleFontChange}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {fonts.map((font) => (
+                              <SelectItem key={font.value} value={font.value}>
+                                <span style={{ fontFamily: font.value }}>{font.name}</span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Text Color */}
+                      <div>
+                        <label className="text-sm font-medium mb-3 block">Textfarbe</label>
+                        <div className="flex gap-3 items-center">
+                          <div className="flex-1 flex gap-1 flex-wrap">
+                            {presetColors.map((color) => (
+                              <button
+                                key={color.value}
+                                type="button"
+                                onClick={() => handleColorChange(color.value)}
+                                className={`w-8 h-8 rounded-md border-2 transition-all ${
+                                  textColor === color.value
+                                    ? "border-primary scale-110"
+                                    : "border-border hover:border-primary/50"
+                                }`}
+                                style={{ backgroundColor: color.value }}
+                                title={color.name}
+                              />
+                            ))}
+                          </div>
+                          <input
+                            type="color"
+                            value={textColor}
+                            onChange={(e) => handleColorChange(e.target.value)}
+                            className="w-10 h-10 rounded-md border-2 border-border cursor-pointer"
+                            title="Benutzerdefinierte Farbe"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Formatting Buttons */}
+                      <div>
+                        <label className="text-sm font-medium mb-3 block">Formatierung</label>
+                        <div className="flex gap-3">
+                          <Button
+                            type="button"
+                            variant={textBold ? "secondary" : "outline"}
+                            size="sm"
+                            onClick={() => handleApplyFormatting("bold")}
+                            title="Fett"
+                          >
+                            <Bold className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant={textItalic ? "secondary" : "outline"}
+                            size="sm"
+                            onClick={() => handleApplyFormatting("italic")}
+                            title="Kursiv"
+                          >
+                            <Italic className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant={textStrikethrough ? "secondary" : "outline"}
+                            size="sm"
+                            onClick={() => handleApplyFormatting("strikethrough")}
+                            title="Durchgestrichen"
+                          >
+                            <Strikethrough className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Font Size */}
+                      <div>
+                        <label className="text-sm font-medium mb-3 block">Schriftgröße</label>
+                        <div className="flex items-center gap-4">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const activeObject = fabricCanvas.getActiveObject();
+                              if (activeObject && activeObject.type === "text") {
+                                const text = activeObject as FabricText;
+                                const currentSize = text.fontSize || 20;
+                                text.set("fontSize", Math.max(8, currentSize - 2));
+                                fabricCanvas.renderAll();
+                              }
+                            }}
+                          >
+                            <Minus className="w-4 h-4" />
+                          </Button>
+                          <span className="w-16 text-center font-semibold">
+                            {fabricCanvas.getActiveObject() && fabricCanvas.getActiveObject().type === "text"
+                              ? (fabricCanvas.getActiveObject() as FabricText).fontSize || 20
+                              : 20}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const activeObject = fabricCanvas.getActiveObject();
+                              if (activeObject && activeObject.type === "text") {
+                                const text = activeObject as FabricText;
+                                const currentSize = text.fontSize || 20;
+                                text.set("fontSize", Math.min(200, currentSize + 2));
+                                fabricCanvas.renderAll();
+                              }
+                            }}
+                          >
+                            <Plus className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Layer Controls */}
+                      <div>
+                        <label className="text-sm font-medium mb-3 block">Ebene</label>
+                        <div className="flex gap-3">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1"
+                            onClick={() => {
+                              const activeObject = fabricCanvas.getActiveObject();
+                              if (activeObject) {
+                                fabricCanvas.bringObjectToFront(activeObject);
+                                fabricCanvas.renderAll();
+                              }
+                            }}
+                            title="Nach vorne"
+                          >
+                            <ArrowUp className="w-4 h-4 mr-1" />
+                            Vorne
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1"
+                            onClick={() => {
+                              const activeObject = fabricCanvas.getActiveObject();
+                              if (activeObject) {
+                                fabricCanvas.sendObjectToBack(activeObject);
+                                fabricCanvas.renderAll();
+                              }
+                            }}
+                            title="Nach hinten"
+                          >
+                            <ArrowDown className="w-4 h-4 mr-1" />
+                            Hinten
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Delete Button */}
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => {
+                          const activeObject = fabricCanvas.getActiveObject();
+                          if (activeObject) {
+                            fabricCanvas.remove(activeObject);
+                            fabricCanvas.renderAll();
+                            setHasSelectedObject(false);
+                          }
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Löschen
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Variation Selection - Show if product has variations */}
+                  {productId && (
+                    <div className="glass-card p-6">
+                      <h3 className="font-bold text-sm mb-5">
+                        {selectedColor ? (
+                          <>Farbe: <span className="text-primary">{selectedColor}</span></>
+                        ) : (
+                          "Variation auswählen"
+                        )}
+                      </h3>
+                      {/* Color Selection */}
+                      {availableColors.length > 0 && (
+                        <div className="mb-6">
+                          <label className="text-sm text-muted-foreground mb-4 block">Farbe</label>
+                    <TooltipProvider>
+                      <div className="flex flex-wrap gap-5 items-center">
                         {availableColors.map((color) => (
                           <Tooltip key={color.name}>
                             <TooltipTrigger asChild>
@@ -2543,12 +2598,12 @@ const TShirtDesigner = () => {
                 )}
                 
                 {/* Variation Image Gallery */}
-                {variationImages.length > 0 ? (
-                  <div>
-                    <h4 className="text-sm font-semibold mb-2">
+                {variationImages.length > 0 && (
+                  <div className="mt-6">
+                    <h4 className="text-sm font-semibold mb-4">
                       {variationImages.length > 1 ? "Variation Bilder" : "Variation Bild"}
                     </h4>
-                    <div className="flex gap-2 overflow-x-auto pb-2">
+                    <div className="flex gap-3 overflow-x-auto pb-2">
                       {variationImages.map((img, index) => (
                         <button
                           key={img}
@@ -2568,57 +2623,54 @@ const TShirtDesigner = () => {
                       ))}
                     </div>
                   </div>
-                ) : availableColors.length === 0 && variations.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
+                )}
+                {variationImages.length === 0 && availableColors.length === 0 && variations.length === 0 && (
+                  <p className="text-sm text-muted-foreground mt-4">
                     Dieses Produkt hat keine Variationen.
                   </p>
-                ) : selectedColor ? (
-                  <p className="text-sm text-muted-foreground">
+                )}
+                {variationImages.length === 0 && selectedColor && availableColors.length > 0 && (
+                  <p className="text-sm text-muted-foreground mt-4">
                     Keine Variationen für diese Auswahl gefunden.
                   </p>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
+                )}
+                {variationImages.length === 0 && !selectedColor && availableColors.length > 0 && (
+                  <p className="text-sm text-muted-foreground mt-4">
                     Wähle eine Farbe aus, um Variationen zu sehen.
                   </p>
                 )}
-                  </AccordionContent>
-                </AccordionItem>
-              ) : !productImage ? (
-                /* Shirt Color - Only show if no product image is provided and no variations */
-                <AccordionItem value="color" className="glass-card border-none rounded-lg">
-                  <AccordionTrigger className="px-4 py-3 hover:no-underline">
-                    <h3 className="font-bold">Produkt Farbe</h3>
-                  </AccordionTrigger>
-                  <AccordionContent className="px-4 pb-4">
-                    <div className="flex gap-3">
-                      {shirtColors.map((color) => (
-                        <button
-                          key={color.name}
-                          onClick={() => setSelectedShirt(color)}
-                          className={`w-12 h-12 rounded-full border-4 transition-all ${
-                            selectedShirt.name === color.name
-                              ? "border-primary scale-110"
-                              : "border-border hover:border-primary/50"
-                          }`}
-                          style={{ backgroundColor: color.value }}
-                          title={color.name}
-                        />
-                      ))}
                     </div>
-                  </AccordionContent>
-                </AccordionItem>
-              ) : null}
-
-                  </Accordion>
-
+                  )}
+              
+              {!productImage && !productId && (
+                <div>
+                  <h3 className="font-bold text-sm mb-3">Produkt Farbe</h3>
+                  <div className="flex gap-3">
+                    {shirtColors.map((color) => (
+                      <button
+                        key={color.name}
+                        onClick={() => setSelectedShirt(color)}
+                        className={`w-12 h-12 rounded-full border-4 transition-all ${
+                          selectedShirt.name === color.name
+                            ? "border-primary scale-110"
+                            : "border-border hover:border-primary/50"
+                        }`}
+                        style={{ backgroundColor: color.value }}
+                        title={color.name}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+                  
                   {/* Price Display - Step 1 */}
-                  <div className="pt-4 border-t border-border">
-                    <div className="flex justify-between items-center">
+                  <div className="glass-card p-6">
+                    <div className="flex justify-between items-center mb-4">
                       <span className="text-sm text-muted-foreground">Preis pro Stück</span>
                       <span className="text-2xl font-bold text-primary">{pricePerItem.toFixed(2).replace('.', ',')} €</span>
                     </div>
                     {totalQuantity > 0 && (
-                      <div className="flex justify-between items-center mt-2">
+                      <div className="flex justify-between items-center pt-4 border-t border-border">
                         <span className="text-sm text-muted-foreground">
                           {totalQuantity} × {pricePerItem.toFixed(2).replace('.', ',')} €
                         </span>
@@ -2630,13 +2682,13 @@ const TShirtDesigner = () => {
                   </div>
 
                   {/* Navigation Button - Step 1 */}
-                  <div className="pt-4 border-t border-border">
+                  <div>
                     <Button
-                      size="default"
+                      size="lg"
                       className="w-full"
                       onClick={() => setCurrentStep(2)}
                     >
-                      Weiter
+                      Größe & Anzahl wählen
                       <ChevronRight className="w-4 h-4 ml-2" />
                     </Button>
                   </div>
@@ -2789,22 +2841,141 @@ const TShirtDesigner = () => {
                   </div>
                 </>
               )}
-            </div>
-
-            {/* Instructions */}
-            <div className="text-sm text-muted-foreground space-y-2">
-              <p className="flex items-center gap-2">
-                <Move className="w-4 h-4" />
-                Ziehe Elemente um sie zu verschieben
-              </p>
-              <p className="flex items-center gap-2">
-                <ZoomIn className="w-4 h-4" />
-                Nutze die Ecken zum Skalieren & Drehen
-              </p>
+              </div>
             </div>
           </motion.div>
         </div>
       </div>
+
+      {/* Text Options Dialog */}
+      <Dialog open={showTextDialog} onOpenChange={setShowTextDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Text hinzufügen</DialogTitle>
+            <DialogDescription>
+              Erstelle einen Text und passe ihn nach deinen Wünschen an
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 mt-4">
+            {/* Text Input */}
+            <div>
+              <label className="text-sm font-medium mb-2 block">Text</label>
+              <Input
+                value={textInput}
+                onChange={(e) => setTextInput(e.target.value)}
+                placeholder="Dein Text..."
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleAddText();
+                    setShowTextDialog(false);
+                  }
+                }}
+                autoFocus
+              />
+            </div>
+
+            {/* Font Selection */}
+            <div>
+              <label className="text-sm font-medium mb-2 block">Schriftart</label>
+              <Select value={selectedFont} onValueChange={handleFontChange}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {fonts.map((font) => (
+                    <SelectItem key={font.value} value={font.value}>
+                      <span style={{ fontFamily: font.value }}>{font.name}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Text Color */}
+            <div>
+              <label className="text-sm font-medium mb-2 block">Textfarbe</label>
+              <div className="flex gap-2 items-center">
+                <div className="flex-1 flex gap-1 flex-wrap">
+                  {presetColors.map((color) => (
+                    <button
+                      key={color.value}
+                      type="button"
+                      onClick={() => handleColorChange(color.value)}
+                      className={`w-8 h-8 rounded-md border-2 transition-all ${
+                        textColor === color.value
+                          ? "border-primary scale-110"
+                          : "border-border hover:border-primary/50"
+                      }`}
+                      style={{ backgroundColor: color.value }}
+                      title={color.name}
+                    />
+                  ))}
+                </div>
+                <input
+                  type="color"
+                  value={textColor}
+                  onChange={(e) => handleColorChange(e.target.value)}
+                  className="w-10 h-10 rounded-md border-2 border-border cursor-pointer"
+                  title="Benutzerdefinierte Farbe"
+                />
+              </div>
+            </div>
+
+            {/* Formatting Buttons */}
+            <div>
+              <label className="text-sm font-medium mb-2 block">Formatierung</label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={textBold ? "secondary" : "outline"}
+                  size="sm"
+                  onClick={() => handleApplyFormatting("bold")}
+                  title="Fett"
+                >
+                  <Bold className="w-4 h-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant={textItalic ? "secondary" : "outline"}
+                  size="sm"
+                  onClick={() => handleApplyFormatting("italic")}
+                  title="Kursiv"
+                >
+                  <Italic className="w-4 h-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant={textStrikethrough ? "secondary" : "outline"}
+                  size="sm"
+                  onClick={() => handleApplyFormatting("strikethrough")}
+                  title="Durchgestrichen"
+                >
+                  <Strikethrough className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowTextDialog(false)}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              onClick={() => {
+                handleAddText();
+                setShowTextDialog(false);
+              }}
+              disabled={!textInput.trim()}
+            >
+              Hinzufügen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Copyright Notice Dialog */}
       <Dialog 
