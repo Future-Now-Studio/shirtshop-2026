@@ -180,11 +180,12 @@ const AdminPlacementZones = () => {
       right: product?.image || "",
     };
 
-    if (selectedColor && wcProduct) {
+    // Always try to load SVI images, even if no color is selected (use first available)
+    if (wcProduct) {
       const sviMeta = wcProduct.meta_data?.find((meta: any) => meta.key === 'woosvi_slug');
       
       if (sviMeta && sviMeta.value && Array.isArray(sviMeta.value)) {
-        // Find the entry that matches the selected color (case-insensitive, handles multi-word)
+        // Find the entry that matches the selected color (or use first entry if no color selected)
         const normalizeString = (str: string): string => {
           return str
             .toLowerCase()
@@ -194,20 +195,30 @@ const AdminPlacementZones = () => {
             .trim();
         };
         
-        const matchingSviEntry = sviMeta.value.find((entry: any) => {
-          if (!entry.slugs || !Array.isArray(entry.slugs)) return false;
-          return entry.slugs.some((slug: string) => {
-            const slugStr = normalizeString(String(slug));
-            const colorStr = normalizeString(String(selectedColor));
-            // Try exact match first
-            let matches = slugStr === colorStr;
-            // If no exact match, try partial match
-            if (!matches) {
-              matches = slugStr.includes(colorStr) || colorStr.includes(slugStr);
-            }
-            return matches;
+        let matchingSviEntry = null;
+        
+        if (selectedColor) {
+          // Try to find matching color
+          matchingSviEntry = sviMeta.value.find((entry: any) => {
+            if (!entry.slugs || !Array.isArray(entry.slugs)) return false;
+            return entry.slugs.some((slug: string) => {
+              const slugStr = normalizeString(String(slug));
+              const colorStr = normalizeString(String(selectedColor));
+              // Try exact match first
+              let matches = slugStr === colorStr;
+              // If no exact match, try partial match
+              if (!matches) {
+                matches = slugStr.includes(colorStr) || colorStr.includes(slugStr);
+              }
+              return matches;
+            });
           });
-        });
+        }
+        
+        // If no color selected or no match found, use first entry
+        if (!matchingSviEntry && sviMeta.value.length > 0) {
+          matchingSviEntry = sviMeta.value[0];
+        }
         
         if (matchingSviEntry && matchingSviEntry.imgs && Array.isArray(matchingSviEntry.imgs)) {
           // Get image IDs from SVI data
@@ -218,17 +229,17 @@ const AdminPlacementZones = () => {
             imageIds.includes(String(img.id))
           ) || [];
           
-          // Organize images by view type based on filename - use first matching image for each view
+          // Organize images by view type based on filename
           matchingImages.forEach(img => {
             const name = img.name || img.src || '';
             // Check filename for view indicators: _F (front), _B (back), _SL (left), _SR (right)
-            if ((name.includes('_F') || name.includes('-F')) && views.front === (product?.image || "")) {
+            if (name.includes('_F') || name.includes('-F')) {
               views.front = img.src;
-            } else if ((name.includes('_B') || name.includes('-B')) && views.back === (product?.image || "")) {
+            } else if (name.includes('_B') || name.includes('-B')) {
               views.back = img.src;
-            } else if ((name.includes('_SL') || name.includes('-SL')) && views.left === (product?.image || "")) {
+            } else if (name.includes('_SL') || name.includes('-SL')) {
               views.left = img.src;
-            } else if ((name.includes('_SR') || name.includes('-SR')) && views.right === (product?.image || "")) {
+            } else if (name.includes('_SR') || name.includes('-SR')) {
               views.right = img.src;
             }
           });
@@ -236,17 +247,28 @@ const AdminPlacementZones = () => {
       }
     }
 
+    console.log('[VIEW IMAGES] Computed view images:', views);
     return views;
   }, [selectedColor, wcProduct, product?.image]);
 
-  // Update view images when color or view changes
+  // Update view images when color changes
   useEffect(() => {
     setViewImages(viewImagesForColor);
   }, [viewImagesForColor]);
 
+  // Ensure viewImages is updated when currentView changes (for immediate background image update)
+  useEffect(() => {
+    // This effect ensures the background image updates when currentView changes
+    // The viewImages state is already set correctly, this just triggers a re-render
+  }, [currentView, viewImages]);
+
   // Load zones from product
   useEffect(() => {
     console.log("Loading zones from product:", product?.placementZones);
+
+    // Only overwrite zones when the product actually provides placementZones.
+    // If placementZones is missing/undefined, keep the existing zones in state
+    // so they don't briefly appear and then disappear when product updates.
     if (product?.placementZones) {
       const loadedZones = {
         front: product.placementZones.front || [],
@@ -258,15 +280,9 @@ const AdminPlacementZones = () => {
       console.log("Back zones count:", loadedZones.back.length);
       setZones(loadedZones);
     } else {
-      console.log("No placement zones found in product");
-      setZones({
-        front: [],
-        back: [],
-        left: [],
-        right: [],
-      });
+      console.log("No placement zones found in product (keeping existing zones state)");
     }
-  }, [product]);
+  }, [product?.placementZones, product?.id]);
 
   // Initialize canvas once when refs are available
   useEffect(() => {
@@ -275,70 +291,95 @@ const AdminPlacementZones = () => {
       return;
     }
     
-    if (!canvasRef.current || !containerRef.current) {
-      console.log('[CANVAS INIT] Refs not available yet', { canvasRef: !!canvasRef.current, containerRef: !!containerRef.current });
-      // Retry after a short delay if refs are not available
-      const timeout = setTimeout(() => {
-        if (!fabricCanvas && canvasRef.current && containerRef.current) {
-          console.log('[CANVAS INIT] Refs available, triggering re-check');
-          setInitTrigger(prev => prev + 1);
+    // Function to initialize canvas
+    const initializeCanvas = () => {
+      if (!canvasRef.current || !containerRef.current) {
+        console.log('[CANVAS INIT] Refs not available yet', { canvasRef: !!canvasRef.current, containerRef: !!containerRef.current });
+        return false;
+      }
+
+      console.log('[CANVAS INIT] Initializing canvas');
+      const containerWidth = containerRef.current.offsetWidth;
+      // Use same canvas size as TShirtDesigner for consistency
+      const canvasSize = Math.min(containerWidth, 800);
+
+      const canvas = new FabricCanvas(canvasRef.current, {
+        width: canvasSize,
+        height: canvasSize,
+        backgroundColor: "transparent",
+        selection: true,
+        preserveObjectStacking: true,
+      });
+      
+      console.log('[CANVAS INIT] Canvas created', { width: canvasSize, height: canvasSize });
+      
+      // Enable selection tracking for zones
+      canvas.on('selection:created', (e) => {
+        const activeObject = e.selected?.[0] as any;
+        if (activeObject && activeObject.name?.startsWith('zone-')) {
+          const index = activeObject.data?.index;
+          if (index !== undefined) {
+            setSelectedZoneIndex(index);
+          }
         }
-      }, 200);
-      return () => clearTimeout(timeout);
+      });
+      
+      canvas.on('selection:updated', (e) => {
+        const activeObject = e.selected?.[0] as any;
+        if (activeObject && activeObject.name?.startsWith('zone-')) {
+          const index = activeObject.data?.index;
+          if (index !== undefined) {
+            setSelectedZoneIndex(index);
+          }
+        }
+      });
+      
+      canvas.on('selection:cleared', () => {
+        setSelectedZoneIndex(null);
+      });
+
+      // Note: Background image is handled via CSS (same as TShirtDesigner)
+      // This ensures consistent scaling between configurator and creator
+      // The canvas is transparent and overlays the CSS background image
+
+      setFabricCanvas(canvas);
+      console.log('[CANVAS INIT] Canvas set in state');
+      return true;
+    };
+
+    // Try to initialize immediately
+    if (initializeCanvas()) {
+      return;
     }
 
-    console.log('[CANVAS INIT] Initializing canvas');
-    const containerWidth = containerRef.current.offsetWidth;
-    // Use same canvas size as TShirtDesigner for consistency
-    const canvasSize = Math.min(containerWidth, 800);
+    // If refs not available, retry with increasing delays
+    let retryCount = 0;
+    const maxRetries = 10;
+    const retryInterval = 100;
 
-    const canvas = new FabricCanvas(canvasRef.current, {
-      width: canvasSize,
-      height: canvasSize,
-      backgroundColor: "transparent",
-      selection: true,
-      preserveObjectStacking: true,
-    });
-    
-    console.log('[CANVAS INIT] Canvas created', { width: canvasSize, height: canvasSize });
-    
-    // Enable selection tracking for zones
-    canvas.on('selection:created', (e) => {
-      const activeObject = e.selected?.[0] as any;
-      if (activeObject && activeObject.name?.startsWith('zone-')) {
-        const index = activeObject.data?.index;
-        if (index !== undefined) {
-          setSelectedZoneIndex(index);
-        }
+    const retryTimer = setInterval(() => {
+      retryCount++;
+      console.log(`[CANVAS INIT] Retry attempt ${retryCount}/${maxRetries}`);
+      
+      if (initializeCanvas()) {
+        clearInterval(retryTimer);
+        return;
       }
-    });
-    
-    canvas.on('selection:updated', (e) => {
-      const activeObject = e.selected?.[0] as any;
-      if (activeObject && activeObject.name?.startsWith('zone-')) {
-        const index = activeObject.data?.index;
-        if (index !== undefined) {
-          setSelectedZoneIndex(index);
-        }
+      
+      if (retryCount >= maxRetries) {
+        console.error('[CANVAS INIT] Failed to initialize canvas after', maxRetries, 'retries');
+        clearInterval(retryTimer);
       }
-    });
-    
-    canvas.on('selection:cleared', () => {
-      setSelectedZoneIndex(null);
-    });
-
-    // Note: Background image is handled via CSS (same as TShirtDesigner)
-    // This ensures consistent scaling between configurator and creator
-    // The canvas is transparent and overlays the CSS background image
-
-    setFabricCanvas(canvas);
-    console.log('[CANVAS INIT] Canvas set in state');
+    }, retryInterval);
 
     return () => {
-      console.log('[CANVAS INIT] Cleaning up canvas');
-      canvas.dispose();
+      clearInterval(retryTimer);
+      if (fabricCanvas) {
+        console.log('[CANVAS INIT] Cleaning up canvas');
+        fabricCanvas.dispose();
+      }
     };
-  }, [fabricCanvas, initTrigger]); // Include initTrigger to retry when refs become available
+  }, [fabricCanvas]); // Only depend on fabricCanvas
 
   // Reset selection when view changes
   useEffect(() => {
@@ -351,19 +392,14 @@ const AdminPlacementZones = () => {
       console.log("[RENDER ZONES] No fabricCanvas available");
       return;
     }
-
-    // Clear existing zone rectangles and labels
-    const objectsToRemove = fabricCanvas.getObjects().filter(
-      (obj: any) => obj.name?.startsWith("zone-") || obj.name?.startsWith("zone-label-")
-    );
-    objectsToRemove.forEach((obj) => fabricCanvas.remove(obj));
     
-    // Clear selection
-    fabricCanvas.discardActiveObject();
-    setSelectedZoneIndex(null);
-    fabricCanvas.renderAll();
+    // Don't render zones while drawing
+    if (isDrawing) {
+      console.log("[RENDER ZONES] Currently drawing, skipping render");
+      return;
+    }
 
-    // Add zones for current view
+    // Get zones for current view
     const currentZones = zones[currentView] || [];
     const canvasWidth = fabricCanvas.getWidth();
     const canvasHeight = fabricCanvas.getHeight();
@@ -372,26 +408,54 @@ const AdminPlacementZones = () => {
     console.log(`[RENDER ZONES] View: ${currentView}`, currentZones);
     console.log(`[RENDER ZONES] Number of zones: ${currentZones.length}`);
     console.log(`[RENDER ZONES] All zones state:`, zones);
-    console.log(`[RENDER ZONES] Back zones specifically:`, zones.back);
-    console.log(`[RENDER ZONES] Zones keys:`, Object.keys(zones));
 
-    if (currentZones.length === 0) {
-      console.log(`[RENDER ZONES] No zones to render for view: ${currentView}`);
-      fabricCanvas.renderAll();
-      return;
-    }
+    // Check which zones already exist for current view
+    const existingZonesForView = fabricCanvas.getObjects().filter(
+      (obj: any) => {
+        const name = obj.name;
+        return (name?.startsWith(`zone-${currentView}-`) || name?.startsWith(`zone-label-${currentView}-`)) && 
+               !name?.startsWith("drawing-rect-");
+      }
+    );
+
+    // Only clear and re-render if zones don't exist or count doesn't match
+    if (existingZonesForView.length !== currentZones.length * 2) {
+      console.log(`[RENDER ZONES] Zones count mismatch. Existing: ${existingZonesForView.length}, Expected: ${currentZones.length * 2}`);
+      
+      // Clear only zones for current view (not all zones)
+      existingZonesForView.forEach((obj) => fabricCanvas.remove(obj));
+      
+      // Clear selection
+      fabricCanvas.discardActiveObject();
+      setSelectedZoneIndex(null);
+
+      if (currentZones.length === 0) {
+        console.log(`[RENDER ZONES] No zones to render for view: ${currentView}`);
+        fabricCanvas.renderAll();
+        return;
+      }
 
     currentZones.forEach((zone, index) => {
-      console.log(`Adding zone ${index} for ${currentView}:`, zone);
+      const rectLeft = zone.x * canvasWidth;
+      const rectTop = zone.y * canvasHeight;
+      const rectWidth = zone.width * canvasWidth;
+      const rectHeight = zone.height * canvasHeight;
+      
+      console.log(`Adding zone ${index} for ${currentView}:`, {
+        zone,
+        canvasSize: { width: canvasWidth, height: canvasHeight },
+        rectCoords: { left: rectLeft, top: rectTop, width: rectWidth, height: rectHeight }
+      });
+      
       const rect = new Rect({
-        left: zone.x * canvasWidth,
-        top: zone.y * canvasHeight,
-        width: zone.width * canvasWidth,
-        height: zone.height * canvasHeight,
-        fill: "rgba(59, 130, 246, 0.2)",
-        stroke: "rgba(59, 130, 246, 0.8)",
-        strokeWidth: 2,
-        strokeDashArray: [5, 5],
+        left: rectLeft,
+        top: rectTop,
+        width: rectWidth,
+        height: rectHeight,
+        fill: "rgba(59, 130, 246, 0.4)", // Increased opacity for better visibility
+        stroke: "#3b82f6", // Solid blue color
+        strokeWidth: 4, // Thicker stroke
+        strokeDashArray: [8, 4], // More visible dash pattern
         selectable: true,
         evented: true,
         hasControls: true,
@@ -399,23 +463,49 @@ const AdminPlacementZones = () => {
         lockRotation: true,
         name: `zone-${currentView}-${index}`,
         data: { view: currentView, index },
+        opacity: 1, // Ensure full opacity
+        visible: true, // Explicitly set visible
       });
 
       // Add label
       const label = new FabricText(zone.name, {
-        left: zone.x * canvasWidth + 5,
-        top: zone.y * canvasHeight + 5,
-        fontSize: 14,
-        fill: "rgba(59, 130, 246, 1)",
+        left: rectLeft + 5,
+        top: rectTop + 5,
+        fontSize: 16,
+        fill: "#3b82f6", // Solid blue color
         fontFamily: "Outfit",
         fontWeight: "bold",
         selectable: false,
         evented: false,
         name: `zone-label-${currentView}-${index}`,
+        opacity: 1,
+        visible: true,
+        backgroundColor: "rgba(255, 255, 255, 0.9)", // White background for better visibility
+        padding: 4,
       });
 
       fabricCanvas.add(rect);
       fabricCanvas.add(label);
+      
+      // Ensure zones are visible and on top (except when drawing)
+      // Don't bring to front if we're currently drawing
+      if (!isDrawing) {
+        fabricCanvas.bringObjectToFront(rect);
+        fabricCanvas.bringObjectToFront(label);
+      }
+      
+      // Force coordinates update and ensure visibility
+      rect.setCoords();
+      label.setCoords();
+      rect.set({ visible: true, opacity: 1 });
+      label.set({ visible: true, opacity: 1 });
+      
+      console.log(`[RENDER ZONES] Zone ${index} added:`, {
+        rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+        label: { left: label.left, top: label.top },
+        visible: rect.visible,
+        opacity: rect.opacity,
+      });
 
       // Make rect editable - update on move/resize
       rect.on("modified", () => {
@@ -474,8 +564,88 @@ const AdminPlacementZones = () => {
       });
     });
 
-    fabricCanvas.renderAll();
-  }, [fabricCanvas, zones, currentView]);
+      // Force render after adding all zones
+      setTimeout(() => {
+        fabricCanvas.renderAll();
+        console.log('[RENDER ZONES] Canvas rendered, total objects:', fabricCanvas.getObjects().length);
+        const zoneObjects = fabricCanvas.getObjects().filter((obj: any) => obj.name?.startsWith('zone-'));
+        console.log('[RENDER ZONES] Zone objects on canvas:', zoneObjects.length);
+        zoneObjects.forEach((obj: any, idx: number) => {
+          console.log(`[RENDER ZONES] Zone ${idx}:`, obj.name, 'at', obj.left, obj.top, 'size', obj.width, obj.height);
+        });
+      }, 0);
+    } else {
+      // Zones already exist for this view, just ensure they're visible and positioned correctly
+      console.log(`[RENDER ZONES] Zones already exist for view: ${currentView}, ensuring visibility and position`);
+      
+      // Hide zones from other views first
+      const allViews: ViewType[] = ['front', 'back', 'left', 'right'];
+      allViews.forEach((view) => {
+        if (view !== currentView) {
+          const zonesForOtherView = fabricCanvas.getObjects().filter(
+            (obj: any) => {
+              const name = obj.name;
+              return (name?.startsWith(`zone-${view}-`) || name?.startsWith(`zone-label-${view}-`)) && 
+                     !name?.startsWith("drawing-rect-");
+            }
+          );
+          zonesForOtherView.forEach((zoneObj) => {
+            // Hide and disable events so they don't block drawing on the current view
+            zoneObj.set({ visible: false, evented: false });
+          });
+        }
+      });
+      
+      // Ensure zones for current view are visible and correctly positioned
+      existingZonesForView.forEach((zoneObj) => {
+        const name = (zoneObj as any).name || '';
+        const isLabel = name.startsWith('zone-label-');
+        
+        // Extract index from name (e.g., "zone-back-0" -> 0)
+        const match = name.match(/-(\d+)$/);
+        if (match && currentZones.length > 0) {
+          const index = parseInt(match[1]);
+          if (index < currentZones.length) {
+            const zone = currentZones[index];
+            const canvasWidth = fabricCanvas.getWidth();
+            const canvasHeight = fabricCanvas.getHeight();
+            
+            if (isLabel) {
+              // Update label position and keep it non-interactive
+              zoneObj.set({
+                left: zone.x * canvasWidth + 5,
+                top: zone.y * canvasHeight + 5,
+                visible: true,
+                opacity: 1,
+                evented: false,
+              });
+            } else {
+              // Update rect position and size and re-enable events for current view
+              zoneObj.set({
+                left: zone.x * canvasWidth,
+                top: zone.y * canvasHeight,
+                width: zone.width * canvasWidth,
+                height: zone.height * canvasHeight,
+                scaleX: 1,
+                scaleY: 1,
+                visible: true,
+                opacity: 1,
+                evented: true,
+              });
+              (zoneObj as any).setCoords();
+            }
+          }
+        } else {
+          // Fallback: just make visible
+          zoneObj.set({ visible: true, opacity: 1 });
+        }
+        fabricCanvas.bringObjectToFront(zoneObj);
+      });
+      
+      fabricCanvas.renderAll();
+      console.log(`[RENDER ZONES] Updated ${existingZonesForView.length} existing zones for view: ${currentView}`);
+    }
+  }, [fabricCanvas, zones, currentView, isDrawing]);
 
   // Handle canvas click to start drawing
   const handleCanvasMouseDown = useCallback(
@@ -487,9 +657,13 @@ const AdminPlacementZones = () => {
         return;
       }
       
-      // Don't start drawing if clicking on an existing zone or label
+      // Don't start drawing if clicking on an existing zone or label (only if it's visible)
       const target = e.target;
-      if (target && (target.name?.startsWith('zone-') || target.name?.startsWith('zone-label-'))) {
+      if (
+        target &&
+        target.visible !== false &&
+        (target.name?.startsWith('zone-') || target.name?.startsWith('zone-label-'))
+      ) {
         console.log('[ZONE DRAW] Clicked on existing zone/label, not starting draw');
         return;
       }
@@ -512,7 +686,8 @@ const AdminPlacementZones = () => {
         strokeWidth: 2,
         strokeDashArray: [5, 5],
         selectable: false,
-        evented: false, // Don't interfere with mouse events
+        evented: true, // Allow mouse events for drawing
+        name: `drawing-rect-${Date.now()}`, // Unique name to identify drawing rectangle
       });
 
       fabricCanvas.add(rect);
@@ -569,13 +744,25 @@ const AdminPlacementZones = () => {
     const zoneNumber = zones[currentView].length + 1;
     const defaultName = `Zone ${zoneNumber}`;
 
+    // Raw relative values
+    let relX = currentRect.left! / canvasWidth;
+    let relY = currentRect.top! / canvasHeight;
+    let relW = currentRect.width! / canvasWidth;
+    let relH = currentRect.height! / canvasHeight;
+
+    // Clamp to [0,1] to avoid zones going outside the image/canvas
+    relX = Math.max(0, Math.min(1, relX));
+    relY = Math.max(0, Math.min(1, relY));
+    relW = Math.max(0, Math.min(1 - relX, relW));
+    relH = Math.max(0, Math.min(1 - relY, relH));
+
     const newZone: PlacementZone = {
       id: `zone-${Date.now()}`,
       name: defaultName,
-      x: currentRect.left! / canvasWidth,
-      y: currentRect.top! / canvasHeight,
-      width: currentRect.width! / canvasWidth,
-      height: currentRect.height! / canvasHeight,
+      x: relX,
+      y: relY,
+      width: relW,
+      height: relH,
     };
 
     const zoneIndex = zones[currentView].length;
@@ -612,12 +799,24 @@ const AdminPlacementZones = () => {
       const canvasWidth = fabricCanvas.getWidth();
       const canvasHeight = fabricCanvas.getHeight();
       
+      // Raw relative values after edit
+      let relX = currentRect.left! / canvasWidth;
+      let relY = currentRect.top! / canvasHeight;
+      let relW = (currentRect.width! * (currentRect.scaleX || 1)) / canvasWidth;
+      let relH = (currentRect.height! * (currentRect.scaleY || 1)) / canvasHeight;
+
+      // Clamp to [0,1] again to keep zone within the image
+      relX = Math.max(0, Math.min(1, relX));
+      relY = Math.max(0, Math.min(1, relY));
+      relW = Math.max(0, Math.min(1 - relX, relW));
+      relH = Math.max(0, Math.min(1 - relY, relH));
+
       updatedZones[zoneIndex] = {
         ...updatedZones[zoneIndex],
-        x: currentRect.left! / canvasWidth,
-        y: currentRect.top! / canvasHeight,
-        width: (currentRect.width! * (currentRect.scaleX || 1)) / canvasWidth,
-        height: (currentRect.height! * (currentRect.scaleY || 1)) / canvasHeight,
+        x: relX,
+        y: relY,
+        width: relW,
+        height: relH,
       };
       
       currentRect.set({ scaleX: 1, scaleY: 1 });
@@ -653,13 +852,25 @@ const AdminPlacementZones = () => {
       setSelectedZoneIndex(null);
     });
 
-    // Update zones state
-    setZones((prev) => ({
-      ...prev,
-      [currentView]: [...prev[currentView], newZone],
-    }));
+    // Update zones state - this will trigger the render zones effect
+    setZones((prev) => {
+      const updated = {
+        ...prev,
+        [currentView]: [...prev[currentView], newZone],
+      };
+      console.log('[ZONE DRAW] Updated zones state:', updated);
+      return updated;
+    });
 
+    // Remove the drawing rectangle - the zone will be re-rendered by the effect
+    fabricCanvas.remove(currentRect);
     setCurrentRect(null);
+    
+    // Force render to show the new zone
+    setTimeout(() => {
+      fabricCanvas.renderAll();
+    }, 0);
+    
     toast.success("Zone hinzugefügt! Du kannst sie jetzt verschieben und in der Größe anpassen.");
   }, [fabricCanvas, isDrawing, currentRect, currentView, zones]);
 
@@ -1016,9 +1227,10 @@ const AdminPlacementZones = () => {
                     className="relative bg-muted/30 rounded-3xl p-4 flex items-center justify-center"
                   >
                     <div 
+                      key={`background-${currentView}-${viewImages[currentView]}`}
                       className="relative w-full max-w-[800px] aspect-square"
                       style={{
-                        backgroundImage: `url(${viewImages[currentView] || product.image})`,
+                        backgroundImage: `url(${viewImages[currentView] || product?.image || ''})`,
                         backgroundSize: 'contain',
                         backgroundPosition: 'center',
                         backgroundRepeat: 'no-repeat',

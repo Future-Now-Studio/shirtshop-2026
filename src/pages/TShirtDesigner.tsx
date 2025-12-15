@@ -48,6 +48,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -188,6 +189,7 @@ const TShirtDesigner = () => {
   const [importantPointsAccepted, setImportantPointsAccepted] = useState(false);
   const [showImportantPointsDialog, setShowImportantPointsDialog] = useState(false);
   const [showTextDialog, setShowTextDialog] = useState(false);
+  const [showProductDetailsDialog, setShowProductDetailsDialog] = useState(false);
   const [currentStep, setCurrentStep] = useState<1 | 2>(1);
   const [basePrice, setBasePrice] = useState(0);
   const [hasSelectedObject, setHasSelectedObject] = useState(false);
@@ -201,6 +203,8 @@ const TShirtDesigner = () => {
     selectedShirt.value === "#FFFFFF" ? "#1a1a1a" : "#FFFFFF"
   );
   const [currentView, setCurrentView] = useState<ViewType>("front");
+  // Keep a ref in sync so canvas listeners always know the latest view
+  const currentViewRef = useRef<ViewType>("front");
   // Store canvas JSON data for each view
   const [viewData, setViewData] = useState<Record<ViewType, string | null>>({
     front: null,
@@ -210,81 +214,166 @@ const TShirtDesigner = () => {
   });
   const addItem = useCartStore((state) => state.addItem);
 
+  // Keep ref updated with the latest currentView for use inside stable callbacks
+  useEffect(() => {
+    currentViewRef.current = currentView;
+  }, [currentView]);
+
   // Save current view data before switching
   const saveCurrentView = useCallback(() => {
-    if (!fabricCanvas) return;
-    try {
-      const json = JSON.stringify(fabricCanvas.toJSON());
-      setViewData(prev => ({
-        ...prev,
-        [currentView]: json,
-      }));
-    } catch (error) {
-      console.error('Error saving view data:', error);
+  if (!fabricCanvas) return;
+  try {
+    // Get the JSON representation
+    const json = fabricCanvas.toJSON();
+    
+    // Filter out placement zones from the objects array
+    if (json.objects) {
+      json.objects = json.objects.filter((obj: any) => 
+        !obj.name?.startsWith("placement-zone-")
+      );
     }
-  }, [fabricCanvas, currentView]);
+
+    const jsonString = JSON.stringify(json);
+    
+    setViewData(prev => ({
+      ...prev,
+      [currentView]: jsonString,
+    }));
+  } catch (error) {
+    console.error('Error saving view data:', error);
+  }
+}, [fabricCanvas, currentView]);
 
   // Load view function will be defined after viewImages
 
-  // Render placement zones as visual guides (non-interactive, always in background)
-  useEffect(() => {
+  // Helper function to ensure zones exist and are properly configured
+  const ensureZonesExist = useCallback((targetView?: ViewType) => {
     if (!fabricCanvas || !placementZones) return;
-
-    const currentZones = placementZones[currentView];
-    if (!currentZones || currentZones.length === 0) return;
-
+    
+    const viewToShow = targetView || currentView;
     const canvasWidth = fabricCanvas.getWidth();
     const canvasHeight = fabricCanvas.getHeight();
+    const allViews: ViewType[] = ['front', 'back', 'left', 'right'];
 
-    // Clear existing zone objects
-    const existingZones = fabricCanvas.getObjects().filter(
+    // First, ensure all zones for all views exist (create them if they don't)
+    allViews.forEach((view) => {
+      const zonesForView = placementZones[view];
+      if (!zonesForView || zonesForView.length === 0) return;
+
+      // Check if zones for this view already exist
+      const existingZonesForView = fabricCanvas.getObjects().filter(
+        (obj: any) => obj.name?.startsWith(`placement-zone-${view}-`)
+      );
+
+      // Only create zones if they don't exist
+      if (existingZonesForView.length === 0) {
+        console.log('[ZONES] Creating zones for view:', view);
+        zonesForView.forEach((zone, index) => {
+          const rect = new Rect({
+            left: zone.x * canvasWidth,
+            top: zone.y * canvasHeight,
+            width: zone.width * canvasWidth,
+            height: zone.height * canvasHeight,
+            fill: "rgba(59, 130, 246, 0.15)",
+            stroke: "rgba(59, 130, 246, 0.6)",
+            strokeWidth: 2,
+            strokeDashArray: [8, 4],
+            selectable: false,
+            evented: false,
+            hoverCursor: "default",
+            name: `placement-zone-${view}-${index}`,
+            excludeFromExport: true,
+            visible: view === viewToShow, // Only show zones for target view
+          });
+
+          const label = new FabricText(zone.name, {
+            left: zone.x * canvasWidth + 5,
+            top: zone.y * canvasHeight + 5,
+            fontSize: 12,
+            fill: "rgba(59, 130, 246, 0.9)",
+            fontFamily: "Outfit",
+            fontWeight: "bold",
+            selectable: false,
+            evented: false,
+            hoverCursor: "default",
+            name: `placement-zone-label-${view}-${index}`,
+            excludeFromExport: true,
+            visible: view === viewToShow, // Only show labels for target view
+          });
+
+          fabricCanvas.add(rect);
+          fabricCanvas.add(label);
+        });
+      }
+    });
+
+    // Now update visibility for all zones based on target view
+    allViews.forEach((view) => {
+      const zonesForView = placementZones[view];
+      if (!zonesForView || zonesForView.length === 0) return;
+
+      const shouldBeVisible = view === viewToShow;
+      zonesForView.forEach((zone, index) => {
+        const rect = fabricCanvas.getObjects().find(
+          (obj: any) => obj.name === `placement-zone-${view}-${index}`
+        );
+        const label = fabricCanvas.getObjects().find(
+          (obj: any) => obj.name === `placement-zone-label-${view}-${index}`
+        );
+
+        if (rect) rect.set({ visible: shouldBeVisible });
+        if (label) label.set({ visible: shouldBeVisible });
+      });
+    });
+
+    // Ensure all zones are at the back
+    const allZoneObjects = fabricCanvas.getObjects().filter(
       (obj: any) => obj.name?.startsWith("placement-zone-")
     );
-    existingZones.forEach((obj) => fabricCanvas.remove(obj));
-
-    // Add zones as background visual guides
-    currentZones.forEach((zone, index) => {
-      const rect = new Rect({
-        left: zone.x * canvasWidth,
-        top: zone.y * canvasHeight,
-        width: zone.width * canvasWidth,
-        height: zone.height * canvasHeight,
-        fill: "rgba(59, 130, 246, 0.15)",
-        stroke: "rgba(59, 130, 246, 0.6)",
-        strokeWidth: 2,
-        strokeDashArray: [8, 4],
-        selectable: false,
-        evented: false, // Not interactive - won't interfere with design elements
-        hoverCursor: "default",
-        name: `placement-zone-${currentView}-${index}`,
-        excludeFromExport: true, // Don't export zones in final design
-      });
-
-      // Add label
-      const label = new FabricText(zone.name, {
-        left: zone.x * canvasWidth + 5,
-        top: zone.y * canvasHeight + 5,
-        fontSize: 12,
-        fill: "rgba(59, 130, 246, 0.9)",
-        fontFamily: "Outfit",
-        fontWeight: "bold",
-        selectable: false,
-        evented: false,
-        hoverCursor: "default",
-        name: `placement-zone-label-${currentView}-${index}`,
-        excludeFromExport: true,
-      });
-
-      fabricCanvas.add(rect);
-      fabricCanvas.add(label);
-      
-      // Always send zones to back so they don't cover design elements
-      fabricCanvas.sendObjectToBack(rect);
-      fabricCanvas.sendObjectToBack(label);
+    allZoneObjects.forEach((zoneObj) => {
+      fabricCanvas.sendObjectToBack(zoneObj);
     });
 
     fabricCanvas.renderAll();
   }, [fabricCanvas, placementZones, currentView]);
+
+  // Render placement zones as visual guides (non-interactive, always in background)
+  useEffect(() => {
+    if (!fabricCanvas || !placementZones) {
+      console.log('[ZONES] No fabricCanvas or placementZones', { fabricCanvas: !!fabricCanvas, placementZones: !!placementZones });
+      return;
+    }
+
+    console.log('[ZONES] Updating zones visibility for view:', currentView);
+    ensureZonesExist();
+  }, [fabricCanvas, placementZones, currentView, ensureZonesExist]);
+
+  // Ensure zones stay at the back whenever objects are added or modified
+  useEffect(() => {
+    if (!fabricCanvas) return;
+
+    const ensureZonesAtBack = () => {
+      const zoneObjects = fabricCanvas.getObjects().filter(
+        (obj: any) => obj.name?.startsWith("placement-zone-")
+      );
+      if (zoneObjects.length > 0) {
+        zoneObjects.forEach((zoneObj) => {
+          fabricCanvas.sendObjectToBack(zoneObj);
+        });
+        fabricCanvas.renderAll();
+      }
+    };
+
+    // Listen for object additions and modifications
+    // But NOT for object:added - that would interfere with zone rendering
+    fabricCanvas.on("object:modified", ensureZonesAtBack);
+    fabricCanvas.on("object:moving", ensureZonesAtBack);
+
+    return () => {
+      fabricCanvas.off("object:modified", ensureZonesAtBack);
+      fabricCanvas.off("object:moving", ensureZonesAtBack);
+    };
+  }, [fabricCanvas]);
 
   // Check if point is within any zone
   const isPointInZone = useCallback((x: number, y: number, zones: PlacementZone[] | undefined): boolean => {
@@ -402,10 +491,10 @@ const TShirtDesigner = () => {
 
     // Check if object is completely within any zone
     const inZone = zones.some(zone => {
-      const zoneLeft = zone.x * canvasWidth;
-      const zoneTop = zone.y * canvasHeight;
-      const zoneRight = zoneLeft + (zone.width * canvasWidth);
-      const zoneBottom = zoneTop + (zone.height * canvasHeight);
+        const zoneLeft = zone.x * canvasWidth;
+        const zoneTop = zone.y * canvasHeight;
+        const zoneRight = zoneLeft + (zone.width * canvasWidth);
+        const zoneBottom = zoneTop + (zone.height * canvasHeight);
 
       return objLeft >= zoneLeft && objRight <= zoneRight && 
              objTop >= zoneTop && objBottom <= zoneBottom;
@@ -455,8 +544,8 @@ const TShirtDesigner = () => {
           strokeWidth: obj._originalStrokeWidth !== undefined ? obj._originalStrokeWidth : 0,
         });
         if (shouldRender) {
-          fabricCanvas.renderAll();
-        }
+        fabricCanvas.renderAll();
+      }
       }
       // Reset warning flag and clear warning message when object is back in valid position
       obj._hasShownWarning = false;
@@ -499,7 +588,9 @@ const TShirtDesigner = () => {
         const json = JSON.stringify(canvas.toJSON());
         setViewData(prev => ({
           ...prev,
-          [currentView]: json,
+          // Use ref so we always write to the correct view,
+          // even though this effect only runs once
+          [currentViewRef.current]: json,
         }));
       } catch (error) {
         console.error('Error updating view data:', error);
@@ -634,7 +725,7 @@ const TShirtDesigner = () => {
       }
       // Only validate (show visual feedback) after modification, don't constrain
       if (currentZones && currentZones.length > 0) {
-        constrainToZones(obj, currentZones);
+      constrainToZones(obj, currentZones);
       }
     };
 
@@ -647,92 +738,41 @@ const TShirtDesigner = () => {
     };
   }, [fabricCanvas, placementZones, currentView, constrainToZones]);
 
-  // Load view data when currentView changes
-  useEffect(() => {
-    if (!fabricCanvas) return;
-    
-    // Save previous view
-    const prevView = Object.keys(viewData).find(v => v !== currentView) as ViewType;
-    if (prevView) {
-      try {
-        const json = JSON.stringify(fabricCanvas.toJSON());
-        setViewData(prev => ({
-          ...prev,
-          [prevView]: json,
-        }));
-      } catch (error) {
-        console.error('Error saving previous view:', error);
-      }
-    }
-    
-    // Load new view
-    // Check if canvas is properly initialized before clearing
-    // Only clear if we're actually switching views, not on initial load
-    const viewJson = viewData[currentView];
-    if (viewJson) {
-      // Only clear if we have data to load (switching views)
-      if (fabricCanvas.getContext && fabricCanvas.getWidth && fabricCanvas.getHeight) {
-        try {
-          console.log('Loading view data, clearing canvas');
-          fabricCanvas.clear();
-          fabricCanvas.backgroundColor = "transparent";
-        } catch (error) {
-          console.warn('Error clearing canvas:', error);
-        }
-      }
-    
-      try {
-        fabricCanvas.loadFromJSON(viewJson, () => {
-          // Re-render placement zones after loading view data
-          if (placementZones && placementZones[currentView]) {
-            const currentZones = placementZones[currentView];
-            const canvasWidth = fabricCanvas.getWidth();
-            const canvasHeight = fabricCanvas.getHeight();
-            
-            currentZones.forEach((zone, index) => {
-              const rect = new Rect({
-                left: zone.x * canvasWidth,
-                top: zone.y * canvasHeight,
-                width: zone.width * canvasWidth,
-                height: zone.height * canvasHeight,
-                fill: "rgba(59, 130, 246, 0.15)",
-                stroke: "rgba(59, 130, 246, 0.6)",
-                strokeWidth: 2,
-                strokeDashArray: [8, 4],
-                selectable: false,
-                evented: false,
-                hoverCursor: "default",
-                name: `placement-zone-${currentView}-${index}`,
-                excludeFromExport: true,
-              });
+  // Helper to check if any design element is currently out of all placement zones
+  const hasOutOfBoundsElements = useCallback(() => {
+    if (!fabricCanvas || !placementZones) return false;
+    const zonesForCurrentView = placementZones[currentView];
+    if (!zonesForCurrentView || zonesForCurrentView.length === 0) return false;
 
-              const label = new FabricText(zone.name, {
-                left: zone.x * canvasWidth + 5,
-                top: zone.y * canvasHeight + 5,
-                fontSize: 12,
-                fill: "rgba(59, 130, 246, 0.9)",
-                fontFamily: "Outfit",
-                fontWeight: "bold",
-                selectable: false,
-                evented: false,
-                hoverCursor: "default",
-                name: `placement-zone-label-${currentView}-${index}`,
-                excludeFromExport: true,
-              });
+    const canvasWidth = fabricCanvas.getWidth();
+    const canvasHeight = fabricCanvas.getHeight();
 
-              fabricCanvas.add(rect);
-              fabricCanvas.add(label);
-              fabricCanvas.sendObjectToBack(rect);
-              fabricCanvas.sendObjectToBack(label);
-            });
-          }
-          fabricCanvas.renderAll();
-        });
-      } catch (error) {
-        console.error('Error loading view data:', error);
-      }
-    }
-  }, [currentView, fabricCanvas, placementZones]); // Added placementZones to ensure zones are re-rendered
+    const designObjects = fabricCanvas.getObjects().filter((obj: any) => {
+      const name = obj.name || "";
+      return !name.startsWith("placement-zone-") && !name.startsWith("zone-");
+    });
+
+    // Only check design elements on the current view; other views are stored in viewData
+    return designObjects.some((obj: any) => {
+      const objWidth = (obj.width || 0) * (obj.scaleX || 1);
+      const objHeight = (obj.height || 0) * (obj.scaleY || 1);
+      const objLeft = (obj.left || 0) - objWidth / 2;
+      const objTop = (obj.top || 0) - objHeight / 2;
+      const objRight = objLeft + objWidth;
+      const objBottom = objTop + objHeight;
+
+      const inAnyZone = zonesForCurrentView.some(zone => {
+        const zoneLeft = zone.x * canvasWidth;
+        const zoneTop = zone.y * canvasHeight;
+        const zoneRight = zoneLeft + (zone.width * canvasWidth);
+        const zoneBottom = zoneTop + (zone.height * canvasHeight);
+        return objLeft >= zoneLeft && objRight <= zoneRight && 
+               objTop >= zoneTop && objBottom <= zoneBottom;
+      });
+
+      return !inAnyZone;
+    });
+  }, [fabricCanvas, placementZones, currentView]);
 
   // Get available colors from variations with hex codes and names
   const availableColors = useMemo(() => {
@@ -850,7 +890,7 @@ const TShirtDesigner = () => {
               views.left.push(img.src);
             } else if (name.includes('_SR') || name.includes('-SR')) {
               views.right.push(img.src);
-            } else {
+    } else {
               // Default to front if no indicator found
               views.front.push(img.src);
             }
@@ -861,6 +901,11 @@ const TShirtDesigner = () => {
 
     return views;
   }, [selectedColor, wcProduct]);
+
+  const availableImageViews = useMemo(() => {
+    const views: ViewType[] = ['front', 'back', 'left', 'right'];
+    return views.filter((view) => (viewImages[view] || []).length > 0);
+  }, [viewImages]);
 
   // Check if there are actual design elements (not just empty canvas states)
   const hasAnyDesign = useMemo(() => {
@@ -897,6 +942,10 @@ const TShirtDesigner = () => {
           value: "#FFFFFF", 
           image: imageToUse 
         });
+        // Ensure zones are still present when cycling through images
+        if (fabricCanvas && placementZones) {
+          setTimeout(() => ensureZonesExist(), 0);
+        }
         return;
       }
     }
@@ -925,6 +974,10 @@ const TShirtDesigner = () => {
               value: "#FFFFFF", 
               image: sviImage 
             });
+            // Ensure zones are still present when cycling through images
+            if (fabricCanvas && placementZones) {
+              setTimeout(() => ensureZonesExist(), 0);
+            }
             return;
           }
         }
@@ -938,6 +991,10 @@ const TShirtDesigner = () => {
             value: "#FFFFFF", 
             image: variationImage 
           });
+          // Ensure zones are still present when cycling through images
+          if (fabricCanvas && placementZones) {
+            setTimeout(() => ensureZonesExist(), 0);
+          }
           return;
         }
         // Fallback to gallery images if main image is not available
@@ -948,6 +1005,10 @@ const TShirtDesigner = () => {
             value: "#FFFFFF", 
             image: galleryImage 
           });
+          // Ensure zones are still present when cycling through images
+          if (fabricCanvas && placementZones) {
+            setTimeout(() => ensureZonesExist(), 0);
+          }
           return;
         }
       }
@@ -961,7 +1022,7 @@ const TShirtDesigner = () => {
         setSelectedShirt({ name: "Produkt", value: "#FFFFFF", image: product.image });
       }
     }
-  }, [viewImages, currentView, selectedVariationImageIndex, selectedColor, productImage, product, variations]);
+  }, [viewImages, currentView, selectedVariationImageIndex, selectedColor, productImage, product, variations, fabricCanvas, placementZones, ensureZonesExist]);
 
   // Load view function - defined after viewImages
   const loadView = useCallback((view: ViewType) => {
@@ -970,13 +1031,17 @@ const TShirtDesigner = () => {
     // Save current view before switching
     saveCurrentView();
     
-    // Clear canvas - check if properly initialized
+    // Clear canvas design elements (keep zones for a split second, though they will be wiped by loadFromJSON)
     if (fabricCanvas.getContext && fabricCanvas.getWidth && fabricCanvas.getHeight) {
       try {
-    fabricCanvas.clear();
-    fabricCanvas.backgroundColor = "transparent";
+        const designObjects = fabricCanvas.getObjects().filter((obj: any) => {
+          const name = obj.name || '';
+          return !name.startsWith('placement-zone-') && !name.startsWith('zone-');
+        });
+        designObjects.forEach((obj) => fabricCanvas.remove(obj));
+        fabricCanvas.backgroundColor = "transparent";
       } catch (error) {
-        console.warn('Error clearing canvas:', error);
+        console.warn('Error clearing design elements:', error);
       }
     }
     
@@ -986,10 +1051,24 @@ const TShirtDesigner = () => {
       try {
         fabricCanvas.loadFromJSON(viewJson, () => {
           fabricCanvas.renderAll();
+          // Force zone render after JSON load - use setTimeout to ensure it happens after loadFromJSON completes
+          // Pass the target view explicitly to ensure correct visibility
+          setTimeout(() => {
+            ensureZonesExist(view);
+          }, 0);
         });
       } catch (error) {
         console.error('Error loading view data:', error);
+        // If error, still switch view and render zones
+        setTimeout(() => {
+          ensureZonesExist(view);
+        }, 0);
       }
+    } else {
+        // New view with no data? Just render zones
+        setTimeout(() => {
+          ensureZonesExist(view);
+        }, 0);
     }
     
     setCurrentView(view);
@@ -1005,7 +1084,18 @@ const TShirtDesigner = () => {
         }));
       }
     }
-  }, [fabricCanvas, viewData, saveCurrentView, viewImages, selectedVariationImageIndex]);
+  }, [fabricCanvas, viewData, saveCurrentView, viewImages, selectedVariationImageIndex, ensureZonesExist]);
+
+  // Ensure current view always has an underlying image; if not, switch via loadView
+  useEffect(() => {
+    if (!fabricCanvas) return;
+    if (availableImageViews.length === 0) return;
+    if (!availableImageViews.includes(currentView)) {
+      // Switch to first available view and reset image index to first image of that view
+      setSelectedVariationImageIndex(0);
+      loadView(availableImageViews[0]);
+    }
+  }, [availableImageViews, currentView, fabricCanvas, loadView]);
 
   // Reset image index when variation changes
   useEffect(() => {
@@ -1472,10 +1562,26 @@ const TShirtDesigner = () => {
       fabricCanvas.remove(obj);
       const newIndex = currentIndex + 1;
       // Re-add all objects in order, inserting obj at new position
+      // Keep zones, only reorder design elements
       const allObjects = fabricCanvas.getObjects();
-      allObjects.splice(newIndex, 0, obj);
-      fabricCanvas.clear();
-      allObjects.forEach(o => fabricCanvas.add(o));
+      const zones = allObjects.filter((o: any) => {
+        const name = o.name || '';
+        return name.startsWith('placement-zone-') || name.startsWith('zone-');
+      });
+      const designObjects = allObjects.filter((o: any) => {
+        const name = o.name || '';
+        return !name.startsWith('placement-zone-') && !name.startsWith('zone-');
+      });
+      
+      designObjects.splice(newIndex, 0, obj);
+      
+      // Remove all design objects (not zones)
+      designObjects.forEach(o => fabricCanvas.remove(o));
+      // Re-add design objects in new order
+      designObjects.forEach(o => fabricCanvas.add(o));
+      // Ensure zones stay at back
+      zones.forEach(z => fabricCanvas.sendObjectToBack(z));
+      
       fabricCanvas.renderAll();
       const filteredObjects = fabricCanvas.getObjects().filter((o: any) => {
         return !o.name || (!o.name.startsWith('zone-') && !o.name.startsWith('placement-zone-'));
@@ -1494,10 +1600,26 @@ const TShirtDesigner = () => {
       fabricCanvas.remove(obj);
       const newIndex = currentIndex - 1;
       // Re-add all objects in order, inserting obj at new position
+      // Keep zones, only reorder design elements
       const allObjects = fabricCanvas.getObjects();
-      allObjects.splice(newIndex, 0, obj);
-      fabricCanvas.clear();
-      allObjects.forEach(o => fabricCanvas.add(o));
+      const zones = allObjects.filter((o: any) => {
+        const name = o.name || '';
+        return name.startsWith('placement-zone-') || name.startsWith('zone-');
+      });
+      const designObjects = allObjects.filter((o: any) => {
+        const name = o.name || '';
+        return !name.startsWith('placement-zone-') && !name.startsWith('zone-');
+      });
+      
+      designObjects.splice(newIndex, 0, obj);
+      
+      // Remove all design objects (not zones)
+      designObjects.forEach(o => fabricCanvas.remove(o));
+      // Re-add design objects in new order
+      designObjects.forEach(o => fabricCanvas.add(o));
+      // Ensure zones stay at back
+      zones.forEach(z => fabricCanvas.sendObjectToBack(z));
+      
       fabricCanvas.renderAll();
       const filteredObjects = fabricCanvas.getObjects().filter((o: any) => {
         return !o.name || (!o.name.startsWith('zone-') && !o.name.startsWith('placement-zone-'));
@@ -1525,10 +1647,15 @@ const TShirtDesigner = () => {
     toast.success("Element gelöscht");
   };
 
-  // Clear all
+  // Clear all design elements (but keep zones)
   const handleClearAll = () => {
     if (!fabricCanvas) return;
-    fabricCanvas.clear();
+    // Remove only design elements, NOT zones
+    const designObjects = fabricCanvas.getObjects().filter((obj: any) => {
+      const name = obj.name || '';
+      return !name.startsWith('placement-zone-') && !name.startsWith('zone-');
+    });
+    designObjects.forEach((obj) => fabricCanvas.remove(obj));
     fabricCanvas.backgroundColor = "transparent";
     fabricCanvas.renderAll();
     // Clear current view data
@@ -1603,25 +1730,35 @@ const TShirtDesigner = () => {
           ? viewImgs[0] 
           : selectedShirt.image;
 
-        // Create a temporary canvas with shirt + design
-        const tempCanvas = document.createElement("canvas");
-        tempCanvas.width = 800;
-        tempCanvas.height = 800;
-        const ctx = tempCanvas.getContext("2d");
+    // Create a temporary canvas with shirt + design
+    const tempCanvas = document.createElement("canvas");
+    tempCanvas.width = 800;
+    tempCanvas.height = 800;
+    const ctx = tempCanvas.getContext("2d");
         if (!ctx) continue;
 
         await new Promise<void>((resolve) => {
-          const shirtImg = new Image();
-          shirtImg.crossOrigin = "anonymous";
-          
-          shirtImg.onerror = () => {
+    const shirtImg = new Image();
+    shirtImg.crossOrigin = "anonymous";
+    
+    shirtImg.onerror = () => {
             console.error(`Error loading shirt image for ${view}`);
             resolve();
-          };
+    };
 
-          shirtImg.onload = () => {
-            // Draw shirt image at full size (800x800) - same as handleAddToCart
-            ctx.drawImage(shirtImg, 0, 0, 800, 800);
+    shirtImg.onload = () => {
+            // Draw shirt image with preserved aspect ratio (similar to CSS background-size: contain)
+      const imgWidth = shirtImg.width;
+      const imgHeight = shirtImg.height;
+      const canvasSize = 800;
+      const scale = Math.min(canvasSize / imgWidth, canvasSize / imgHeight);
+      const drawWidth = imgWidth * scale;
+      const drawHeight = imgHeight * scale;
+      const offsetX = (canvasSize - drawWidth) / 2;
+      const offsetY = (canvasSize - drawHeight) / 2;
+
+      ctx.clearRect(0, 0, canvasSize, canvasSize);
+      ctx.drawImage(shirtImg, offsetX, offsetY, drawWidth, drawHeight);
 
             // Create a temporary fabric canvas for this view with the same dimensions as the main canvas
             const canvasWidth = fabricCanvas.getWidth();
@@ -1706,37 +1843,37 @@ const TShirtDesigner = () => {
                   // Export design at the correct scale to match the 800x800 output
                   // Same multiplier as handleAddToCart: 800 / canvasWidth
                   const designDataUrl = tempFabricCanvas.toDataURL({
-                    format: "png",
+        format: "png",
                     multiplier: 800 / canvasWidth,
-                  });
+      });
 
                   console.log(`Design exported for ${view}, data URL length:`, designDataUrl.length);
 
-                  const designImg = new Image();
-                  designImg.onerror = () => {
+      const designImg = new Image();
+      designImg.onerror = () => {
                     console.error(`Error loading design image for ${view}`);
                     tempFabricCanvas.dispose();
                     resolve();
-                  };
-                  
-                  designImg.onload = () => {
+      };
+      
+      designImg.onload = () => {
                     console.log(`Design image loaded for ${view}, drawing on shirt...`);
                     // Draw design on top of shirt at the same size (800x800)
                     // This ensures design elements are positioned correctly on the product
-                    ctx.drawImage(designImg, 0, 0, 800, 800);
+        ctx.drawImage(designImg, 0, 0, 800, 800);
 
                     // Download this view
-                    const link = document.createElement("a");
+        const link = document.createElement("a");
                     link.download = `mein-design-${viewLabels[view].toLowerCase().replace(/\s+/g, '-')}.png`;
-                    link.href = tempCanvas.toDataURL("image/png");
-                    link.click();
+        link.href = tempCanvas.toDataURL("image/png");
+        link.click();
                     
                     console.log(`Downloaded design for ${view}`);
                     exportedCount++;
                     tempFabricCanvas.dispose();
                     resolve();
-                  };
-                  designImg.src = designDataUrl;
+      };
+      designImg.src = designDataUrl;
                 }, 50);
               });
             });
@@ -1772,8 +1909,8 @@ const TShirtDesigner = () => {
       
       if (totalQuantity === 0) {
         toast.error("Bitte wähle mindestens eine Größe mit Menge");
-        return;
-      }
+      return;
+    }
 
     // Save current view before processing
     if (fabricCanvas) {
@@ -1836,11 +1973,11 @@ const TShirtDesigner = () => {
       const generateDesignImages = async () => {
         console.log('generateDesignImages: Starting...');
         const customDesigns: Record<string, string> = {};
-        const views: ViewType[] = ["front", "back", "left", "right"];
+          const views: ViewType[] = ["front", "back", "left", "right"];
         
         // Generate individual images for each view
-        for (const view of views) {
-          const viewJson = viewData[view];
+          for (const view of views) {
+            const viewJson = viewData[view];
           console.log(`Checking view ${view}:`, viewJson ? 'has data' : 'no data');
           if (!viewJson) continue; // Skip views without design
           
@@ -1870,10 +2007,10 @@ const TShirtDesigner = () => {
               : selectedShirt.image;
 
             // Create canvas for this view
-            const viewCanvas = document.createElement("canvas");
+                const viewCanvas = document.createElement("canvas");
             viewCanvas.width = 800;
             viewCanvas.height = 800;
-            const viewCtx = viewCanvas.getContext("2d");
+                const viewCtx = viewCanvas.getContext("2d");
             if (!viewCtx) continue;
 
             await new Promise<void>((resolve) => {
@@ -1896,10 +2033,10 @@ const TShirtDesigner = () => {
                 const tempFabricCanvas = new FabricCanvas(designCanvas, {
                   width: fabricCanvas.getWidth(),
                   height: fabricCanvas.getHeight(),
-                  backgroundColor: "transparent",
-                });
-
-                tempFabricCanvas.loadFromJSON(viewJson, () => {
+                    backgroundColor: "transparent",
+                  });
+                  
+                    tempFabricCanvas.loadFromJSON(viewJson, () => {
                   // Filter out placement zones
                   const objects = tempFabricCanvas.getObjects();
                   objects.forEach(obj => {
@@ -1911,12 +2048,12 @@ const TShirtDesigner = () => {
                   
                   tempFabricCanvas.renderAll();
                   
-                  const designDataUrl = tempFabricCanvas.toDataURL({
-                    format: "png",
+                      const designDataUrl = tempFabricCanvas.toDataURL({
+                        format: "png",
                     multiplier: 800 / fabricCanvas.getWidth(),
-                  });
+                      });
 
-                  const designImg = new Image();
+                      const designImg = new Image();
                   designImg.onerror = () => {
                     console.error(`Error loading design image for ${view}`);
                     tempFabricCanvas.dispose();
@@ -1924,18 +2061,18 @@ const TShirtDesigner = () => {
                     resolve();
                   };
                   
-                  designImg.onload = () => {
+                      designImg.onload = () => {
                     viewCtx.drawImage(designImg, 0, 0, 800, 800);
                     customDesigns[view] = viewCanvas.toDataURL("image/png");
-                    tempFabricCanvas.dispose();
-                    resolve();
-                  };
-                  designImg.src = designDataUrl;
-                });
+                        tempFabricCanvas.dispose();
+                        resolve();
+                      };
+                      designImg.src = designDataUrl;
+                    });
               };
               viewShirtImg.src = shirtImageUrl;
-            });
-          } catch (error) {
+                  });
+              } catch (error) {
             console.error(`Error generating image for ${view}:`, error);
             // Continue with other views even if one fails
           }
@@ -1983,19 +2120,19 @@ const TShirtDesigner = () => {
           Object.entries(sizeQuantities).forEach(([size, quantity]) => {
             if (quantity > 0) {
               console.log(`Adding item with design: size=${size}, quantity=${quantity}`);
-              addItem({
-                productId: 999,
-                name: "Custom T-Shirt",
-                price: 24.95,
-                image: selectedShirt.image,
-                color: selectedShirt.name,
+          addItem({
+            productId: 999,
+            name: "Custom T-Shirt",
+            price: 24.95,
+            image: selectedShirt.image,
+            color: selectedShirt.name,
                 size: size,
                 quantity: quantity,
                 customDesign: previewImage, // Keep for backward compatibility
                 customDesigns: customDesigns, // New: multiple images per view
-                customDesignRaw: rawDesignData,
-                designElementCount: totalDesignElementCount,
-              });
+            customDesignRaw: rawDesignData,
+            designElementCount: totalDesignElementCount,
+          });
               addedCount += quantity;
             }
           });
@@ -2010,12 +2147,12 @@ const TShirtDesigner = () => {
           Object.entries(sizeQuantities).forEach(([size, quantity]) => {
             if (quantity > 0) {
               console.log(`Adding item after error: size=${size}, quantity=${quantity}`);
-              addItem({
-                productId: 999,
-                name: "Custom T-Shirt",
-                price: 24.95,
-                image: selectedShirt.image,
-                color: selectedShirt.name,
+      addItem({
+        productId: 999,
+        name: "Custom T-Shirt",
+        price: 24.95,
+        image: selectedShirt.image,
+        color: selectedShirt.name,
                 size: size,
                 quantity: quantity,
                 customDesign: selectedShirt.image, // Fallback to shirt image
@@ -2080,19 +2217,14 @@ const TShirtDesigner = () => {
           className="mb-6"
         >
           <div className="mb-8">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+            <div className="mb-4">
               <h1 className="text-3xl lg:text-5xl font-bold text-primary">
                 <span className="text-secondary">Creator</span>
               </h1>
-              {product && (
-                <h2 className="text-xl lg:text-2xl font-semibold text-muted-foreground">
-                  {product.name}
-                </h2>
-              )}
             </div>
-            <p className="text-muted-foreground">
-              Lade dein eigenes Design hoch und platziere es auf deinem Produkt
-            </p>
+          <p className="text-muted-foreground">
+            Lade dein eigenes Design hoch und platziere es auf deinem Produkt
+          </p>
           </div>
         </motion.div>
 
@@ -2195,11 +2327,11 @@ const TShirtDesigner = () => {
               </div>
 
               {/* View Thumbnail Gallery - Show all variation views */}
-              {selectedColor && (viewImages.front.length > 0 || viewImages.back.length > 0 || viewImages.left.length > 0 || viewImages.right.length > 0) && (
+              {selectedColor && availableImageViews.length > 0 && (
                 <div className="mt-6 glass-card p-4">
                   <h3 className="font-semibold text-sm mb-4">Ansichten</h3>
                   <div className="grid grid-cols-4 gap-3">
-                    {(['front', 'back', 'left', 'right'] as ViewType[]).map((view) => {
+                    {availableImageViews.map((view) => {
                       const viewImgs = viewImages[view];
                       const firstImg = viewImgs[0];
                       const isActive = currentView === view;
@@ -2224,7 +2356,7 @@ const TShirtDesigner = () => {
                           ) : (
                             <div className="w-full h-full bg-muted flex items-center justify-center">
                               <Shirt className="w-6 h-6 text-muted-foreground" />
-                            </div>
+            </div>
                           )}
                           <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs py-1 px-2 text-center">
                             {viewLabels[view]}
@@ -2236,60 +2368,6 @@ const TShirtDesigner = () => {
                 </div>
               )}
 
-            {/* Step 1: Design Tools */}
-            {currentStep === 1 && (
-              <>
-                {/* Quick Tools - Only show when object is selected */}
-                {hasSelectedObject && (
-                  <div className="glass-card p-4 mt-4">
-                    <h3 className="font-bold mb-3 text-sm">Element bearbeiten</h3>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleScaleUp}
-                        title="Objekt vergrößern"
-                      >
-                        <ZoomIn className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleScaleDown}
-                        title="Objekt verkleinern"
-                      >
-                        <ZoomOut className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleFlipHorizontal}
-                        title="Horizontal spiegeln"
-                      >
-                        <FlipHorizontal className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleFlipVertical}
-                        title="Vertikal spiegeln"
-                      >
-                        <FlipVertical className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleDeleteSelected}
-                        title="Element löschen"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-
           </motion.div>
 
           {/* Right Sidebar - Product Info & Options */}
@@ -2298,55 +2376,136 @@ const TShirtDesigner = () => {
             animate={{ opacity: 1, x: 0 }}
             className="lg:col-span-4"
           >
-            <div className="space-y-8 max-h-[calc(100vh-12rem)] overflow-y-auto pr-2">
-              {/* Step Visualization - Clickable */}
-              <div className="p-5">
-                <div className="flex items-center justify-center">
-                <div className="flex items-center gap-4">
-                  <button
-                    onClick={() => setCurrentStep(1)}
-                    className={`flex items-center gap-2 transition-all ${
-                      currentStep === 1 
-                        ? 'text-primary cursor-default' 
-                        : 'text-muted-foreground hover:text-primary cursor-pointer'
-                    }`}
-                  >
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
-                      currentStep === 1 
-                        ? 'bg-primary text-primary-foreground' 
-                        : 'bg-muted hover:bg-muted/80'
-                    }`}>
-                      1
+            <div className="pr-2">
+              {/* Single Card with all content */}
+              <div className="glass-card p-6 space-y-6">
+                {/* Product Name and Details Button */}
+                {product?.name && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-xl font-bold">{product.name}</h2>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowProductDetailsDialog(true)}
+                        className="flex items-center gap-2"
+                      >
+                        <Info className="w-4 h-4" />
+                        Details
+                      </Button>
                     </div>
-                    <span className="font-semibold text-sm">Design</span>
-                  </button>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                  <button
-                    onClick={() => setCurrentStep(2)}
-                    className={`flex items-center gap-2 transition-all ${
-                      currentStep === 2 
-                        ? 'text-primary cursor-default' 
-                        : 'text-muted-foreground hover:text-primary cursor-pointer'
-                    }`}
-                  >
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
-                      currentStep === 2 
-                        ? 'bg-primary text-primary-foreground' 
-                        : 'bg-muted hover:bg-muted/80'
-                    }`}>
-                      2
-                    </div>
-                    <span className="font-semibold text-sm">Größe & Menge</span>
-                  </button>
-                </div>
-              </div>
+                    <Separator />
+                  </>
+                )}
 
-              {/* Step 1 Content */}
-              {currentStep === 1 ? (
-                <>
-                  {/* Text Toolbox - Show when text is selected */}
-                  {hasSelectedObject && fabricCanvas?.getActiveObject()?.type === "text" && (
-                    <div className="glass-card p-6 space-y-6">
+                {/* Step Visualization - Clickable */}
+                <div>
+                  <div className="flex items-center justify-center">
+                    <div className="flex items-center gap-4">
+                      <button
+                        onClick={() => setCurrentStep(1)}
+                        className={`flex items-center gap-2 transition-all ${
+                          currentStep === 1 
+                            ? 'text-primary cursor-default' 
+                            : 'text-muted-foreground hover:text-primary cursor-pointer'
+                        }`}
+                      >
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+                          currentStep === 1 
+                            ? 'bg-primary text-primary-foreground' 
+                            : 'bg-muted hover:bg-muted/80'
+                        }`}>
+                          1
+                        </div>
+                        <span className="font-semibold text-sm">Design</span>
+                      </button>
+                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                      <button
+                        onClick={() => setCurrentStep(2)}
+                        className={`flex items-center gap-2 transition-all ${
+                          currentStep === 2 
+                            ? 'text-primary cursor-default' 
+                            : 'text-muted-foreground hover:text-primary cursor-pointer'
+                        }`}
+                      >
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+                          currentStep === 2 
+                            ? 'bg-primary text-primary-foreground' 
+                            : 'bg-muted hover:bg-muted/80'
+                        }`}>
+                          2
+                        </div>
+                        <span className="font-semibold text-sm">Größe & Menge</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Step 1 Content */}
+                {currentStep === 1 ? (
+                  <>
+                {/* Element Toolbox - general controls for any selected element */}
+                {hasSelectedObject && (
+                  <>
+                    <Separator />
+                    <div className="space-y-3">
+                      <h3 className="font-bold text-sm mb-1">Element bearbeiten</h3>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleScaleUp}
+                          title="Objekt vergrößern"
+                        >
+                          <ZoomIn className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleScaleDown}
+                          title="Objekt verkleinern"
+                        >
+                          <ZoomOut className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleFlipHorizontal}
+                          title="Horizontal spiegeln"
+                        >
+                          <FlipHorizontal className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleFlipVertical}
+                          title="Vertikal spiegeln"
+                        >
+                          <FlipVertical className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleDeleteSelected}
+                          title="Element löschen"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Text Toolbox - Show when text is selected */}
+                    {hasSelectedObject && fabricCanvas?.getActiveObject()?.type === "text" && (
+                      <>
+                        <Separator />
+                        <div className="space-y-6">
                       <h3 className="font-bold text-sm mb-5">Text bearbeiten</h3>
                       
                       {/* Text Input */}
@@ -2365,87 +2524,87 @@ const TShirtDesigner = () => {
                           placeholder="Dein Text..."
                         />
                       </div>
-
-                      {/* Font Selection */}
+              
+              {/* Font Selection */}
                       <div>
                         <label className="text-sm font-medium mb-3 block">Schriftart</label>
-                        <Select value={selectedFont} onValueChange={handleFontChange}>
+                <Select value={selectedFont} onValueChange={handleFontChange}>
                           <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {fonts.map((font) => (
-                              <SelectItem key={font.value} value={font.value}>
-                                <span style={{ fontFamily: font.value }}>{font.name}</span>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {fonts.map((font) => (
+                      <SelectItem key={font.value} value={font.value}>
+                        <span style={{ fontFamily: font.value }}>{font.name}</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-                      {/* Text Color */}
+              {/* Text Color */}
                       <div>
                         <label className="text-sm font-medium mb-3 block">Textfarbe</label>
                         <div className="flex gap-3 items-center">
-                          <div className="flex-1 flex gap-1 flex-wrap">
-                            {presetColors.map((color) => (
-                              <button
-                                key={color.value}
-                                type="button"
-                                onClick={() => handleColorChange(color.value)}
-                                className={`w-8 h-8 rounded-md border-2 transition-all ${
-                                  textColor === color.value
-                                    ? "border-primary scale-110"
-                                    : "border-border hover:border-primary/50"
-                                }`}
-                                style={{ backgroundColor: color.value }}
-                                title={color.name}
-                              />
-                            ))}
-                          </div>
-                          <input
-                            type="color"
-                            value={textColor}
-                            onChange={(e) => handleColorChange(e.target.value)}
-                            className="w-10 h-10 rounded-md border-2 border-border cursor-pointer"
-                            title="Benutzerdefinierte Farbe"
-                          />
-                        </div>
-                      </div>
+                  <div className="flex-1 flex gap-1 flex-wrap">
+                    {presetColors.map((color) => (
+                      <button
+                        key={color.value}
+                        type="button"
+                        onClick={() => handleColorChange(color.value)}
+                        className={`w-8 h-8 rounded-md border-2 transition-all ${
+                          textColor === color.value
+                            ? "border-primary scale-110"
+                            : "border-border hover:border-primary/50"
+                        }`}
+                        style={{ backgroundColor: color.value }}
+                        title={color.name}
+                      />
+                    ))}
+                  </div>
+                    <input
+                      type="color"
+                      value={textColor}
+                      onChange={(e) => handleColorChange(e.target.value)}
+                      className="w-10 h-10 rounded-md border-2 border-border cursor-pointer"
+                      title="Benutzerdefinierte Farbe"
+                    />
+                </div>
+              </div>
 
-                      {/* Formatting Buttons */}
+              {/* Formatting Buttons */}
                       <div>
                         <label className="text-sm font-medium mb-3 block">Formatierung</label>
                         <div className="flex gap-3">
-                          <Button
-                            type="button"
-                            variant={textBold ? "secondary" : "outline"}
-                            size="sm"
-                            onClick={() => handleApplyFormatting("bold")}
-                            title="Fett"
-                          >
-                            <Bold className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant={textItalic ? "secondary" : "outline"}
-                            size="sm"
-                            onClick={() => handleApplyFormatting("italic")}
-                            title="Kursiv"
-                          >
-                            <Italic className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant={textStrikethrough ? "secondary" : "outline"}
-                            size="sm"
-                            onClick={() => handleApplyFormatting("strikethrough")}
-                            title="Durchgestrichen"
-                          >
-                            <Strikethrough className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
+                  <Button
+                    type="button"
+                    variant={textBold ? "secondary" : "outline"}
+                    size="sm"
+                    onClick={() => handleApplyFormatting("bold")}
+                    title="Fett"
+                  >
+                    <Bold className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={textItalic ? "secondary" : "outline"}
+                    size="sm"
+                    onClick={() => handleApplyFormatting("italic")}
+                    title="Kursiv"
+                  >
+                    <Italic className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={textStrikethrough ? "secondary" : "outline"}
+                    size="sm"
+                    onClick={() => handleApplyFormatting("strikethrough")}
+                    title="Durchgestrichen"
+                  >
+                    <Strikethrough className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
 
                       {/* Font Size */}
                       <div>
@@ -2485,9 +2644,9 @@ const TShirtDesigner = () => {
                             }}
                           >
                             <Plus className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
+                </Button>
+              </div>
+            </div>
 
                       {/* Layer Controls */}
                       <div>
@@ -2528,29 +2687,16 @@ const TShirtDesigner = () => {
                         </div>
                       </div>
 
-                      {/* Delete Button */}
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        className="w-full"
-                        onClick={() => {
-                          const activeObject = fabricCanvas.getActiveObject();
-                          if (activeObject) {
-                            fabricCanvas.remove(activeObject);
-                            fabricCanvas.renderAll();
-                            setHasSelectedObject(false);
-                          }
-                        }}
-                      >
-                        <Trash2 className="w-4 h-4 mr-2" />
-                        Löschen
-                      </Button>
+                      {/* Delete Button (removed – use general element delete instead) */}
                     </div>
+                    </>
                   )}
 
-                  {/* Variation Selection - Show if product has variations */}
-                  {productId && (
-                    <div className="glass-card p-6">
+                    {/* Variation Selection - Show if product has variations */}
+                    {productId && (
+                      <>
+                        {(hasSelectedObject && fabricCanvas?.getActiveObject()?.type === "text") && <Separator />}
+                        <div>
                       <h3 className="font-bold text-sm mb-5">
                         {selectedColor ? (
                           <>Farbe: <span className="text-primary">{selectedColor}</span></>
@@ -2636,35 +2782,40 @@ const TShirtDesigner = () => {
                 )}
                 {variationImages.length === 0 && !selectedColor && availableColors.length > 0 && (
                   <p className="text-sm text-muted-foreground mt-4">
-                    Wähle eine Farbe aus, um Variationen zu sehen.
-                  </p>
-                )}
-                    </div>
-                  )}
-              
-              {!productImage && !productId && (
-                <div>
-                  <h3 className="font-bold text-sm mb-3">Produkt Farbe</h3>
-                  <div className="flex gap-3">
-                    {shirtColors.map((color) => (
-                      <button
-                        key={color.name}
-                        onClick={() => setSelectedShirt(color)}
-                        className={`w-12 h-12 rounded-full border-4 transition-all ${
-                          selectedShirt.name === color.name
-                            ? "border-primary scale-110"
-                            : "border-border hover:border-primary/50"
-                        }`}
-                        style={{ backgroundColor: color.value }}
-                        title={color.name}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-                  
-                  {/* Price Display - Step 1 */}
-                  <div className="glass-card p-6">
+                          Wähle eine Farbe aus, um Variationen zu sehen.
+                        </p>
+                      )}
+                        </div>
+                      </>
+                    )}
+                
+                    {!productImage && !productId && (
+                      <>
+                        {productId && <Separator />}
+                        <div>
+                          <h3 className="font-bold text-sm mb-3">Produkt Farbe</h3>
+                          <div className="flex gap-3">
+                            {shirtColors.map((color) => (
+                              <button
+                                key={color.name}
+                                onClick={() => setSelectedShirt(color)}
+                                className={`w-12 h-12 rounded-full border-4 transition-all ${
+                                  selectedShirt.name === color.name
+                                    ? "border-primary scale-110"
+                                    : "border-border hover:border-primary/50"
+                                }`}
+                                style={{ backgroundColor: color.value }}
+                                title={color.name}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Price Display - Step 1 */}
+                    <Separator />
+                    <div>
                     <div className="flex justify-between items-center mb-4">
                       <span className="text-sm text-muted-foreground">Preis pro Stück</span>
                       <span className="text-2xl font-bold text-primary">{pricePerItem.toFixed(2).replace('.', ',')} €</span>
@@ -2679,31 +2830,41 @@ const TShirtDesigner = () => {
                         </span>
                       </div>
                     )}
-                  </div>
+                    </div>
 
-                  {/* Navigation Button - Step 1 */}
-                  <div>
+                    {/* Navigation Button - Step 1 */}
+                    <Separator />
+                    <div>
                     <Button
                       size="lg"
                       className="w-full"
-                      onClick={() => setCurrentStep(2)}
+                      onClick={() => {
+                        // Prevent navigation to step 2 if any design elements are outside placement zones
+                        if (hasOutOfBoundsElements()) {
+                          setOutOfBoundsWarning("Bitte positioniere alle Elemente vollständig innerhalb der Druckbereiche, bevor du fortfährst.");
+                          toast.error("Es befinden sich noch Elemente außerhalb der Druckbereiche.");
+                          return;
+                        }
+                        setCurrentStep(2);
+                      }}
                     >
                       Größe & Anzahl wählen
                       <ChevronRight className="w-4 h-4 ml-2" />
                     </Button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  {/* Size and Quantity Selection - Step 2 (Direct, no dialog button) */}
-                  <div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <Separator />
+                    {/* Size and Quantity Selection - Step 2 (Direct, no dialog button) */}
+                    <div>
                     <h3 className="font-bold mb-4 text-sm">Größe und Menge</h3>
                     <div className="space-y-3">
                       {availableSizes.map((size) => {
                         const quantity = sizeQuantities[size] || 0;
                         return (
                           <div
-                            key={size}
+                    key={size}
                             className="flex items-center justify-between p-3 rounded-lg border"
                           >
                             <span className="font-semibold text-base">{size}</span>
@@ -2743,12 +2904,13 @@ const TShirtDesigner = () => {
                     </div>
                   </div>
 
-                  {/* Price & Actions - Step 2 */}
-                  <div className="pt-4 border-t border-border">
+                    {/* Price & Actions - Step 2 */}
+                    <Separator />
+                    <div>
                     <div className="flex justify-between items-center mb-3">
                       <span className="text-sm text-muted-foreground">Preis pro Stück</span>
                       <span className="text-lg font-semibold text-primary">{pricePerItem.toFixed(2).replace('.', ',')} €</span>
-                    </div>
+              </div>
                     {totalQuantity > 0 && (
                       <div className="flex justify-between items-center mb-3">
                         <span className="text-sm text-muted-foreground">
@@ -2764,7 +2926,7 @@ const TShirtDesigner = () => {
                         Bitte wähle mindestens eine Größe mit Menge
                       </p>
                     )}
-                    <div className="space-y-3">
+              <div className="space-y-3">
                       {hasAnyDesign && (
                         <div className="flex items-start gap-2 p-3 rounded-lg border bg-background/50">
                           <Checkbox
@@ -2811,24 +2973,25 @@ const TShirtDesigner = () => {
                         disabled={hasAnyDesign && !importantPointsAccepted}
                       >
                         <ShoppingBag className="w-4 h-4 mr-2" />
-                        In den Warenkorb
-                      </Button>
+                  In den Warenkorb
+                </Button>
                       {hasAnyDesign && (
-                        <Button
-                          variant="outline"
+                  <Button
+                    variant="outline"
                           size="default"
-                          className="w-full"
-                          onClick={handleDownload}
-                        >
+                    className="w-full"
+                    onClick={handleDownload}
+                  >
                           <Download className="w-4 h-4 mr-2" />
-                          Design herunterladen
-                        </Button>
-                      )}
+                    Design herunterladen
+                  </Button>
+                )}
                     </div>
-                  </div>
+                    </div>
 
-                  {/* Navigation Button - Step 2 */}
-                  <div className="pt-4 border-t border-border">
+                    {/* Navigation Button - Step 2 */}
+                    <Separator />
+                    <div>
                     <Button
                       variant="outline"
                       size="default"
@@ -2836,16 +2999,85 @@ const TShirtDesigner = () => {
                       onClick={() => setCurrentStep(1)}
                     >
                       <ChevronLeft className="w-4 h-4 mr-2" />
-                      Zurück
-                    </Button>
-                  </div>
-                </>
-              )}
+                        Zurück
+                      </Button>
+                    </div>
+                  </>
+                )}
+                </div>
               </div>
-            </div>
-          </motion.div>
+            </motion.div>
+          </div>
         </div>
-      </div>
+
+      {/* Product Details Dialog */}
+      <Dialog open={showProductDetailsDialog} onOpenChange={setShowProductDetailsDialog}>
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{product?.name || "Produktdetails"}</DialogTitle>
+            <DialogDescription>
+              Hier finden Sie alle Informationen zu diesem Produkt
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 mt-4">
+            {product?.description && (
+              <div>
+                <h3 className="font-semibold mb-2">Beschreibung</h3>
+                <div 
+                  className="text-sm text-muted-foreground prose prose-sm max-w-none"
+                  dangerouslySetInnerHTML={{ __html: product.description }}
+                />
+              </div>
+            )}
+            
+            {product?.shortDescription && (
+              <div>
+                <h3 className="font-semibold mb-2">Kurzbeschreibung</h3>
+                <p className="text-sm text-muted-foreground">{product.shortDescription}</p>
+              </div>
+            )}
+
+            {product?.sku && (
+              <div>
+                <h3 className="font-semibold mb-2">Artikelnummer</h3>
+                <p className="text-sm text-muted-foreground">{product.sku}</p>
+              </div>
+            )}
+
+            {product?.categories && product.categories.length > 0 && (
+              <div>
+                <h3 className="font-semibold mb-2">Kategorien</h3>
+                <div className="flex flex-wrap gap-2">
+                  {product.categories.map((cat: any) => (
+                    <span
+                      key={cat.id || cat}
+                      className="px-2 py-1 text-xs rounded-md bg-muted text-muted-foreground"
+                    >
+                      {cat.name || cat}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {basePrice > 0 && (
+              <div>
+                <h3 className="font-semibold mb-2">Preis</h3>
+                <p className="text-lg font-bold text-primary">
+                  {basePrice.toFixed(2).replace('.', ',')} €
+                </p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button onClick={() => setShowProductDetailsDialog(false)}>
+              Schließen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Text Options Dialog */}
       <Dialog open={showTextDialog} onOpenChange={setShowTextDialog}>
@@ -3029,8 +3261,8 @@ const TShirtDesigner = () => {
             </div>
             <p className="text-xs text-muted-foreground">
               Hiermit bestätige ich die obigen Bedingungen gelesen zu haben und im vollen Umfang damit einverstanden zu sein.
-            </p>
-          </div>
+              </p>
+            </div>
           <DialogFooter>
             <Button
               variant="outline"
@@ -3067,14 +3299,14 @@ const TShirtDesigner = () => {
               <p className="text-muted-foreground">
                 Diese sind leider nicht immer verbindlich. Unter jedem Artikel findest Du in der Artikelbeschreibung eine Maßtabelle zu den Konfektionsgrößen. Bitte prüfe, ob die Größen korrekt gewählt sind. Abweichungen von bis zu +/- 5% liegen in der Toleranz.
               </p>
-            </div>
+        </div>
 
             <div>
               <h3 className="font-semibold mb-2">Artikelfarben:</h3>
               <p className="text-muted-foreground">
                 Bitte beachte, dass es bei unterschiedlichen Herstellern zu Farbabweichungen kommen kann, obwohl die Textilfarbe die gleiche Bezeichnung hat. Beispiel: Hersteller B&C Farbe Fire Red ist ein anderes Fire Red als beim Hersteller Promodoro. Es kann auch vorkommen, das gleiche Farbangaben sich in der Artikelfarbe unterscheiden können. Beispiel: Farbe Fire Red innerhalb eines Artikels zwischen den unterschiedlichen Größen, oder auch zwischen den Modellen Männer, Frauen und Kinder. Darauf haben wir Hersteller bedingt keinen Einfluß.
               </p>
-            </div>
+      </div>
 
             <div>
               <h3 className="font-semibold mb-2">Rechtschreibung:</h3>
