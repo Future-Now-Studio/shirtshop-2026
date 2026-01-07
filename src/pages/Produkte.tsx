@@ -6,26 +6,26 @@ import { ProductCard } from "@/components/products/ProductCard";
 import { useProductsByCategory, useWooCommerceCategories } from "@/hooks/useProducts";
 import { Loader2 } from "lucide-react";
 
-const targetGroups = ["Alle", "Damen", "Herren", "Kinder & Babys"];
+const targetGroups = ["alle", "damen", "herren", "kinder & babys"];
 
 const Produkte = () => {
   const [selectedCategory, setSelectedCategory] = useState<string | number>("alle produkte");
-  const [selectedTarget, setSelectedTarget] = useState<string | null>("Alle");
+  const [selectedTarget, setSelectedTarget] = useState<string | null>("alle");
 
   const { data: categories = [], isLoading: categoriesLoading } = useWooCommerceCategories();
   const { data: products = [], isLoading: productsLoading, error } = useProductsByCategory(selectedCategory);
   
   // Map target groups to geschlecht values
   const geschlechtMap: Record<string, string[]> = {
-    "Damen": ["Damen", "Frau", "weiblich", "female"],
-    "Herren": ["Herren", "Mann", "männlich", "male"],
-    "Kinder & Babys": ["Kinder", "Kinder & Babys", "Baby", "Babys", "Unisex", "unisex"],
+    "damen": ["damen", "frau", "weiblich", "female"],
+    "herren": ["herren", "mann", "männlich", "male"],
+    "kinder & babys": ["kinder", "kinder & babys", "baby", "babys", "unisex", "unisex"],
   };
 
   // Filter products by geschlecht
   const filteredProducts = products.filter(product => {
     // If "Alle" is selected or no target selected, show all products
-    if (!selectedTarget || selectedTarget === "Alle" || selectedTarget === "alle") return true;
+    if (!selectedTarget || selectedTarget === "alle" || selectedTarget.toLowerCase() === "alle") return true;
     
     const geschlechtValues = geschlechtMap[selectedTarget] || [];
     if (!product.geschlecht) return false;
@@ -56,7 +56,7 @@ const Produkte = () => {
             transition={{ delay: 0.1 }}
             className="text-lg text-muted-foreground max-w-2xl"
           >
-            Entdecke unsere große Auswahl an hochwertigen Textilien für jeden Anlass
+            entdecke unsere große auswahl an hochwertigen textilien für jeden anlass
           </motion.p>
         </div>
       </section>
@@ -71,7 +71,7 @@ const Produkte = () => {
                 key={target}
                 variant={selectedTarget === target ? "default" : "ghost"}
                 size="sm"
-                onClick={() => setSelectedTarget(target === "Alle" ? "Alle" : target)}
+                onClick={() => setSelectedTarget(target === "alle" ? "alle" : target)}
               >
                 {target}
               </Button>

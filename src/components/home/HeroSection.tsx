@@ -7,9 +7,9 @@ import heroVideo from "@/assets/browsing.mp4";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 const trustElements = [
-  { icon: CheckCircle, text: "Über 10.000 zufriedene Bestellungen" },
-  { icon: Factory, text: "Lokale Produktion" },
-  { icon: Truck, text: "Schnelle Lieferung" },
+  { icon: CheckCircle, text: "über 1 millionen bestellungen" },
+  { icon: Factory, text: "lokale produktion" },
+  { icon: Truck, text: "schnelle lieferung" },
 ];
 
 export const HeroSection = () => {

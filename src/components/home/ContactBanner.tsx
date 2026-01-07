@@ -15,16 +15,16 @@ export const ContactBanner = () => {
           <div className="grid md:grid-cols-2 gap-8 items-center">
             <div>
               <h3 className="text-2xl lg:text-3xl font-bold text-primary mb-4">
-                Kontakt & Standorte
+                kontakt & standorte
               </h3>
               <p className="text-muted-foreground mb-6">
-                Wir sind für Sie da! Besuchen Sie uns in unseren Filialen oder kontaktieren Sie uns online.
+                wir sind für sie da! besuchen sie uns in unseren filialen oder kontaktieren sie uns online.
               </p>
               <a
                 href="#filialen"
                 className="inline-block text-primary hover:text-primary/80 font-semibold transition-colors"
               >
-                Alle Standorte anzeigen →
+                alle standorte anzeigen →
               </a>
             </div>
 
@@ -38,7 +38,7 @@ export const ContactBanner = () => {
                   <Mail className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">E-Mail</p>
+                  <p className="text-sm text-muted-foreground">e-mail</p>
                   <p className="font-semibold">info@private-shirt.de</p>
                 </div>
               </motion.a>
@@ -52,7 +52,7 @@ export const ContactBanner = () => {
                   <Phone className="w-5 h-5 text-secondary-foreground" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Telefon Hotline</p>
+                  <p className="text-sm text-muted-foreground">telefon hotline</p>
                   <p className="font-semibold">040 - 180 75 863</p>
                 </div>
               </motion.a>
@@ -68,8 +68,8 @@ export const ContactBanner = () => {
                   <MapPin className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Standorte</p>
-                  <p className="font-semibold">Filialen auf Google Maps</p>
+                  <p className="text-sm text-muted-foreground">standorte</p>
+                  <p className="font-semibold">filialen auf google maps</p>
                 </div>
               </motion.a>
 
@@ -78,8 +78,8 @@ export const ContactBanner = () => {
                   <Clock className="w-5 h-5 text-muted-foreground" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Öffnungszeiten</p>
-                  <p className="font-semibold">Mo - Sa: 10:00 - 20:00 Uhr</p>
+                  <p className="text-sm text-muted-foreground">öffnungszeiten</p>
+                  <p className="font-semibold">mo - sa: 10:00 - 20:00 uhr</p>
                 </div>
               </div>
             </div>

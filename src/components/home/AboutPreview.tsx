@@ -33,9 +33,9 @@ export const AboutPreview = () => {
               transition={{ delay: 0.4 }}
               className="absolute -bottom-6 -right-6 lg:right-auto lg:-left-6 glass-card p-6 max-w-xs"
             >
-              <p className="text-primary font-bold text-lg mb-1">Seit 2010</p>
+              <p className="text-primary font-bold text-lg mb-1">seit 2010</p>
               <p className="text-muted-foreground text-sm">
-                Professionelle Textilveredelung aus Hamburg
+                professionelle textilveredelung aus hamburg
               </p>
             </motion.div>
           </motion.div>
@@ -53,10 +53,10 @@ export const AboutPreview = () => {
               <span className="text-secondary italic">geboren in hamburg.</span>
             </h2>
             <p className="text-lg text-muted-foreground mb-8 leading-relaxed">
-              Guter Stoff für Ihre Ideen. Private Shirt – professionelle Textilveredelung. 
-              Sie überzeugen Ihre Kunden täglich mit kreativen Ideen und individuellen 
-              Dienstleistungen? Dann legen Sie bei der Außendarstellung sicher auch hohen 
-              Wert auf Qualität.
+              guter stoff für ihre ideen. private shirt – professionelle textilveredelung. 
+              sie überzeugen ihre kunden täglich mit kreativen ideen und individuellen 
+              dienstleistungen? dann legen sie bei der außendarstellung sicher auch hohen 
+              wert auf qualität.
             </p>
             <Link to="/unternehmen">
               <Button size="lg" className="group">

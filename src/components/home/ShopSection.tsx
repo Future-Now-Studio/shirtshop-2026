@@ -11,7 +11,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 const categories = [
   {
     title: "shop, shop, hooray.",
-    description: "Entdecke unsere neuesten Kollektionen",
+    description: "entdecke unsere neuesten kollektionen",
     link: "/produkte",
     linkText: "jetzt shoppen",
     video: browsingVideo,
@@ -19,7 +19,7 @@ const categories = [
   },
   {
     title: "du brauchst masse?",
-    description: "Großbestellungen mit Mengenrabatt",
+    description: "großbestellungen mit mengenrabatt",
     link: "/grossbestellung",
     linkText: "jetzt mehr",
     image: masseImage,
@@ -28,7 +28,7 @@ const categories = [
   },
   {
     title: "das können wir.",
-    description: "Unsere professionellen Leistungen",
+    description: "unsere professionellen leistungen",
     link: "/leistungen",
     linkText: "mehr erfahren",
     image: leistungenImage,

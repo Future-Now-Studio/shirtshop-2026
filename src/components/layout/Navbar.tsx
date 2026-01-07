@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X, ShoppingBag, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,17 +7,18 @@ import { useCartStore } from "@/stores/cartStore";
 import logo from "@/assets/group-25.svg";
 
 const navLinks = [
-  { name: "Produkte", path: "/produkte" },
-  { name: "Selbst gestalten", path: "/selbst-gestalten" },
-  { name: "Filialen", path: "/#filialen" },
-  { name: "Über uns", path: "/unternehmen" },
-  { name: "Leistungen", path: "/leistungen" },
-  { name: "Großbestellung", path: "/grossbestellung" },
+  { name: "produkte", path: "/produkte" },
+  { name: "selbst gestalten", path: "/selbst-gestalten" },
+  { name: "filialen", path: "/#filialen" },
+  { name: "über uns", path: "/unternehmen" },
+  { name: "leistungen", path: "/leistungen" },
+  { name: "großbestellung", path: "/grossbestellung" },
 ];
 
 export const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
   const { openCart, getTotalItems } = useCartStore();
   const totalItems = getTotalItems();
 
@@ -57,10 +58,20 @@ export const Navbar = () => {
               const handleClick = (e: React.MouseEvent) => {
                 if (isAnchor) {
                   e.preventDefault();
+                  const hash = link.path.substring(1); // Remove the '/'
                   if (location.pathname !== '/') {
-                    window.location.href = link.path;
+                    // Navigate to home first, then scroll after navigation
+                    navigate('/');
+                    // Wait for navigation to complete, then scroll
+                    setTimeout(() => {
+                      const element = document.querySelector(hash);
+                      if (element) {
+                        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }
+                    }, 100);
                   } else {
-                    const element = document.querySelector(link.path.substring(1));
+                    // Already on home page, just scroll
+                    const element = document.querySelector(hash);
                     if (element) {
                       element.scrollIntoView({ behavior: 'smooth', block: 'start' });
                     }
@@ -92,7 +103,7 @@ export const Navbar = () => {
               onClick={handleOpenChat}
               className="text-base px-5 py-2"
             >
-              Kontakt
+              kontakt
             </Button>
           </div>
 
@@ -172,10 +183,20 @@ export const Navbar = () => {
                   setIsOpen(false);
                   if (isAnchor) {
                     e.preventDefault();
+                    const hash = link.path.substring(1); // Remove the '/'
                     if (location.pathname !== '/') {
-                      window.location.href = link.path;
+                      // Navigate to home first, then scroll after navigation
+                      navigate('/');
+                      // Wait for navigation to complete, then scroll
+                      setTimeout(() => {
+                        const element = document.querySelector(hash);
+                        if (element) {
+                          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                      }, 100);
                     } else {
-                      const element = document.querySelector(link.path.substring(1));
+                      // Already on home page, just scroll
+                      const element = document.querySelector(hash);
                       if (element) {
                         element.scrollIntoView({ behavior: 'smooth', block: 'start' });
                       }
@@ -216,7 +237,7 @@ export const Navbar = () => {
                   }}
                   className="w-full py-4 px-5 rounded-xl font-medium text-base transition-colors hover:bg-muted text-left"
                 >
-                  Kontakt
+                  kontakt
                 </button>
               </motion.div>
             </div>

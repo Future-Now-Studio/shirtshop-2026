@@ -2450,52 +2450,123 @@ const TShirtDesigner = () => {
                     <Separator />
                     <div className="space-y-3">
                       <h3 className="font-bold text-sm mb-1">Element bearbeiten</h3>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={handleScaleUp}
-                          title="Objekt vergrößern"
-                        >
-                          <ZoomIn className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={handleScaleDown}
-                          title="Objekt verkleinern"
-                        >
-                          <ZoomOut className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={handleFlipHorizontal}
-                          title="Horizontal spiegeln"
-                        >
-                          <FlipHorizontal className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={handleFlipVertical}
-                          title="Vertikal spiegeln"
-                        >
-                          <FlipVertical className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={handleDeleteSelected}
-                          title="Element löschen"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+                      <div className="flex flex-col gap-2">
+                        {/* Transform controls */}
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleScaleUp}
+                            title="Objekt vergrößern"
+                          >
+                            <ZoomIn className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleScaleDown}
+                            title="Objekt verkleinern"
+                          >
+                            <ZoomOut className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleFlipHorizontal}
+                            title="Horizontal spiegeln"
+                          >
+                            <FlipHorizontal className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleFlipVertical}
+                            title="Vertikal spiegeln"
+                          >
+                            <FlipVertical className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleDeleteSelected}
+                            title="Element löschen"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+
+                        {/* Layer controls for any element */}
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            title="Ganz nach vorne"
+                            onClick={() => {
+                              if (!fabricCanvas) return;
+                              const active = fabricCanvas.getActiveObject();
+                              if (active) {
+                                handleMoveToFront(active);
+                              }
+                            }}
+                          >
+                            <ArrowUp className="w-4 h-4 mr-1" />
+                            Top
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            title="Eine Ebene nach vorne"
+                            onClick={() => {
+                              if (!fabricCanvas) return;
+                              const active = fabricCanvas.getActiveObject();
+                              if (active) {
+                                handleMoveForward(active);
+                              }
+                            }}
+                          >
+                            <ArrowUp className="w-4 h-4 mr-1" />
+                            +
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            title="Eine Ebene nach hinten"
+                            onClick={() => {
+                              if (!fabricCanvas) return;
+                              const active = fabricCanvas.getActiveObject();
+                              if (active) {
+                                handleMoveBackward(active);
+                              }
+                            }}
+                          >
+                            <ArrowDown className="w-4 h-4 mr-1" />
+                            -
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            title="Ganz nach hinten"
+                            onClick={() => {
+                              if (!fabricCanvas) return;
+                              const active = fabricCanvas.getActiveObject();
+                              if (active) {
+                                handleMoveToBack(active);
+                              }
+                            }}
+                          >
+                            <ArrowDown className="w-4 h-4 mr-1" />
+                            Bottom
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   </>
