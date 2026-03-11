@@ -213,3 +213,32 @@
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-primary/60;
 }
+
+/* Placement Zones Editor: Fabric.js legt .canvas-container um das Canvas – muss volle Fläche füllen + Klicks annehmen */
+.placement-zones-fabric-wrap .canvas-container {
+  position: absolute !important;
+  left: 0;
+  top: 0;
+  width: 100% !important;
+  height: 100% !important;
+  pointer-events: auto !important;
+}
+.placement-zones-fabric-wrap .canvas-container canvas {
+  pointer-events: auto !important;
+  display: block;
+}
+
+/* Creator (TShirtDesigner): gleicher Fabric-Container wie Admin – volle Fläche + pointer-events */
+.designer-fabric-host .canvas-container {
+  position: absolute !important;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  pointer-events: auto !important;
+}
+.designer-fabric-host .canvas-container canvas {
+  pointer-events: auto !important;
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}

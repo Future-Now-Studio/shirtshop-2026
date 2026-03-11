@@ -16,7 +16,12 @@ import { PlacementZone } from "@/data/products";
 import { toast } from "sonner";
 import { Save, Trash2, ArrowLeft, Shirt, Search, Lock } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { WOOCOMMERCE_CONFIG } from "@/lib/woocommerce";
+import {
+  PLACEMENT_ZONE_CANVAS_SIZE,
+  getPlacementCanvasSize,
+} from "@/constants/placementCanvas";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
@@ -27,6 +32,13 @@ import {
 } from "@/components/ui/dialog";
 
 type ViewType = "front" | "back" | "left" | "right";
+
+/** Effektive Zonen-Höhe in mm: nur Breite angegeben → aus Aspect ratio der Zone */
+function effectiveZoneHeightMm(zone: PlacementZone): number | undefined {
+  if (zone.widthMm == null || zone.width <= 0) return undefined;
+  if (zone.customMmSize && zone.heightMm != null) return zone.heightMm;
+  return Math.round((zone.widthMm * zone.height) / zone.width * 10) / 10;
+}
 
 const viewLabels: Record<ViewType, string> = {
   front: "Vorderseite",
@@ -103,6 +115,8 @@ const AdminPlacementZones = () => {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  /** Wrapper mit aspect-square – Größe für Fabric muss hier gemessen werden */
+  const canvasWrapRef = useRef<HTMLDivElement>(null);
   const [fabricCanvas, setFabricCanvas] = useState<FabricCanvas | null>(null);
   const [selectedProductId, setSelectedProductId] = useState<string>(productId || "");
   const [currentView, setCurrentView] = useState<ViewType>("front");
@@ -229,13 +243,22 @@ const AdminPlacementZones = () => {
             imageIds.includes(String(img.id))
           ) || [];
           
-          // Organize images by view type based on filename
-          matchingImages.forEach(img => {
-            const name = img.name || img.src || '';
-            // Check filename for view indicators: _F (front), _B (back), _SL (left), _SR (right)
-            if (name.includes('_F') || name.includes('-F')) {
+          // Organize images by view type: PF/PB prefix on title first, then _F/_B/_SL/_SR
+          matchingImages.forEach((img) => {
+            const name = img.name || img.src || "";
+            const upper = String(name).trim().toUpperCase();
+            if (upper.startsWith("PF")) {
               views.front = img.src;
-            } else if (name.includes('_B') || name.includes('-B')) {
+              return;
+            }
+            if (upper.startsWith("PB")) {
+              views.back = img.src;
+              return;
+            }
+            // Filename view indicators: _F (front), _B (back), _SL (left), _SR (right)
+            if (name.includes("_F") || name.includes("-F")) {
+              views.front = img.src;
+            } else if (name.includes("_B") || name.includes("-B")) {
               views.back = img.src;
             } else if (name.includes('_SL') || name.includes('-SL')) {
               views.left = img.src;
@@ -246,8 +269,6 @@ const AdminPlacementZones = () => {
         }
       }
     }
-
-    console.log('[VIEW IMAGES] Computed view images:', views);
     return views;
   }, [selectedColor, wcProduct, product?.image]);
 
@@ -264,7 +285,6 @@ const AdminPlacementZones = () => {
 
   // Load zones from product
   useEffect(() => {
-    console.log("Loading zones from product:", product?.placementZones);
 
     // Only overwrite zones when the product actually provides placementZones.
     // If placementZones is missing/undefined, keep the existing zones in state
@@ -276,32 +296,27 @@ const AdminPlacementZones = () => {
         left: product.placementZones.left || [],
         right: product.placementZones.right || [],
       };
-      console.log("Loaded zones:", loadedZones);
-      console.log("Back zones count:", loadedZones.back.length);
       setZones(loadedZones);
     } else {
-      console.log("No placement zones found in product (keeping existing zones state)");
     }
   }, [product?.placementZones, product?.id]);
 
   // Initialize canvas once when refs are available
   useEffect(() => {
     if (fabricCanvas) {
-      console.log('[CANVAS INIT] Canvas already exists');
       return;
     }
     
     // Function to initialize canvas
     const initializeCanvas = () => {
-      if (!canvasRef.current || !containerRef.current) {
-        console.log('[CANVAS INIT] Refs not available yet', { canvasRef: !!canvasRef.current, containerRef: !!containerRef.current });
+      if (!canvasRef.current) {
         return false;
       }
-
-      console.log('[CANVAS INIT] Initializing canvas');
-      const containerWidth = containerRef.current.offsetWidth;
-      // Use same canvas size as TShirtDesigner for consistency
-      const canvasSize = Math.min(containerWidth, 800);
+      // Größe vom direkten Wrapper (aspect-square), sonst ist Fabric-Offset/Hit-Test falsch → Klicks wirken „tot“
+      const wrap = canvasWrapRef.current || canvasRef.current.parentElement;
+      const containerWidth = wrap?.clientWidth || containerRef.current?.offsetWidth || PLACEMENT_ZONE_CANVAS_SIZE;
+      // Gleiche Logik wie Creator – feste Obergrenze, damit Zonen 1:1 passen
+      const canvasSize = getPlacementCanvasSize(containerWidth);
 
       const canvas = new FabricCanvas(canvasRef.current, {
         width: canvasSize,
@@ -310,8 +325,6 @@ const AdminPlacementZones = () => {
         selection: true,
         preserveObjectStacking: true,
       });
-      
-      console.log('[CANVAS INIT] Canvas created', { width: canvasSize, height: canvasSize });
       
       // Enable selection tracking for zones
       canvas.on('selection:created', (e) => {
@@ -343,7 +356,19 @@ const AdminPlacementZones = () => {
       // The canvas is transparent and overlays the CSS background image
 
       setFabricCanvas(canvas);
-      console.log('[CANVAS INIT] Canvas set in state');
+      // Offset mehrfach nach Layout – sonst sind Klick-Koordinaten falsch (z. B. wenn Sidebar erst danach rendert)
+      const bumpOffset = () => {
+        try {
+          canvas.calcOffset?.();
+          canvas.requestRenderAll?.();
+        } catch {
+          /* ignore */
+        }
+      };
+      requestAnimationFrame(bumpOffset);
+      setTimeout(bumpOffset, 50);
+      setTimeout(bumpOffset, 200);
+      setTimeout(bumpOffset, 500);
       return true;
     };
 
@@ -359,7 +384,6 @@ const AdminPlacementZones = () => {
 
     const retryTimer = setInterval(() => {
       retryCount++;
-      console.log(`[CANVAS INIT] Retry attempt ${retryCount}/${maxRetries}`);
       
       if (initializeCanvas()) {
         clearInterval(retryTimer);
@@ -367,7 +391,6 @@ const AdminPlacementZones = () => {
       }
       
       if (retryCount >= maxRetries) {
-        console.error('[CANVAS INIT] Failed to initialize canvas after', maxRetries, 'retries');
         clearInterval(retryTimer);
       }
     }, retryInterval);
@@ -375,7 +398,6 @@ const AdminPlacementZones = () => {
     return () => {
       clearInterval(retryTimer);
       if (fabricCanvas) {
-        console.log('[CANVAS INIT] Cleaning up canvas');
         fabricCanvas.dispose();
       }
     };
@@ -389,13 +411,11 @@ const AdminPlacementZones = () => {
   // Render zones on canvas
   useEffect(() => {
     if (!fabricCanvas) {
-      console.log("[RENDER ZONES] No fabricCanvas available");
       return;
     }
     
     // Don't render zones while drawing
     if (isDrawing) {
-      console.log("[RENDER ZONES] Currently drawing, skipping render");
       return;
     }
 
@@ -405,9 +425,6 @@ const AdminPlacementZones = () => {
     const canvasHeight = fabricCanvas.getHeight();
     
     // Debug: Log zones for current view
-    console.log(`[RENDER ZONES] View: ${currentView}`, currentZones);
-    console.log(`[RENDER ZONES] Number of zones: ${currentZones.length}`);
-    console.log(`[RENDER ZONES] All zones state:`, zones);
 
     // Check which zones already exist for current view
     const existingZonesForView = fabricCanvas.getObjects().filter(
@@ -420,7 +437,6 @@ const AdminPlacementZones = () => {
 
     // Only clear and re-render if zones don't exist or count doesn't match
     if (existingZonesForView.length !== currentZones.length * 2) {
-      console.log(`[RENDER ZONES] Zones count mismatch. Existing: ${existingZonesForView.length}, Expected: ${currentZones.length * 2}`);
       
       // Clear only zones for current view (not all zones)
       existingZonesForView.forEach((obj) => fabricCanvas.remove(obj));
@@ -430,7 +446,6 @@ const AdminPlacementZones = () => {
       setSelectedZoneIndex(null);
 
       if (currentZones.length === 0) {
-        console.log(`[RENDER ZONES] No zones to render for view: ${currentView}`);
         fabricCanvas.renderAll();
         return;
       }
@@ -513,13 +528,13 @@ const AdminPlacementZones = () => {
         const canvasWidth = fabricCanvas.getWidth();
         const canvasHeight = fabricCanvas.getHeight();
         
-        updatedZones[index] = {
-          ...updatedZones[index],
-          x: rect.left! / canvasWidth,
-          y: rect.top! / canvasHeight,
-          width: (rect.width! * (rect.scaleX || 1)) / canvasWidth,
-          height: (rect.height! * (rect.scaleY || 1)) / canvasHeight,
-        };
+        const relW = (rect.width! * (rect.scaleX || 1)) / canvasWidth;
+        const relH = (rect.height! * (rect.scaleY || 1)) / canvasHeight;
+        const z = { ...updatedZones[index], x: rect.left! / canvasWidth, y: rect.top! / canvasHeight, width: relW, height: relH };
+        if (!z.customMmSize && z.widthMm != null && relW > 0) {
+          z.heightMm = Math.round(((z.widthMm * relH) / relW) * 10) / 10;
+        }
+        updatedZones[index] = z;
         
         // Reset scale after updating
         rect.set({ scaleX: 1, scaleY: 1 });
@@ -567,16 +582,12 @@ const AdminPlacementZones = () => {
       // Force render after adding all zones
       setTimeout(() => {
         fabricCanvas.renderAll();
-        console.log('[RENDER ZONES] Canvas rendered, total objects:', fabricCanvas.getObjects().length);
         const zoneObjects = fabricCanvas.getObjects().filter((obj: any) => obj.name?.startsWith('zone-'));
-        console.log('[RENDER ZONES] Zone objects on canvas:', zoneObjects.length);
         zoneObjects.forEach((obj: any, idx: number) => {
-          console.log(`[RENDER ZONES] Zone ${idx}:`, obj.name, 'at', obj.left, obj.top, 'size', obj.width, obj.height);
         });
       }, 0);
     } else {
       // Zones already exist for this view, just ensure they're visible and positioned correctly
-      console.log(`[RENDER ZONES] Zones already exist for view: ${currentView}, ensuring visibility and position`);
       
       // Hide zones from other views first
       const allViews: ViewType[] = ['front', 'back', 'left', 'right'];
@@ -643,17 +654,14 @@ const AdminPlacementZones = () => {
       });
       
       fabricCanvas.renderAll();
-      console.log(`[RENDER ZONES] Updated ${existingZonesForView.length} existing zones for view: ${currentView}`);
     }
   }, [fabricCanvas, zones, currentView, isDrawing]);
 
   // Handle canvas click to start drawing
   const handleCanvasMouseDown = useCallback(
     (e: any) => {
-      console.log('[ZONE DRAW] Mouse down', { fabricCanvas: !!fabricCanvas, isDrawing, target: e.target?.name });
       
       if (!fabricCanvas || isDrawing) {
-        console.log('[ZONE DRAW] Early return: no canvas or already drawing');
         return;
       }
       
@@ -664,7 +672,6 @@ const AdminPlacementZones = () => {
         target.visible !== false &&
         (target.name?.startsWith('zone-') || target.name?.startsWith('zone-label-'))
       ) {
-        console.log('[ZONE DRAW] Clicked on existing zone/label, not starting draw');
         return;
       }
       
@@ -672,7 +679,6 @@ const AdminPlacementZones = () => {
       fabricCanvas.discardActiveObject();
       
       const pointer = fabricCanvas.getPointer(e.e);
-      console.log('[ZONE DRAW] Starting draw at', pointer);
       setStartPoint(pointer);
       setIsDrawing(true);
 
@@ -694,7 +700,6 @@ const AdminPlacementZones = () => {
       fabricCanvas.bringObjectToFront(rect);
       setCurrentRect(rect);
       fabricCanvas.renderAll();
-      console.log('[ZONE DRAW] Rect added, isDrawing set to true');
     },
     [fabricCanvas, isDrawing]
   );
@@ -858,7 +863,6 @@ const AdminPlacementZones = () => {
         ...prev,
         [currentView]: [...prev[currentView], newZone],
       };
-      console.log('[ZONE DRAW] Updated zones state:', updated);
       return updated;
     });
 
@@ -877,22 +881,60 @@ const AdminPlacementZones = () => {
   // Setup canvas event listeners
   useEffect(() => {
     if (!fabricCanvas) {
-      console.log('[ZONE DRAW] No fabricCanvas, not setting up listeners');
       return;
     }
-
-    console.log('[ZONE DRAW] Setting up event listeners');
     fabricCanvas.on("mouse:down", handleCanvasMouseDown);
     fabricCanvas.on("mouse:move", handleCanvasMouseMove);
     fabricCanvas.on("mouse:up", handleCanvasMouseUp);
 
     return () => {
-      console.log('[ZONE DRAW] Cleaning up event listeners');
       fabricCanvas.off("mouse:down", handleCanvasMouseDown);
       fabricCanvas.off("mouse:move", handleCanvasMouseMove);
       fabricCanvas.off("mouse:up", handleCanvasMouseUp);
     };
   }, [fabricCanvas, handleCanvasMouseDown, handleCanvasMouseMove, handleCanvasMouseUp]);
+
+  // Nach View-Wechsel / Resize: Fabric-Offset neu berechnen (sonst Klicks greifen ins Leere)
+  useEffect(() => {
+    if (!fabricCanvas || !canvasWrapRef.current) return;
+    const wrap = canvasWrapRef.current;
+    const w = wrap.clientWidth;
+    const h = wrap.clientHeight;
+    if (w < 50 || h < 50) return;
+    const size = getPlacementCanvasSize(Math.min(w, h));
+    try {
+      if (fabricCanvas.getWidth() !== size || fabricCanvas.getHeight() !== size) {
+        fabricCanvas.setDimensions({ width: size, height: size });
+      }
+      fabricCanvas.calcOffset?.();
+      fabricCanvas.requestRenderAll?.();
+    } catch {
+      /* ignore */
+    }
+  }, [fabricCanvas, currentView, viewImages, selectedProductId]);
+
+  useEffect(() => {
+    if (!fabricCanvas || !canvasWrapRef.current) return;
+    const onResize = () => {
+      const wrap = canvasWrapRef.current;
+      if (!wrap) return;
+      const w = wrap.clientWidth;
+      const h = wrap.clientHeight;
+      if (w < 50 || h < 50) return;
+      const size = getPlacementCanvasSize(Math.min(w, h));
+      try {
+        if (fabricCanvas.getWidth() !== size || fabricCanvas.getHeight() !== size) {
+          fabricCanvas.setDimensions({ width: size, height: size });
+        }
+        fabricCanvas.calcOffset?.();
+        fabricCanvas.requestRenderAll?.();
+      } catch {
+        /* ignore */
+      }
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [fabricCanvas]);
 
   // Delete selected zone
   const handleDeleteZone = (view: ViewType, index: number) => {
@@ -921,8 +963,6 @@ const AdminPlacementZones = () => {
       };
 
       // Debug: Log zones being saved
-      console.log("Saving zones:", zonesData);
-      console.log("Back zones count:", zonesData.back.length);
 
       // Get current product meta_data
       const productResponse = await fetch(
@@ -981,17 +1021,13 @@ const AdminPlacementZones = () => {
 
       const savedData = await updateResponse.json();
       const savedZonesMeta = savedData.meta_data?.find((m: any) => m.key === "design_placement_zones");
-      console.log("Saved product meta_data:", savedZonesMeta);
       
       if (savedZonesMeta?.value) {
         try {
           const parsedSavedZones = typeof savedZonesMeta.value === 'string' 
             ? JSON.parse(savedZonesMeta.value) 
             : savedZonesMeta.value;
-          console.log("Parsed saved zones:", parsedSavedZones);
-          console.log("Back zones in saved data:", parsedSavedZones.back?.length || 0);
         } catch (e) {
-          console.error("Error parsing saved zones:", e);
         }
       }
 
@@ -1005,7 +1041,6 @@ const AdminPlacementZones = () => {
 
       toast.success("Placement Zones gespeichert!");
     } catch (error: any) {
-      console.error("Error saving zones:", error);
       toast.error(`Fehler beim Speichern: ${error.message}`);
     }
   };
@@ -1226,10 +1261,12 @@ const AdminPlacementZones = () => {
                     ref={containerRef}
                     className="relative bg-muted/30 rounded-3xl p-4 flex items-center justify-center"
                   >
+                    {/* Kein key hier – sonst wird das Canvas bei View-Wechsel neu gemountet, Fabric hängt am alten DOM → Klicks tun nichts */}
                     <div 
-                      key={`background-${currentView}-${viewImages[currentView]}`}
-                      className="relative w-full max-w-[800px] aspect-square"
+                      ref={canvasWrapRef}
+                      className="placement-zones-fabric-wrap relative w-full aspect-square mx-auto"
                       style={{
+                        maxWidth: PLACEMENT_ZONE_CANVAS_SIZE,
                         backgroundImage: `url(${viewImages[currentView] || product?.image || ''})`,
                         backgroundSize: 'contain',
                         backgroundPosition: 'center',
@@ -1239,8 +1276,8 @@ const AdminPlacementZones = () => {
                     >
                       <canvas
                         ref={canvasRef}
-                        className="absolute inset-0 cursor-crosshair"
-                        style={{ touchAction: "none" }}
+                        className="absolute inset-0 cursor-crosshair w-full h-full block"
+                        style={{ touchAction: "none", pointerEvents: "auto" }}
                       />
                     </div>
                   </div>
@@ -1292,9 +1329,91 @@ const AdminPlacementZones = () => {
                         placeholder="Zone-Name eingeben..."
                         className="mb-2"
                       />
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-muted-foreground mb-3">
                         Klicke auf eine Zone im Bild, um sie auszuwählen und den Namen zu bearbeiten.
                       </p>
+                      {/* MM-Maße: Breite in mm; Höhe automatisch aus Zonen-Aspect oder eigenes Höhenmaß */}
+                      <div className="space-y-3 pt-2 border-t border-border">
+                        <Label className="text-sm font-semibold">Reale Maße (mm)</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Nur Breite nötig – Höhe wird aus dem Seitenverhältnis der Zone berechnet. Mit Haken: Breite und Höhe frei wählbar.
+                        </p>
+                        <div className="flex flex-wrap items-end gap-3">
+                          <div className="space-y-1">
+                            <Label htmlFor="zone-width-mm" className="text-xs">Breite (mm)</Label>
+                            <Input
+                              id="zone-width-mm"
+                              type="number"
+                              min={0}
+                              step={0.1}
+                              placeholder="z. B. 280"
+                              value={zones[currentView][selectedZoneIndex].widthMm ?? ""}
+                              onChange={(e) => {
+                                const v = e.target.value === "" ? undefined : parseFloat(e.target.value);
+                                const updatedZones = [...zones[currentView]];
+                                const z = { ...updatedZones[selectedZoneIndex] };
+                                z.widthMm = v != null && !Number.isNaN(v) ? v : undefined;
+                                if (!z.customMmSize && z.widthMm != null && z.width > 0) {
+                                  z.heightMm = Math.round(((z.widthMm * z.height) / z.width) * 10) / 10;
+                                }
+                                updatedZones[selectedZoneIndex] = z;
+                                setZones((prev) => ({ ...prev, [currentView]: updatedZones }));
+                              }}
+                              className="w-28"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2 pb-2">
+                            <Checkbox
+                              id="zone-custom-mm"
+                              checked={!!zones[currentView][selectedZoneIndex].customMmSize}
+                              onCheckedChange={(checked) => {
+                                const updatedZones = [...zones[currentView]];
+                                const z = { ...updatedZones[selectedZoneIndex] };
+                                z.customMmSize = !!checked;
+                                if (!z.customMmSize && z.widthMm != null && z.width > 0) {
+                                  z.heightMm = Math.round(((z.widthMm * z.height) / z.width) * 10) / 10;
+                                }
+                                updatedZones[selectedZoneIndex] = z;
+                                setZones((prev) => ({ ...prev, [currentView]: updatedZones }));
+                              }}
+                            />
+                            <Label htmlFor="zone-custom-mm" className="text-xs cursor-pointer">
+                              Eigenes Höhenmaß
+                            </Label>
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="zone-height-mm" className="text-xs">
+                              Höhe (mm){!zones[currentView][selectedZoneIndex].customMmSize && zones[currentView][selectedZoneIndex].widthMm != null && (
+                                <span className="text-muted-foreground font-normal"> – automatisch</span>
+                              )}
+                            </Label>
+                            <Input
+                              id="zone-height-mm"
+                              type="number"
+                              min={0}
+                              step={0.1}
+                              placeholder="auto"
+                              disabled={!zones[currentView][selectedZoneIndex].customMmSize}
+                              value={
+                                zones[currentView][selectedZoneIndex].customMmSize
+                                  ? (zones[currentView][selectedZoneIndex].heightMm ?? "")
+                                  : (effectiveZoneHeightMm(zones[currentView][selectedZoneIndex]) ?? "")
+                              }
+                              onChange={(e) => {
+                                if (!zones[currentView][selectedZoneIndex].customMmSize) return;
+                                const v = e.target.value === "" ? undefined : parseFloat(e.target.value);
+                                const updatedZones = [...zones[currentView]];
+                                updatedZones[selectedZoneIndex] = {
+                                  ...updatedZones[selectedZoneIndex],
+                                  heightMm: v != null && !Number.isNaN(v) ? v : undefined,
+                                };
+                                setZones((prev) => ({ ...prev, [currentView]: updatedZones }));
+                              }}
+                              className="w-28"
+                            />
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   )}
                   

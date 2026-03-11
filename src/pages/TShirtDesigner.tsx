@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { Canvas as FabricCanvas, FabricImage, FabricText, Rect } from "fabric";
+import { Canvas as FabricCanvas, FabricImage, FabricText, Path, Rect } from "fabric";
 import { motion } from "framer-motion";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
@@ -19,12 +19,9 @@ import {
   RotateCcw,
   Download,
   ShoppingBag,
-  ZoomIn,
-  ZoomOut,
   Move,
   FlipHorizontal,
   FlipVertical,
-  Shirt,
   Bold,
   Italic,
   Strikethrough,
@@ -39,6 +36,7 @@ import {
   Info,
   ChevronLeft,
   ChevronRight,
+  Copy,
 } from "lucide-react";
 import {
   Dialog,
@@ -62,9 +60,21 @@ import { useCartStore } from "@/stores/cartStore";
 import { toast } from "sonner";
 import { useProduct, useProductVariations, useWooCommerceProduct } from "@/hooks/useProducts";
 import { PlacementZone } from "@/data/products";
+import {
+  PLACEMENT_ZONE_CANVAS_SIZE,
+  getPlacementCanvasSize,
+} from "@/constants/placementCanvas";
 import tshirtWhite from "@/assets/tshirt-mockup-white.png";
 import tshirtBlack from "@/assets/tshirt-mockup-black.png";
 import { Check } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
+
+/** Erzeugt einen SVG-Pfad für einen Bogen (quadratische Kurve). bend: -100 … 100, 0 = gerade. */
+function createArcPathD(width: number, bend: number): string {
+  if (bend === 0 || width <= 0) return `M 0,0 L ${width},0`;
+  const cy = (-bend / 100) * Math.max(40, width * 0.4);
+  return `M 0,0 Q ${width / 2} ${cy} ${width} 0`;
+}
 
 // Helper function to extract hex color from variation description
 function extractHexFromDescription(description?: string): string | null {
@@ -95,6 +105,116 @@ function findColorAttribute(attributes: any[]) {
       slugLower.includes('colour')
     );
   });
+}
+
+/** Zone-Höhe in mm aus Breite + Aspect, wenn kein eigenes Höhenmaß */
+function effectiveZoneHeightMm(zone: PlacementZone): number | undefined {
+  if (zone.widthMm == null || zone.width <= 0) return undefined;
+  if (zone.customMmSize && zone.heightMm != null) return zone.heightMm;
+  return Math.round(((zone.widthMm * zone.height) / zone.width) * 10) / 10;
+}
+
+/**
+ * Pixel-Bounding-Box des Objekts (für mm-Berechnung und Zonen-Treffer).
+ * Nutzt Fabric getBoundingRect(true) wenn vorhanden, sonst width/height * scale.
+ */
+function getObjectPixelBox(obj: any): { cx: number; cy: number; w: number; h: number } | null {
+  if (!obj) return null;
+  try {
+    if (typeof obj.getBoundingRect === "function") {
+      const r = obj.getBoundingRect(true);
+      if (r && r.width > 0 && r.height > 0) {
+        return {
+          cx: r.left + r.width / 2,
+          cy: r.top + r.height / 2,
+          w: r.width,
+          h: r.height,
+        };
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  const w = Math.abs((obj.width || 0) * (obj.scaleX || 1));
+  const h = Math.abs((obj.height || 0) * (obj.scaleY || 1));
+  if (w <= 0 || h <= 0) return null;
+  // Ohne getBoundingRect: bei origin left/top ist Ecke links-oben
+  const left = obj.left ?? 0;
+  const top = obj.top ?? 0;
+  const angle = ((obj.angle || 0) * Math.PI) / 180;
+  if (Math.abs(angle) < 0.001) {
+    return { cx: left + w / 2, cy: top + h / 2, w, h };
+  }
+  // Gedreht: Mittelpunkt näherungsweise über left/top je nach origin – Fabric setzt bei Rotation origin oft center
+  return { cx: left, cy: top, w, h };
+}
+
+/**
+ * Motivgröße in mm relativ zur passendsten Placement Zone.
+ * Statt "Mitte muss in Zone liegen" nehmen wir die Zone mit der größten Überlappung.
+ * So bleibt die Größenanzeige auch beim Skalieren am Zonenrand sinnvoll und relativ.
+ */
+function computeObjectMmSize(
+  obj: any,
+  zones: PlacementZone[] | undefined,
+  canvasWidth: number,
+  canvasHeight: number
+): { widthMm: number; heightMm: number } | null {
+  if (!zones || zones.length === 0) return null;
+  const box = getObjectPixelBox(obj);
+  if (!box) return null;
+  const { w: objWidth, h: objHeight } = box;
+  const objLeft = box.cx - objWidth / 2;
+  const objTop = box.cy - objHeight / 2;
+  const objRight = objLeft + objWidth;
+  const objBottom = objTop + objHeight;
+  let bestZone: PlacementZone | null = null;
+  let bestOverlapArea = -1;
+  let bestDistanceSq = Number.POSITIVE_INFINITY;
+
+  for (const zone of zones) {
+    if (zone.widthMm == null || Number.isNaN(Number(zone.widthMm))) continue;
+    const zoneLeft = zone.x * canvasWidth;
+    const zoneTop = zone.y * canvasHeight;
+    const zoneWidthPx = zone.width * canvasWidth;
+    const zoneHeightPx = zone.height * canvasHeight;
+    if (zoneWidthPx <= 0 || zoneHeightPx <= 0) continue;
+
+    const zoneRight = zoneLeft + zoneWidthPx;
+    const zoneBottom = zoneTop + zoneHeightPx;
+
+    const overlapWidth = Math.max(0, Math.min(objRight, zoneRight) - Math.max(objLeft, zoneLeft));
+    const overlapHeight = Math.max(0, Math.min(objBottom, zoneBottom) - Math.max(objTop, zoneTop));
+    const overlapArea = overlapWidth * overlapHeight;
+
+    const zoneCx = zoneLeft + zoneWidthPx / 2;
+    const zoneCy = zoneTop + zoneHeightPx / 2;
+    const distSq = (box.cx - zoneCx) ** 2 + (box.cy - zoneCy) ** 2;
+
+    if (
+      overlapArea > bestOverlapArea ||
+      (overlapArea === bestOverlapArea && distSq < bestDistanceSq)
+    ) {
+      bestZone = zone;
+      bestOverlapArea = overlapArea;
+      bestDistanceSq = distSq;
+    }
+  }
+
+  if (!bestZone) return null;
+
+  const zoneWidthPx = bestZone.width * canvasWidth;
+  const zoneHeightPx = bestZone.height * canvasHeight;
+  if (zoneWidthPx <= 0 || zoneHeightPx <= 0) return null;
+
+  const heightMm = effectiveZoneHeightMm(bestZone);
+  const zoneWidthMm = Number(bestZone.widthMm);
+  if (!Number.isFinite(zoneWidthMm) || zoneWidthMm <= 0) return null;
+  const mmPerPxX = zoneWidthMm / zoneWidthPx;
+  const mmPerPxY = heightMm != null ? heightMm / zoneHeightPx : mmPerPxX;
+  const widthMm = Math.round(objWidth * mmPerPxX * 10) / 10;
+  const heightMmObj = Math.round(objHeight * mmPerPxY * 10) / 10;
+  return { widthMm, heightMm: heightMmObj };
 }
 
 const shirtColors = [
@@ -143,6 +263,9 @@ const viewLabels: Record<ViewType, string> = {
   right: "Rechte Seite",
 };
 
+/** Feste Reihenfolge: 1. Bild = Vorderseite, 2. = Rückseite, 3. = Links, 4. = Rechts */
+const VIEW_ORDER: ViewType[] = ["front", "back", "left", "right"];
+
 // Image Quality Control Configuration
 const IMAGE_QUALITY_CONFIG = {
   minWidth: 100,              // Minimum width in pixels
@@ -172,8 +295,12 @@ const TShirtDesigner = () => {
   const [selectedColor, setSelectedColor] = useState("");
   const [selectedVariationImageIndex, setSelectedVariationImageIndex] = useState(0);
   
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  /** Canvas-Element nur imperativ erzeugen – Fabric verschiebt den Knoten; React darf kein <canvas> als Kind reconcilen */
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const fabricHostRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  /** Gleicher Rahmen wie Admin Placement Zones – Canvas-Größe daraus, sonst Zonen verschoben */
+  const designerCanvasWrapRef = useRef<HTMLDivElement>(null);
   const [fabricCanvas, setFabricCanvas] = useState<FabricCanvas | null>(null);
   const [selectedShirt, setSelectedShirt] = useState(
     productImage 
@@ -193,6 +320,17 @@ const TShirtDesigner = () => {
   const [currentStep, setCurrentStep] = useState<1 | 2>(1);
   const [basePrice, setBasePrice] = useState(0);
   const [hasSelectedObject, setHasSelectedObject] = useState(false);
+  /** Welcher Editor-Kontext aktiv ist (für Label + Trennung im Panel) */
+  const [selectedEditorType, setSelectedEditorType] = useState<"text" | "image" | "other" | null>(null);
+  /** Anzeige Motivgröße in mm (wenn Zone widthMm gesetzt) */
+  const [objectMmSize, setObjectMmSize] = useState<{ widthMm: number; heightMm: number } | null>(null);
+  /** true solange ein Objekt aktiv skaliert wird (Eckpunkte ziehen) – für Live-mm-Overlay */
+  const [isScalingMm, setIsScalingMm] = useState(false);
+  /** Position der Sprechblase über dem Motiv (% relativ zum Canvas-Wrap), nur beim Skalieren */
+  const [scalingTooltipPos, setScalingTooltipPos] = useState<{
+    leftPct: number;
+    topPct: number;
+  } | null>(null);
   const [textInput, setTextInput] = useState("");
   const [selectedFont, setSelectedFont] = useState("Outfit");
   const [textBold, setTextBold] = useState(false);
@@ -202,6 +340,7 @@ const TShirtDesigner = () => {
   const [textColor, setTextColor] = useState(
     selectedShirt.value === "#FFFFFF" ? "#1a1a1a" : "#FFFFFF"
   );
+  const [textBend, setTextBend] = useState(0);
   const [currentView, setCurrentView] = useState<ViewType>("front");
   // Keep a ref in sync so canvas listeners always know the latest view
   const currentViewRef = useRef<ViewType>("front");
@@ -246,96 +385,77 @@ const TShirtDesigner = () => {
 
   // Load view function will be defined after viewImages
 
-  // Helper function to ensure zones exist and are properly configured
+  /**
+   * Placement-Zonen immer neu aus placementZones aufbauen (nach loadFromJSON/Resize sonst weg oder falsch skaliert).
+   * Vorher alle placement-zone-* Objekte entfernen, damit keine veralteten Rechtecke übrig bleiben.
+   */
   const ensureZonesExist = useCallback((targetView?: ViewType) => {
     if (!fabricCanvas || !placementZones) return;
-    
-    const viewToShow = targetView || currentView;
+
+    const viewToShow = targetView ?? currentViewRef.current;
     const canvasWidth = fabricCanvas.getWidth();
     const canvasHeight = fabricCanvas.getHeight();
-    const allViews: ViewType[] = ['front', 'back', 'left', 'right'];
+    if (canvasWidth < 50 || canvasHeight < 50) return;
 
-    // First, ensure all zones for all views exist (create them if they don't)
+    const allViews: ViewType[] = ["front", "back", "left", "right"];
+
+    // Alle bestehenden Zonen-Objekte entfernen (inkl. aus JSON geladene Duplikate)
+    const toRemove = fabricCanvas
+      .getObjects()
+      .filter((obj: any) => obj.name && String(obj.name).startsWith("placement-zone-"));
+    toRemove.forEach((obj) => fabricCanvas.remove(obj));
+
+    // Frisch erzeugen – Pixelmaße immer aus aktueller Canvas-Größe
     allViews.forEach((view) => {
       const zonesForView = placementZones[view];
       if (!zonesForView || zonesForView.length === 0) return;
 
-      // Check if zones for this view already exist
-      const existingZonesForView = fabricCanvas.getObjects().filter(
-        (obj: any) => obj.name?.startsWith(`placement-zone-${view}-`)
-      );
-
-      // Only create zones if they don't exist
-      if (existingZonesForView.length === 0) {
-        console.log('[ZONES] Creating zones for view:', view);
-        zonesForView.forEach((zone, index) => {
-          const rect = new Rect({
-            left: zone.x * canvasWidth,
-            top: zone.y * canvasHeight,
-            width: zone.width * canvasWidth,
-            height: zone.height * canvasHeight,
-            fill: "rgba(59, 130, 246, 0.15)",
-            stroke: "rgba(59, 130, 246, 0.6)",
-            strokeWidth: 2,
-            strokeDashArray: [8, 4],
-            selectable: false,
-            evented: false,
-            hoverCursor: "default",
-            name: `placement-zone-${view}-${index}`,
-            excludeFromExport: true,
-            visible: view === viewToShow, // Only show zones for target view
-          });
-
-          const label = new FabricText(zone.name, {
-            left: zone.x * canvasWidth + 5,
-            top: zone.y * canvasHeight + 5,
-            fontSize: 12,
-            fill: "rgba(59, 130, 246, 0.9)",
-            fontFamily: "Outfit",
-            fontWeight: "bold",
-            selectable: false,
-            evented: false,
-            hoverCursor: "default",
-            name: `placement-zone-label-${view}-${index}`,
-            excludeFromExport: true,
-            visible: view === viewToShow, // Only show labels for target view
-          });
-
-          fabricCanvas.add(rect);
-          fabricCanvas.add(label);
-        });
-      }
-    });
-
-    // Now update visibility for all zones based on target view
-    allViews.forEach((view) => {
-      const zonesForView = placementZones[view];
-      if (!zonesForView || zonesForView.length === 0) return;
-
-      const shouldBeVisible = view === viewToShow;
       zonesForView.forEach((zone, index) => {
-        const rect = fabricCanvas.getObjects().find(
-          (obj: any) => obj.name === `placement-zone-${view}-${index}`
-        );
-        const label = fabricCanvas.getObjects().find(
-          (obj: any) => obj.name === `placement-zone-label-${view}-${index}`
-        );
+        const rect = new Rect({
+          left: zone.x * canvasWidth,
+          top: zone.y * canvasHeight,
+          width: zone.width * canvasWidth,
+          height: zone.height * canvasHeight,
+          fill: "rgba(59, 130, 246, 0.18)",
+          stroke: "rgba(59, 130, 246, 0.75)",
+          strokeWidth: 2,
+          strokeDashArray: [8, 4],
+          selectable: false,
+          evented: false,
+          hoverCursor: "default",
+          name: `placement-zone-${view}-${index}`,
+          excludeFromExport: true,
+          visible: view === viewToShow,
+        });
 
-        if (rect) rect.set({ visible: shouldBeVisible });
-        if (label) label.set({ visible: shouldBeVisible });
+        const label = new FabricText(zone.name, {
+          left: zone.x * canvasWidth + 5,
+          top: zone.y * canvasHeight + 5,
+          fontSize: 12,
+          fill: "rgba(59, 130, 246, 0.95)",
+          fontFamily: "Outfit",
+          fontWeight: "bold",
+          selectable: false,
+          evented: false,
+          hoverCursor: "default",
+          name: `placement-zone-label-${view}-${index}`,
+          excludeFromExport: true,
+          visible: view === viewToShow,
+        });
+
+        fabricCanvas.add(rect);
+        fabricCanvas.add(label);
       });
     });
 
-    // Ensure all zones are at the back
-    const allZoneObjects = fabricCanvas.getObjects().filter(
-      (obj: any) => obj.name?.startsWith("placement-zone-")
-    );
-    allZoneObjects.forEach((zoneObj) => {
-      fabricCanvas.sendObjectToBack(zoneObj);
-    });
+    fabricCanvas
+      .getObjects()
+      .filter((obj: any) => obj.name?.startsWith("placement-zone-"))
+      .forEach((zoneObj) => fabricCanvas.sendObjectToBack(zoneObj));
 
+    fabricCanvas.requestRenderAll?.();
     fabricCanvas.renderAll();
-  }, [fabricCanvas, placementZones, currentView]);
+  }, [fabricCanvas, placementZones]);
 
   // Render placement zones as visual guides (non-interactive, always in background)
   useEffect(() => {
@@ -344,8 +464,8 @@ const TShirtDesigner = () => {
       return;
     }
 
-    console.log('[ZONES] Updating zones visibility for view:', currentView);
-    ensureZonesExist();
+    console.log("[ZONES] Rebuilding zones for view:", currentView);
+    ensureZonesExist(currentView);
   }, [fabricCanvas, placementZones, currentView, ensureZonesExist]);
 
   // Ensure zones stay at the back whenever objects are added or modified
@@ -553,15 +673,33 @@ const TShirtDesigner = () => {
     }
   }, [fabricCanvas]);
 
-  // Initialize canvas with larger size for more space
+  // Initialize canvas – Host-Div bleibt React-Kind, Canvas wird per DOM angehängt (vermeidet insertBefore nach Fabric-Wrap)
   useEffect(() => {
-    if (!canvasRef.current || !containerRef.current) return;
+    let cancelled = false;
+    let canvasEl: HTMLCanvasElement | null = null;
+    let canvas: FabricCanvas | null = null;
+    let updateTimeout: NodeJS.Timeout | null = null;
 
-    const containerWidth = containerRef.current.offsetWidth;
-    // Increase canvas size for more working space
-    const canvasSize = Math.min(containerWidth, 800);
+    const mount = () => {
+      if (cancelled) return;
+      const host = fabricHostRef.current;
+      if (!host) {
+        requestAnimationFrame(mount);
+        return;
+      }
 
-    const canvas = new FabricCanvas(canvasRef.current, {
+    canvasEl = document.createElement("canvas");
+    canvasEl.className = "absolute inset-0 cursor-move block w-full h-full";
+    canvasEl.style.touchAction = "none";
+    canvasEl.style.backgroundColor = "transparent";
+    host.appendChild(canvasEl);
+    canvasRef.current = canvasEl;
+
+    const wrap = designerCanvasWrapRef.current || host.parentElement;
+    const containerWidth = wrap?.clientWidth || containerRef.current?.clientWidth || PLACEMENT_ZONE_CANVAS_SIZE;
+    const canvasSize = getPlacementCanvasSize(containerWidth);
+
+    canvas = new FabricCanvas(canvasEl, {
       width: canvasSize,
       height: canvasSize,
       backgroundColor: "transparent",
@@ -578,7 +716,6 @@ const TShirtDesigner = () => {
     setFabricCanvas(canvas);
 
     // Track changes and save to current view with debouncing to prevent flickering
-    let updateTimeout: NodeJS.Timeout | null = null;
     const updateViewData = () => {
       if (updateTimeout) {
         clearTimeout(updateTimeout);
@@ -629,12 +766,24 @@ const TShirtDesigner = () => {
     
     // Initial update
     updateObjectsList();
+    };
+
+    mount();
 
     return () => {
-      if (updateTimeout) {
-        clearTimeout(updateTimeout);
+      cancelled = true;
+      if (updateTimeout) clearTimeout(updateTimeout);
+      if (canvas) {
+        try {
+          canvas.dispose();
+        } catch {
+          /* ignore */
+        }
       }
-      canvas.dispose();
+      canvasRef.current = null;
+      if (canvasEl?.parentNode) {
+        canvasEl.parentNode.removeChild(canvasEl);
+      }
     };
   }, []);
 
@@ -716,6 +865,8 @@ const TShirtDesigner = () => {
     };
 
     const handleObjectModified = (e: any) => {
+      setIsScalingMm(false);
+      setScalingTooltipPos(null);
       const obj = e.target;
       if (!obj) return;
       const currentZones = placementZones[currentView];
@@ -725,16 +876,71 @@ const TShirtDesigner = () => {
       }
       // Only validate (show visual feedback) after modification, don't constrain
       if (currentZones && currentZones.length > 0) {
-      constrainToZones(obj, currentZones);
+        constrainToZones(obj, currentZones);
       }
+      const name = obj.name || "";
+      if (!name.startsWith("placement-zone-") && !name.startsWith("zone-")) {
+        const mm = computeObjectMmSize(
+          obj,
+          currentZones,
+          fabricCanvas.getWidth(),
+          fabricCanvas.getHeight()
+        );
+        setObjectMmSize(mm);
+      }
+    };
+
+    let scalingRaf = 0;
+    /**
+     * Skalieren (Ecken) feuert object:scaling – Textbreite ziehen feuert object:resizing.
+     * Beide müssen dieselbe Anzeige triggern, sonst erscheint beim Größenändern nichts.
+     */
+    const handleObjectScalingOrResizing = (e: any) => {
+      setIsScalingMm(true);
+      const obj = e.target;
+      if (!obj) return;
+      const name = obj.name || "";
+      if (name.startsWith("placement-zone-") || name.startsWith("zone-")) return;
+      const currentZones = placementZones[currentView];
+      const cw = fabricCanvas.getWidth();
+      const ch = fabricCanvas.getHeight();
+      const run = () => {
+        scalingRaf = 0;
+        const mm = computeObjectMmSize(obj, currentZones, cw, ch);
+        setObjectMmSize(mm);
+        try {
+          if (cw > 0 && ch > 0) {
+            const box = getObjectPixelBox(obj);
+            if (box && box.w > 0) {
+              setScalingTooltipPos({
+                leftPct: Math.max(0, Math.min(100, (box.cx / cw) * 100)),
+                topPct: Math.max(0, Math.min(100, ((box.cy - box.h / 2) / ch) * 100)),
+              });
+            } else {
+              setScalingTooltipPos(null);
+            }
+          } else {
+            setScalingTooltipPos(null);
+          }
+        } catch {
+          setScalingTooltipPos(null);
+        }
+      };
+      if (scalingRaf) cancelAnimationFrame(scalingRaf);
+      scalingRaf = requestAnimationFrame(run);
     };
 
     fabricCanvas.on("object:moving", handleObjectMoving);
     fabricCanvas.on("object:modified", handleObjectModified);
+    fabricCanvas.on("object:scaling", handleObjectScalingOrResizing);
+    fabricCanvas.on("object:resizing", handleObjectScalingOrResizing);
 
     return () => {
+      if (scalingRaf) cancelAnimationFrame(scalingRaf);
       fabricCanvas.off("object:moving", handleObjectMoving);
       fabricCanvas.off("object:modified", handleObjectModified);
+      fabricCanvas.off("object:scaling", handleObjectScalingOrResizing);
+      fabricCanvas.off("object:resizing", handleObjectScalingOrResizing);
     };
   }, [fabricCanvas, placementZones, currentView, constrainToZones]);
 
@@ -830,8 +1036,37 @@ const TShirtDesigner = () => {
     return available.length > 0 ? available : sizes;
   }, [product, variations, selectedColor]);
 
+  // Galerie aus meta_data nachziehen, wenn die API keine images/svi_gallery liefert (WooCommerce: _product_image_gallery, SVI/Plugins: ggf. andere Keys)
+  const variationsWithGallery = useMemo(() => {
+    const productImages = wcProduct?.images ?? [];
+    const idToImg = new Map(productImages.map((img: any) => [String(img.id), img]));
+    return (variations || []).map((v: any) => {
+      const hasImages = (v.images && v.images.length > 0) || (v.svi_gallery && v.svi_gallery.length > 0) || v.image?.src;
+      if (hasImages) return v;
+      const meta = Array.isArray(v.meta_data) ? v.meta_data : [];
+      // 1) Array von Objekten mit src (manche APIs/Plugins liefern so)
+      for (const m of meta) {
+        const val = m.value;
+        if (Array.isArray(val) && val.length > 0 && val.some((x: any) => x && (x.src || x.url))) {
+          const images = val.map((x: any) => ({ id: x.id, src: x.src || x.url, name: x.name || '', alt: x.alt || '' })).filter((x: any) => x.src);
+          if (images.length > 0) return { ...v, images };
+        }
+      }
+      // 2) WooCommerce: _product_image_gallery = kommagetrennte Attachment-IDs
+      const galleryMeta = meta.find((m: any) => m.key === '_product_image_gallery' || m.key === 'product_image_gallery');
+      const galleryIds = galleryMeta?.value;
+      if (galleryIds) {
+        const ids = typeof galleryIds === 'string' ? galleryIds.split(',').map((s: string) => s.trim()).filter(Boolean) : Array.isArray(galleryIds) ? galleryIds.map(String) : [];
+        const images = ids.map((id: string) => idToImg.get(id)).filter(Boolean).map((img: any) => ({ id: img.id, src: img.src, name: img.name, alt: img.alt }));
+        if (images.length > 0) return { ...v, images };
+      }
+      return v;
+    });
+  }, [variations, wcProduct?.images]);
+
   // Get images for selected variation (based on color and size)
-  // Organize SVI images by view type (F=front, B=back, SL=left, SR=right)
+  // 1) Product-level SVI (woosvi_slug) mit View-Hinweisen (_F, _B, _SL, _SR)
+  // 2) Fallback: Bilder der passenden Variante (svi_gallery, image, images) – mit View-Hint oder nach Index
   const viewImages = useMemo(() => {
     const views: Record<ViewType, string[]> = {
       front: [],
@@ -840,17 +1075,44 @@ const TShirtDesigner = () => {
       right: [],
     };
 
+    // Titel-Präfix: PF = Vorderseite, PB = Rückseite (am Anfang des Bildtitels/Dateinamens)
+    const assignByPFPrefix = (src: string, nameOrSrc: string): boolean => {
+      const raw = String(nameOrSrc || "").trim();
+      if (!raw) return false;
+      const upper = raw.toUpperCase();
+      if (upper.startsWith("PF")) {
+        views.front.push(src);
+        return true;
+      }
+      if (upper.startsWith("PB")) {
+        views.back.push(src);
+        return true;
+      }
+      return false;
+    };
+
+    const assignByFilename = (src: string, nameOrSrc: string) => {
+      if (assignByPFPrefix(src, nameOrSrc)) return;
+      const name = (nameOrSrc || src || "").toLowerCase();
+      if (name.includes("_f") || name.includes("-f")) views.front.push(src);
+      else if (name.includes("_b") || name.includes("-b")) views.back.push(src);
+      else if (name.includes("_sl") || name.includes("-sl")) views.left.push(src);
+      else if (name.includes("_sr") || name.includes("-sr")) views.right.push(src);
+      else views.front.push(src);
+    };
+
+    const viewOrder: ViewType[] = ['front', 'back', 'left', 'right'];
+
     if (selectedColor && wcProduct) {
       const sviMeta = wcProduct.meta_data?.find((meta: any) => meta.key === 'woosvi_slug');
       
       if (sviMeta && sviMeta.value && Array.isArray(sviMeta.value)) {
-        // Find the entry that matches the selected color (case-insensitive, handles multi-word)
         const normalizeString = (str: string): string => {
           return str
             .toLowerCase()
             .trim()
-            .replace(/[()]/g, '') // Remove parentheses
-            .replace(/[-\s]+/g, ' ') // Normalize dashes and multiple spaces to single space
+            .replace(/[()]/g, '')
+            .replace(/[-\s]+/g, ' ')
             .trim();
         };
         
@@ -859,53 +1121,171 @@ const TShirtDesigner = () => {
           return entry.slugs.some((slug: string) => {
             const slugStr = normalizeString(String(slug));
             const colorStr = normalizeString(String(selectedColor));
-            // Try exact match first
             let matches = slugStr === colorStr;
-            // If no exact match, try partial match
-            if (!matches) {
-              matches = slugStr.includes(colorStr) || colorStr.includes(slugStr);
-            }
+            if (!matches) matches = slugStr.includes(colorStr) || colorStr.includes(slugStr);
             return matches;
           });
         });
         
         if (matchingSviEntry && matchingSviEntry.imgs && Array.isArray(matchingSviEntry.imgs)) {
-          // Get image IDs from SVI data
           const imageIds = matchingSviEntry.imgs.map((id: any) => String(id));
-          
-          // Find images in product.images array that match these IDs
           const matchingImages = wcProduct.images?.filter(img => 
             imageIds.includes(String(img.id))
           ) || [];
-          
-          // Organize images by view type based on filename
-          matchingImages.forEach(img => {
-            const name = img.name || img.src || '';
-            // Check filename for view indicators: _F (front), _B (back), _SL (left), _SR (right)
-            if (name.includes('_F') || name.includes('-F')) {
-              views.front.push(img.src);
-            } else if (name.includes('_B') || name.includes('-B')) {
-              views.back.push(img.src);
-            } else if (name.includes('_SL') || name.includes('-SL')) {
-              views.left.push(img.src);
-            } else if (name.includes('_SR') || name.includes('-SR')) {
-              views.right.push(img.src);
-    } else {
-              // Default to front if no indicator found
-              views.front.push(img.src);
-            }
+          matchingImages.forEach((img) => {
+            const name = img.name || img.src || "";
+            if (assignByPFPrefix(img.src, name)) return;
+            if (name.includes("_F") || name.includes("-F")) views.front.push(img.src);
+            else if (name.includes("_B") || name.includes("-B")) views.back.push(img.src);
+            else if (name.includes("_SL") || name.includes("-SL")) views.left.push(img.src);
+            else if (name.includes("_SR") || name.includes("-SR")) views.right.push(img.src);
+            else views.front.push(img.src);
           });
         }
       }
     }
 
+    // Fallback: Bilder aus der gewählten Variante (svi_gallery, image, images) – nutzt variationsWithGallery (inkl. aus meta_data angereicherte Galerie)
+    const hasAnyFromSvi = viewOrder.some((v) => (views[v] || []).length > 0);
+    if (!hasAnyFromSvi && selectedColor && variationsWithGallery && variationsWithGallery.length > 0) {
+      const findColorAttribute = (attributes: any[]) => {
+        if (!attributes) return null;
+        return attributes.find(attr => {
+          const n = (attr.name || '').toLowerCase();
+          const s = (attr.slug || '').toLowerCase();
+          return n === 'farbe' || n === 'color' || n.includes('farbe') || n.includes('color') || s === 'farbe' || s === 'color' || s.includes('farbe') || s.includes('color');
+        });
+      };
+      const matchingVariation = variationsWithGallery.find((v: any) => {
+        const colorAttr = findColorAttribute(v.attributes || []);
+        if (!colorAttr?.option) return false;
+        return String(colorAttr.option).trim() === String(selectedColor).trim();
+      });
+
+      if (matchingVariation) {
+        const collected: { src: string; name: string }[] = [];
+        const seen = new Set<string>();
+
+        const add = (src: string, name?: string) => {
+          if (!src || seen.has(src)) return;
+          seen.add(src);
+          collected.push({ src, name: name || src || '' });
+        };
+
+        const sviGallery = (matchingVariation as any).svi_gallery;
+        if (sviGallery && Array.isArray(sviGallery)) {
+          sviGallery.forEach((img: any) => img?.src && add(img.src, img.name || img.src));
+        }
+        if ((matchingVariation as any).image?.src) {
+          add((matchingVariation as any).image.src, (matchingVariation as any).image.name || (matchingVariation as any).image.src);
+        }
+        const gallery = (matchingVariation as any).images;
+        if (gallery && Array.isArray(gallery)) {
+          gallery.forEach((img: any) => img?.src && add(img.src, img.name || img.src));
+        }
+
+        const hasAnyHint = collected.some(({ name }) => {
+          const trimmed = String(name || "").trim();
+          const upper = trimmed.toUpperCase();
+          if (upper.startsWith("PF") || upper.startsWith("PB")) return true;
+          const n = name.toLowerCase();
+          return (
+            n.includes("_f") ||
+            n.includes("-f") ||
+            n.includes("_b") ||
+            n.includes("-b") ||
+            n.includes("_sl") ||
+            n.includes("-sl") ||
+            n.includes("_sr") ||
+            n.includes("-sr")
+          );
+        });
+        if (hasAnyHint) {
+          collected.forEach(({ src, name }) => assignByFilename(src, name));
+        } else {
+          // Kein Filename-Hint: nach Index auf front, back, left, right verteilen (1. Bild = Vorderseite, 2. = Rückseite, …)
+          collected.forEach(({ src }, i) => {
+            const view = viewOrder[Math.min(i, viewOrder.length - 1)];
+            views[view].push(src);
+          });
+        }
+      }
+    }
+
+    // Wenn alles in front gelandet ist (z. B. ohne Filename-Hint), nach Index aufteilen: 1. = Vorderseite, 2. = Rückseite, …
+    const onlyFront =
+      views.front.length > 1 &&
+      views.back.length === 0 &&
+      views.left.length === 0 &&
+      views.right.length === 0;
+    if (onlyFront) {
+      const next: Record<ViewType, string[]> = { front: [], back: [], left: [], right: [] };
+      views.front.forEach((src, i) => {
+        const v = viewOrder[Math.min(i, viewOrder.length - 1)];
+        next[v].push(src);
+      });
+      return next;
+    }
+
     return views;
-  }, [selectedColor, wcProduct]);
+  }, [selectedColor, wcProduct, variationsWithGallery]);
 
   const availableImageViews = useMemo(() => {
     const views: ViewType[] = ['front', 'back', 'left', 'right'];
     return views.filter((view) => (viewImages[view] || []).length > 0);
   }, [viewImages]);
+
+  // Galerie der gewählten Variation in fester Reihenfolge (1. = Vorderseite, 2. = Rückseite, …) – unabhängig von viewImages-Buckets
+  const variationGalleryOrdered = useMemo(() => {
+    if (!selectedColor || !variationsWithGallery?.length) return [] as string[];
+    const findColorAttribute = (attributes: any[]) => {
+      if (!attributes) return null;
+      return attributes.find((attr) => {
+        const n = (attr.name || "").toLowerCase();
+        const s = (attr.slug || "").toLowerCase();
+        return (
+          n === "farbe" ||
+          n === "color" ||
+          n.includes("farbe") ||
+          n.includes("color") ||
+          s === "farbe" ||
+          s === "color" ||
+          s.includes("farbe") ||
+          s.includes("color")
+        );
+      });
+    };
+    const matching = variationsWithGallery.find((v: any) => {
+      const colorAttr = findColorAttribute(v.attributes || []);
+      if (!colorAttr?.option) return false;
+      return String(colorAttr.option).trim() === String(selectedColor).trim();
+    });
+    if (!matching) return [] as string[];
+    const ordered: string[] = [];
+    const seen = new Set<string>();
+    const push = (src: string) => {
+      if (!src || seen.has(src)) return;
+      seen.add(src);
+      ordered.push(src);
+    };
+    const sviGallery = (matching as any).svi_gallery;
+    if (sviGallery && Array.isArray(sviGallery)) {
+      sviGallery.forEach((img: any) => img?.src && push(img.src));
+    }
+    if ((matching as any).image?.src) push((matching as any).image.src);
+    const gallery = (matching as any).images;
+    if (gallery && Array.isArray(gallery)) {
+      gallery.forEach((img: any) => img?.src && push(img.src));
+    }
+    return ordered;
+  }, [selectedColor, variationsWithGallery]);
+
+  // Wenn sich die verfügbaren Ansichten ändern und die aktuelle nicht mehr dabei ist, auf erste verfügbare wechseln
+  useEffect(() => {
+    if (availableImageViews.length > 0 && !availableImageViews.includes(currentView)) {
+      setCurrentView(availableImageViews[0]);
+    }
+  }, [availableImageViews, currentView]);
 
   // Check if there are actual design elements (not just empty canvas states)
   const hasAnyDesign = useMemo(() => {
@@ -944,15 +1324,15 @@ const TShirtDesigner = () => {
         });
         // Ensure zones are still present when cycling through images
         if (fabricCanvas && placementZones) {
-          setTimeout(() => ensureZonesExist(), 0);
+          setTimeout(() => ensureZonesExist(currentView), 0);
         }
         return;
       }
     }
     
-    // Fallback: If color is selected, find the exact matching variation and use its image
-    if (selectedColor && variations && variations.length > 0) {
-      const matchingVariation = variations.find(variation => {
+    // Fallback: If color is selected, find the exact matching variation and use its image (variationsWithGallery = mit aus meta_data angereicherter Galerie)
+    if (selectedColor && variationsWithGallery && variationsWithGallery.length > 0) {
+      const matchingVariation = variationsWithGallery.find((variation: any) => {
         const colorAttr = findColorAttribute(variation.attributes || []);
         if (!colorAttr || !colorAttr.option) return false;
         
@@ -976,7 +1356,7 @@ const TShirtDesigner = () => {
             });
             // Ensure zones are still present when cycling through images
             if (fabricCanvas && placementZones) {
-              setTimeout(() => ensureZonesExist(), 0);
+              setTimeout(() => ensureZonesExist(currentView), 0);
             }
             return;
           }
@@ -993,7 +1373,7 @@ const TShirtDesigner = () => {
           });
           // Ensure zones are still present when cycling through images
           if (fabricCanvas && placementZones) {
-            setTimeout(() => ensureZonesExist(), 0);
+            setTimeout(() => ensureZonesExist(currentView), 0);
           }
           return;
         }
@@ -1007,7 +1387,7 @@ const TShirtDesigner = () => {
           });
           // Ensure zones are still present when cycling through images
           if (fabricCanvas && placementZones) {
-            setTimeout(() => ensureZonesExist(), 0);
+            setTimeout(() => ensureZonesExist(currentView), 0);
           }
           return;
         }
@@ -1022,11 +1402,30 @@ const TShirtDesigner = () => {
         setSelectedShirt({ name: "Produkt", value: "#FFFFFF", image: product.image });
       }
     }
-  }, [viewImages, currentView, selectedVariationImageIndex, selectedColor, productImage, product, variations, fabricCanvas, placementZones, ensureZonesExist]);
+  }, [viewImages, currentView, selectedVariationImageIndex, selectedColor, productImage, product, variationsWithGallery, fabricCanvas, placementZones, ensureZonesExist]);
 
-  // Load view function - defined after viewImages
-  const loadView = useCallback((view: ViewType) => {
+  // Load view function – optional imageSrcOverride setzt Hintergrund direkt (wichtig bei Galerie-Reihenfolge 1=front, 2=back, …)
+  const loadView = useCallback((view: ViewType, imageIndex?: number, imageSrcOverride?: string) => {
     if (!fabricCanvas) return;
+
+    const idx = imageIndex !== undefined ? imageIndex : selectedVariationImageIndex;
+    const currentViewImages = viewImages[view];
+
+    // Gleiche Ansicht, nur anderes Bild / Override: nur Hintergrund wechseln
+    if (view === currentView && (imageSrcOverride || (imageIndex !== undefined && currentViewImages && currentViewImages[idx]))) {
+      if (imageIndex !== undefined) setSelectedVariationImageIndex(imageIndex);
+      const src = imageSrcOverride || currentViewImages![idx];
+      if (src) setSelectedShirt((prev) => ({ ...prev, image: src }));
+      // Nur Bild gewechselt – Zonen können fehlen (z. B. nach Resize); einmal sicher nachziehen
+      if (placementZones) {
+        setTimeout(() => ensureZonesExist(view), 0);
+      }
+      return;
+    }
+
+    if (imageIndex !== undefined) {
+      setSelectedVariationImageIndex(imageIndex);
+    }
     
     // Save current view before switching
     saveCurrentView();
@@ -1073,29 +1472,16 @@ const TShirtDesigner = () => {
     
     setCurrentView(view);
     
-    // Update background image for the new view
-    const currentViewImages = viewImages[view];
-    if (currentViewImages && currentViewImages.length > 0) {
-      const imageToUse = currentViewImages[selectedVariationImageIndex] || currentViewImages[0];
+    // Hintergrund: Override hat Vorrang, sonst Bild aus viewImages[view]
+    if (imageSrcOverride) {
+      setSelectedShirt((prev) => ({ ...prev, image: imageSrcOverride }));
+    } else if (currentViewImages && currentViewImages.length > 0) {
+      const imageToUse = currentViewImages[idx] ?? currentViewImages[0];
       if (imageToUse) {
-        setSelectedShirt(prev => ({ 
-          ...prev, 
-          image: imageToUse 
-        }));
+        setSelectedShirt((prev) => ({ ...prev, image: imageToUse }));
       }
     }
-  }, [fabricCanvas, viewData, saveCurrentView, viewImages, selectedVariationImageIndex, ensureZonesExist]);
-
-  // Ensure current view always has an underlying image; if not, switch via loadView
-  useEffect(() => {
-    if (!fabricCanvas) return;
-    if (availableImageViews.length === 0) return;
-    if (!availableImageViews.includes(currentView)) {
-      // Switch to first available view and reset image index to first image of that view
-      setSelectedVariationImageIndex(0);
-      loadView(availableImageViews[0]);
-    }
-  }, [availableImageViews, currentView, fabricCanvas, loadView]);
+  }, [fabricCanvas, viewData, saveCurrentView, viewImages, selectedVariationImageIndex, currentView, ensureZonesExist, placementZones]);
 
   // Reset image index when variation changes
   useEffect(() => {
@@ -1148,20 +1534,28 @@ const TShirtDesigner = () => {
     }
   }, [selectedShirt.value, fabricCanvas]);
 
-  // Handle window resize
+  // Handle window resize – gleiche Größenlogik wie Admin; Zonen danach neu aufbauen (sonst falsche Pixelmaße)
   useEffect(() => {
     const handleResize = () => {
-      if (!fabricCanvas || !containerRef.current) return;
-      const containerWidth = containerRef.current.offsetWidth;
-      // Increase canvas size for more working space
-      const canvasSize = Math.min(containerWidth, 800);
-      fabricCanvas.setDimensions({ width: canvasSize, height: canvasSize });
-      fabricCanvas.renderAll();
+      if (!fabricCanvas) return;
+      const wrap = designerCanvasWrapRef.current;
+      const containerWidth = wrap?.clientWidth || containerRef.current?.clientWidth || PLACEMENT_ZONE_CANVAS_SIZE;
+      const canvasSize = getPlacementCanvasSize(containerWidth);
+      try {
+        fabricCanvas.setDimensions({ width: canvasSize, height: canvasSize });
+        fabricCanvas.calcOffset?.();
+        fabricCanvas.requestRenderAll?.();
+      } catch {
+        fabricCanvas.renderAll();
+      }
+      if (placementZones) {
+        ensureZonesExist(currentViewRef.current);
+      }
     };
 
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, [fabricCanvas]);
+  }, [fabricCanvas, placementZones, ensureZonesExist]);
 
 
   // Process image upload after copyright acceptance
@@ -1464,18 +1858,46 @@ const TShirtDesigner = () => {
         setTextStrikethrough(text.linethrough || false);
         setSelectedFont(text.fontFamily || "Outfit");
         setTextColor(text.fill as string || (selectedShirt.value === "#FFFFFF" ? "#1a1a1a" : "#FFFFFF"));
+        const bend = (text as any).textBend;
+        setTextBend(typeof bend === "number" ? bend : (text.path ? 50 : 0));
       } else {
-        // Reset to defaults when no text is selected
         setTextBold(false);
         setTextItalic(false);
         setTextStrikethrough(false);
         setTextColor(selectedShirt.value === "#FFFFFF" ? "#1a1a1a" : "#FFFFFF");
+        setTextBend(0);
       }
     };
 
     const handleSelectionChange = () => {
       const activeObject = fabricCanvas.getActiveObject();
       setHasSelectedObject(!!activeObject);
+      if (!activeObject) {
+        setSelectedEditorType(null);
+      } else if (activeObject.type === "text") {
+        setSelectedEditorType("text");
+      } else if (activeObject.type === "image" || activeObject.type === "fabric-image") {
+        setSelectedEditorType("image");
+      } else {
+        setSelectedEditorType("other");
+      }
+      if (!activeObject) {
+        setObjectMmSize(null);
+        setIsScalingMm(false);
+        setScalingTooltipPos(null);
+      }
+      else {
+        const name = (activeObject as any).name || "";
+        if (!name.startsWith("placement-zone-") && !name.startsWith("zone-") && fabricCanvas && placementZones) {
+          const mm = computeObjectMmSize(
+            activeObject,
+            placementZones[currentViewRef.current],
+            fabricCanvas.getWidth(),
+            fabricCanvas.getHeight()
+          );
+          setObjectMmSize(mm);
+        } else setObjectMmSize(null);
+      }
       updateFormattingButtons();
     };
 
@@ -1514,6 +1936,32 @@ const TShirtDesigner = () => {
     }
   };
 
+  // Text entlang eines Bogens biegen (Fabric Text-on-Path)
+  const handleTextBendChange = (bend: number) => {
+    setTextBend(bend);
+    if (!fabricCanvas) return;
+    const activeObject = fabricCanvas.getActiveObject();
+    if (activeObject && activeObject.type !== "text") return;
+    const text = activeObject as FabricText;
+    (text as any).textBend = bend;
+    if (bend === 0) {
+      text.set("path", undefined);
+    } else {
+      const w = Math.max(50, (text.width as number) || 200);
+      const path = new Path(createArcPathD(w, bend), {
+        left: 0,
+        top: 0,
+        originX: "left",
+        originY: "top",
+        visible: false,
+        selectable: false,
+        evented: false,
+      });
+      text.set("path", path);
+    }
+    fabricCanvas.renderAll();
+  };
+
   // Delete selected
   const handleDeleteSelected = () => {
     if (!fabricCanvas) return;
@@ -1527,6 +1975,29 @@ const TShirtDesigner = () => {
       });
       setCanvasObjects([...objects]);
       toast.success("Element gelöscht");
+    }
+  };
+
+  // Duplicate selected object
+  const handleDuplicateSelected = () => {
+    if (!fabricCanvas) return;
+    const activeObject = fabricCanvas.getActiveObject();
+    if (activeObject) {
+      try {
+        const cloned = (activeObject as any).clone?.();
+        if (cloned) {
+          cloned.set({ left: (activeObject.left || 0) + 20, top: (activeObject.top || 0) + 20 });
+          cloned.setCoords();
+          fabricCanvas.add(cloned);
+          fabricCanvas.setActiveObject(cloned);
+          fabricCanvas.renderAll();
+          const objects = fabricCanvas.getObjects().filter((o: any) => !o.name || (!o.name.startsWith('zone-') && !o.name.startsWith('placement-zone-')));
+          setCanvasObjects([...objects]);
+          toast.success("Element dupliziert");
+        }
+      } catch {
+        toast.error("Duplizieren fehlgeschlagen");
+      }
     }
   };
 
@@ -1684,26 +2155,6 @@ const TShirtDesigner = () => {
     const activeObject = fabricCanvas.getActiveObject();
     if (activeObject) {
       activeObject.set("flipY", !activeObject.flipY);
-      fabricCanvas.renderAll();
-    }
-  };
-
-  // Scale up
-  const handleScaleUp = () => {
-    if (!fabricCanvas) return;
-    const activeObject = fabricCanvas.getActiveObject();
-    if (activeObject) {
-      activeObject.scale((activeObject.scaleX || 1) * 1.1);
-      fabricCanvas.renderAll();
-    }
-  };
-
-  // Scale down
-  const handleScaleDown = () => {
-    if (!fabricCanvas) return;
-    const activeObject = fabricCanvas.getActiveObject();
-    if (activeObject) {
-      activeObject.scale((activeObject.scaleX || 1) * 0.9);
       fabricCanvas.renderAll();
     }
   };
@@ -2229,54 +2680,46 @@ const TShirtDesigner = () => {
         </motion.div>
 
         <div className="grid lg:grid-cols-12 gap-6">
-          {/* Left Sidebar - Action Buttons */}
+          {/* Left Sidebar – kompakt, wenige Klicks (Referenz + modern) */}
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             className="lg:col-span-2"
           >
-            <div className="space-y-4">
-              {/* Upload Image Button */}
-              <label className="block">
-                <Button
-                  variant="default"
-                  size="lg"
-                  className="w-full flex flex-row items-center justify-center gap-3 h-auto py-4 px-4 hover:bg-primary/90 transition-all shadow-md hover:shadow-lg rounded-lg whitespace-nowrap"
-                  asChild
-                >
-                  <span className="cursor-pointer flex items-center gap-3">
-                    <Upload className="w-5 h-5 flex-shrink-0" />
-                    <span className="text-base font-medium">Hochladen</span>
-                  </span>
-                </Button>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  className="hidden"
-                />
-              </label>
-
-              {/* Add Text Button */}
+            <div className="flex flex-col gap-2 rounded-2xl border bg-card p-2 shadow-sm">
+              <input
+                id="designer-file-upload"
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                className="hidden"
+              />
               <Button
                 variant="default"
-                size="lg"
-                className="w-full flex flex-row items-center justify-center gap-3 h-auto py-4 px-4 hover:bg-primary/90 transition-all shadow-md hover:shadow-lg rounded-lg whitespace-nowrap"
+                size="sm"
+                className="w-full justify-start gap-2.5 h-11 rounded-xl font-medium"
+                onClick={() => document.getElementById('designer-file-upload')?.click()}
+              >
+                <Upload className="w-4 h-4 flex-shrink-0" />
+                Hochladen
+              </Button>
+              <Button
+                variant="default"
+                size="sm"
+                className="w-full justify-start gap-2.5 h-11 rounded-xl font-medium"
                 onClick={() => setShowTextDialog(true)}
               >
-                <Type className="w-5 h-5 flex-shrink-0" />
-                <span className="text-base font-medium">Text</span>
+                <Type className="w-4 h-4 flex-shrink-0" />
+                Text
               </Button>
-
-              {/* Reset Button */}
               <Button
-                variant="outline"
-                size="lg"
-                className="w-full flex flex-row items-center justify-center gap-3 h-auto py-4 px-4 hover:bg-destructive hover:text-destructive-foreground transition-all rounded-lg whitespace-nowrap"
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start gap-2.5 h-11 rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                 onClick={handleClearAll}
               >
-                <RotateCcw className="w-5 h-5 flex-shrink-0" />
-                <span className="text-base font-medium">Zurücksetzen</span>
+                <RotateCcw className="w-4 h-4 flex-shrink-0" />
+                Zurücksetzen
               </Button>
             </div>
           </motion.div>
@@ -2301,10 +2744,12 @@ const TShirtDesigner = () => {
                 </div>
               )}
               
-              {/* Product Background - CSS background, not canvas element */}
+              {/* Product Background – maxWidth/size wie Admin, damit Zonen 1:1 passen */}
               <div 
-                className="relative w-full max-w-[800px] aspect-square flex-shrink-0"
+                ref={designerCanvasWrapRef}
+                className="relative w-full aspect-square flex-shrink-0 mx-auto"
                 style={{
+                  maxWidth: PLACEMENT_ZONE_CANVAS_SIZE,
                   backgroundImage: `url(${selectedShirt.image})`,
                   backgroundSize: 'contain',
                   backgroundPosition: 'center',
@@ -2312,560 +2757,349 @@ const TShirtDesigner = () => {
                   backgroundColor: 'transparent',
                 }}
               >
-                {/* Canvas overlay - transparent canvas for placing elements */}
-                  <canvas
-                    ref={canvasRef}
-                  className="absolute inset-0 cursor-move"
-                  style={{ 
-                    touchAction: "none",
-                    backgroundColor: "transparent",
-                    width: '100%',
-                    height: '100%',
-                  }}
-                  />
+                {/* Sprechblase über dem Motiv beim Skalieren/Resizen, immer relativ zur Placement Zone */}
+                {isScalingMm && scalingTooltipPos && objectMmSize && (
+                  <div
+                    className="absolute z-30 pointer-events-none left-0 top-0 w-full h-full"
+                    aria-live="polite"
+                  >
+                    <div
+                      className="absolute -translate-x-1/2 -translate-y-full flex flex-col items-center"
+                      style={{
+                        left: `${scalingTooltipPos.leftPct}%`,
+                        top: `${scalingTooltipPos.topPct}%`,
+                        marginTop: "-6px",
+                      }}
+                    >
+                      {/* Blase */}
+                      <div
+                        className="relative rounded-md border border-gray-300 bg-white px-3 py-2 shadow-md"
+                        style={{
+                          filter: "drop-shadow(0 1px 2px rgb(0 0 0 / 0.08))",
+                        }}
+                      >
+                        <p className="text-sm font-medium text-gray-900 whitespace-nowrap tabular-nums">
+                          B: {(objectMmSize.widthMm / 10).toFixed(1).replace(".", ",")} cm × H:{" "}
+                          {(objectMmSize.heightMm / 10).toFixed(1).replace(".", ",")} cm
+                        </p>
+                        {/* Pfeil nach unten */}
+                        <div
+                          className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0"
+                          style={{
+                            borderLeft: "7px solid transparent",
+                            borderRight: "7px solid transparent",
+                            borderTop: "8px solid #d1d5db",
+                          }}
+                        />
+                        <div
+                          className="absolute left-1/2 -translate-x-1/2 top-full -mt-px w-0 h-0"
+                          style={{
+                            borderLeft: "6px solid transparent",
+                            borderRight: "6px solid transparent",
+                            borderTop: "7px solid white",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {/* Fallback unten, wenn Position nicht gesetzt werden konnte */}
+                {isScalingMm && !scalingTooltipPos && objectMmSize && (
+                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none rounded-lg border bg-background/95 px-3 py-2 shadow-md">
+                    <p className="text-center text-sm font-semibold tabular-nums">
+                      B: {(objectMmSize.widthMm / 10).toFixed(1).replace(".", ",")} cm × H:{" "}
+                      {(objectMmSize.heightMm / 10).toFixed(1).replace(".", ",")} cm
+                    </p>
+                  </div>
+                )}
+                {/* Fabric hängt eigenen Container ein – nur leerer Host, kein React-<canvas> (sonst insertBefore-Crash) */}
+                <div
+                  ref={fabricHostRef}
+                  className="designer-fabric-host absolute inset-0 z-10"
+                  style={{ touchAction: "none" }}
+                  aria-hidden
+                />
                 </div>
               </div>
 
-              {/* View Thumbnail Gallery - Show all variation views */}
-              {selectedColor && availableImageViews.length > 0 && (
-                <div className="mt-6 glass-card p-4">
-                  <h3 className="font-semibold text-sm mb-4">Ansichten</h3>
-                  <div className="grid grid-cols-4 gap-3">
-                    {availableImageViews.map((view) => {
-                      const viewImgs = viewImages[view];
-                      const firstImg = viewImgs[0];
-                      const isActive = currentView === view;
-                      
-                      return (
-                        <button
-                          key={view}
-                          onClick={() => loadView(view)}
-                          className={`relative aspect-square rounded-lg overflow-hidden border-2 transition-all ${
-                            isActive 
-                              ? 'border-primary ring-2 ring-primary/20' 
-                              : 'border-border hover:border-primary/50'
-                          }`}
-                          title={viewLabels[view]}
-                        >
-                          {firstImg ? (
-                            <img 
-                              src={firstImg} 
-                              alt={viewLabels[view]}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-full h-full bg-muted flex items-center justify-center">
-                              <Shirt className="w-6 h-6 text-muted-foreground" />
-            </div>
-                          )}
-                          <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs py-1 px-2 text-center">
-                            {viewLabels[view]}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
+              {/* Ansichten – nur unter dem Canvas (Shirtfarbe ist im rechten Panel) */}
+              {(selectedShirt || selectedColor || productImage || availableImageViews.length > 0 || variationGalleryOrdered.length > 0) && (
+                <div className="mt-5 rounded-2xl border bg-card p-3 shadow-sm space-y-4">
+                  {/* Ansichten: Reihenfolge der Variation = 1. Vorderseite, 2. Rückseite, 3. Links, 4. Rechts (nur angezeigte Bilder) */}
+                  {(variationGalleryOrdered.length > 0 || availableImageViews.length > 0) && (
+                    <div className="space-y-3">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Ansichten</p>
+                      <div className="flex flex-wrap gap-2">
+                        {variationGalleryOrdered.length > 0
+                          ? variationGalleryOrdered.map((imgSrc, i) => {
+                              const view = VIEW_ORDER[Math.min(i, VIEW_ORDER.length - 1)];
+                              const label = viewLabels[view];
+                              const isActive = selectedShirt.image === imgSrc;
+                              return (
+                                <button
+                                  key={`ordered-${i}-${imgSrc}`}
+                                  type="button"
+                                  onClick={() => loadView(view, 0, imgSrc)}
+                                  className={`relative w-20 h-20 sm:w-24 sm:h-24 rounded-xl overflow-hidden border-2 transition-all duration-200 shrink-0 ${
+                                    isActive
+                                      ? "border-primary ring-2 ring-primary ring-offset-2 ring-offset-background shadow-md"
+                                      : "border-border hover:border-primary/40 hover:shadow-sm"
+                                  }`}
+                                  title={label}
+                                >
+                                  <img src={imgSrc} alt={label} className="w-full h-full object-cover" />
+                                  <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-[10px] font-medium py-1 px-1 text-center truncate">
+                                    {label}
+                                  </div>
+                                </button>
+                              );
+                            })
+                          : availableImageViews.flatMap((view) => {
+                              const viewImgs = viewImages[view] || [];
+                              if (viewImgs.length === 0) return [];
+                              return viewImgs.map((imgSrc, index) => {
+                                const isActive =
+                                  currentView === view && selectedVariationImageIndex === index;
+                                return (
+                                  <button
+                                    key={`${view}-${index}-${imgSrc}`}
+                                    type="button"
+                                    onClick={() => loadView(view, index)}
+                                    className={`relative w-20 h-20 sm:w-24 sm:h-24 rounded-xl overflow-hidden border-2 transition-all duration-200 shrink-0 ${
+                                      isActive
+                                        ? "border-primary ring-2 ring-primary ring-offset-2 ring-offset-background shadow-md"
+                                        : "border-border hover:border-primary/40 hover:shadow-sm"
+                                    }`}
+                                    title={viewLabels[view]}
+                                  >
+                                    <img
+                                      src={imgSrc}
+                                      alt={viewLabels[view]}
+                                      className="w-full h-full object-cover"
+                                    />
+                                    <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-[10px] font-medium py-1 px-1 text-center truncate">
+                                      {viewLabels[view]}
+                                    </div>
+                                  </button>
+                                );
+                              });
+                            })}
+                      </div>
+                    </div>
+                  )}
+                  {availableImageViews.length === 0 && availableColors.length > 0 && selectedColor && (
+                    <p className="text-xs text-muted-foreground">Keine Bilder für diese Farbe.</p>
+                  )}
+                  {availableImageViews.length === 0 && availableColors.length > 0 && !selectedColor && (
+                    <p className="text-xs text-muted-foreground">Farbe wählen.</p>
+                  )}
                 </div>
               )}
 
           </motion.div>
 
-          {/* Right Sidebar - Product Info & Options */}
+          {/* Right Sidebar – Shirtfarbe hier + Optionen & Größe/Menge */}
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             className="lg:col-span-4"
           >
             <div className="pr-2">
-              {/* Single Card with all content */}
-              <div className="glass-card p-6 space-y-6">
-                {/* Product Name and Details Button */}
+              <div className="rounded-2xl border bg-card p-5 shadow-sm space-y-5">
                 {product?.name && (
-                  <>
-                    <div className="flex items-center justify-between">
-                      <h2 className="text-xl font-bold">{product.name}</h2>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowProductDetailsDialog(true)}
-                        className="flex items-center gap-2"
-                      >
-                        <Info className="w-4 h-4" />
-                        Details
-                      </Button>
-                    </div>
-                    <Separator />
-                  </>
+                  <div className="flex items-center justify-between gap-2">
+                    <h2 className="text-lg font-bold truncate">{product.name}</h2>
+                    <Button variant="ghost" size="icon" className="shrink-0 h-8 w-8" onClick={() => setShowProductDetailsDialog(true)} title="Details">
+                      <Info className="w-4 h-4" />
+                    </Button>
+                  </div>
                 )}
 
-                {/* Step Visualization - Clickable */}
-                <div>
-                  <div className="flex items-center justify-center">
-                    <div className="flex items-center gap-4">
-                      <button
-                        onClick={() => setCurrentStep(1)}
-                        className={`flex items-center gap-2 transition-all ${
-                          currentStep === 1 
-                            ? 'text-primary cursor-default' 
-                            : 'text-muted-foreground hover:text-primary cursor-pointer'
-                        }`}
-                      >
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
-                          currentStep === 1 
-                            ? 'bg-primary text-primary-foreground' 
-                            : 'bg-muted hover:bg-muted/80'
-                        }`}>
-                          1
-                        </div>
-                        <span className="font-semibold text-sm">Design</span>
-                      </button>
-                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                      <button
-                        onClick={() => setCurrentStep(2)}
-                        className={`flex items-center gap-2 transition-all ${
-                          currentStep === 2 
-                            ? 'text-primary cursor-default' 
-                            : 'text-muted-foreground hover:text-primary cursor-pointer'
-                        }`}
-                      >
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
-                          currentStep === 2 
-                            ? 'bg-primary text-primary-foreground' 
-                            : 'bg-muted hover:bg-muted/80'
-                        }`}>
-                          2
-                        </div>
-                        <span className="font-semibold text-sm">Größe & Menge</span>
-                      </button>
-                    </div>
-                  </div>
+                {/* Schritte – dezent als Punkte, kein großer Titel */}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setCurrentStep(1)}
+                    className={`h-2 rounded-full transition-all ${
+                      currentStep === 1 ? 'w-6 bg-primary' : 'w-2 bg-muted-foreground/40 hover:bg-muted-foreground/60'
+                    }`}
+                    title="Design"
+                  />
+                  <button
+                    onClick={() => setCurrentStep(2)}
+                    className={`h-2 rounded-full transition-all ${
+                      currentStep === 2 ? 'w-6 bg-primary' : 'w-2 bg-muted-foreground/40 hover:bg-muted-foreground/60'
+                    }`}
+                    title="Größe & Menge"
+                  />
                 </div>
 
-                {/* Step 1 Content */}
-                {currentStep === 1 ? (
-                  <>
-                {/* Element Toolbox - general controls for any selected element */}
-                {hasSelectedObject && (
-                  <>
-                    <Separator />
-                    <div className="space-y-3">
-                      <h3 className="font-bold text-sm mb-1">Element bearbeiten</h3>
-                      <div className="flex flex-col gap-2">
-                        {/* Transform controls */}
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={handleScaleUp}
-                            title="Objekt vergrößern"
-                          >
-                            <ZoomIn className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={handleScaleDown}
-                            title="Objekt verkleinern"
-                          >
-                            <ZoomOut className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={handleFlipHorizontal}
-                            title="Horizontal spiegeln"
-                          >
-                            <FlipHorizontal className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={handleFlipVertical}
-                            title="Vertikal spiegeln"
-                          >
-                            <FlipVertical className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={handleDeleteSelected}
-                            title="Element löschen"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-
-                        {/* Layer controls for any element */}
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            title="Ganz nach vorne"
-                            onClick={() => {
-                              if (!fabricCanvas) return;
-                              const active = fabricCanvas.getActiveObject();
-                              if (active) {
-                                handleMoveToFront(active);
-                              }
-                            }}
-                          >
-                            <ArrowUp className="w-4 h-4 mr-1" />
-                            Top
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            title="Eine Ebene nach vorne"
-                            onClick={() => {
-                              if (!fabricCanvas) return;
-                              const active = fabricCanvas.getActiveObject();
-                              if (active) {
-                                handleMoveForward(active);
-                              }
-                            }}
-                          >
-                            <ArrowUp className="w-4 h-4 mr-1" />
-                            +
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            title="Eine Ebene nach hinten"
-                            onClick={() => {
-                              if (!fabricCanvas) return;
-                              const active = fabricCanvas.getActiveObject();
-                              if (active) {
-                                handleMoveBackward(active);
-                              }
-                            }}
-                          >
-                            <ArrowDown className="w-4 h-4 mr-1" />
-                            -
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            title="Ganz nach hinten"
-                            onClick={() => {
-                              if (!fabricCanvas) return;
-                              const active = fabricCanvas.getActiveObject();
-                              if (active) {
-                                handleMoveToBack(active);
-                              }
-                            }}
-                          >
-                            <ArrowDown className="w-4 h-4 mr-1" />
-                            Bottom
-                          </Button>
-                        </div>
-                      </div>
+                {/* Shirtfarbe – rechts im Panel, aktuell gewählte Farbe namentlich */}
+                {productId && availableColors.length > 0 && currentStep === 1 && (
+                  <div className="space-y-2">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Shirtfarbe</p>
+                      {selectedColor ? (
+                        <span className="text-sm font-semibold text-foreground truncate" title={selectedColor}>
+                          {selectedColor}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">Bitte wählen</span>
+                      )}
                     </div>
-                  </>
-                )}
-
-                {/* Text Toolbox - Show when text is selected */}
-                    {hasSelectedObject && fabricCanvas?.getActiveObject()?.type === "text" && (
-                      <>
-                        <Separator />
-                        <div className="space-y-6">
-                      <h3 className="font-bold text-sm mb-5">Text bearbeiten</h3>
-                      
-                      {/* Text Input */}
-                      <div>
-                        <label className="text-sm font-medium mb-3 block">Text</label>
-                        <Input
-                          value={(fabricCanvas.getActiveObject() as FabricText)?.text || ""}
-                          onChange={(e) => {
-                            const activeObject = fabricCanvas.getActiveObject();
-                            if (activeObject && activeObject.type === "text") {
-                              const text = activeObject as FabricText;
-                              text.set("text", e.target.value);
-                              fabricCanvas.renderAll();
-                            }
-                          }}
-                          placeholder="Dein Text..."
-                        />
-                      </div>
-              
-              {/* Font Selection */}
-                      <div>
-                        <label className="text-sm font-medium mb-3 block">Schriftart</label>
-                <Select value={selectedFont} onValueChange={handleFontChange}>
-                          <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {fonts.map((font) => (
-                      <SelectItem key={font.value} value={font.value}>
-                        <span style={{ fontFamily: font.value }}>{font.name}</span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Text Color */}
-                      <div>
-                        <label className="text-sm font-medium mb-3 block">Textfarbe</label>
-                        <div className="flex gap-3 items-center">
-                  <div className="flex-1 flex gap-1 flex-wrap">
-                    {presetColors.map((color) => (
-                      <button
-                        key={color.value}
-                        type="button"
-                        onClick={() => handleColorChange(color.value)}
-                        className={`w-8 h-8 rounded-md border-2 transition-all ${
-                          textColor === color.value
-                            ? "border-primary scale-110"
-                            : "border-border hover:border-primary/50"
-                        }`}
-                        style={{ backgroundColor: color.value }}
-                        title={color.name}
-                      />
-                    ))}
-                  </div>
-                    <input
-                      type="color"
-                      value={textColor}
-                      onChange={(e) => handleColorChange(e.target.value)}
-                      className="w-10 h-10 rounded-md border-2 border-border cursor-pointer"
-                      title="Benutzerdefinierte Farbe"
-                    />
-                </div>
-              </div>
-
-              {/* Formatting Buttons */}
-                      <div>
-                        <label className="text-sm font-medium mb-3 block">Formatierung</label>
-                        <div className="flex gap-3">
-                  <Button
-                    type="button"
-                    variant={textBold ? "secondary" : "outline"}
-                    size="sm"
-                    onClick={() => handleApplyFormatting("bold")}
-                    title="Fett"
-                  >
-                    <Bold className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={textItalic ? "secondary" : "outline"}
-                    size="sm"
-                    onClick={() => handleApplyFormatting("italic")}
-                    title="Kursiv"
-                  >
-                    <Italic className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={textStrikethrough ? "secondary" : "outline"}
-                    size="sm"
-                    onClick={() => handleApplyFormatting("strikethrough")}
-                    title="Durchgestrichen"
-                  >
-                    <Strikethrough className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-
-                      {/* Font Size */}
-                      <div>
-                        <label className="text-sm font-medium mb-3 block">Schriftgröße</label>
-                        <div className="flex items-center gap-4">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              const activeObject = fabricCanvas.getActiveObject();
-                              if (activeObject && activeObject.type === "text") {
-                                const text = activeObject as FabricText;
-                                const currentSize = text.fontSize || 20;
-                                text.set("fontSize", Math.max(8, currentSize - 2));
-                                fabricCanvas.renderAll();
-                              }
-                            }}
-                          >
-                            <Minus className="w-4 h-4" />
-                          </Button>
-                          <span className="w-16 text-center font-semibold">
-                            {fabricCanvas.getActiveObject() && fabricCanvas.getActiveObject().type === "text"
-                              ? (fabricCanvas.getActiveObject() as FabricText).fontSize || 20
-                              : 20}
-                          </span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              const activeObject = fabricCanvas.getActiveObject();
-                              if (activeObject && activeObject.type === "text") {
-                                const text = activeObject as FabricText;
-                                const currentSize = text.fontSize || 20;
-                                text.set("fontSize", Math.min(200, currentSize + 2));
-                                fabricCanvas.renderAll();
-                              }
-                            }}
-                          >
-                            <Plus className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-
-                      {/* Layer Controls */}
-                      <div>
-                        <label className="text-sm font-medium mb-3 block">Ebene</label>
-                        <div className="flex gap-3">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="flex-1"
-                            onClick={() => {
-                              const activeObject = fabricCanvas.getActiveObject();
-                              if (activeObject) {
-                                fabricCanvas.bringObjectToFront(activeObject);
-                                fabricCanvas.renderAll();
-                              }
-                            }}
-                            title="Nach vorne"
-                          >
-                            <ArrowUp className="w-4 h-4 mr-1" />
-                            Vorne
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="flex-1"
-                            onClick={() => {
-                              const activeObject = fabricCanvas.getActiveObject();
-                              if (activeObject) {
-                                fabricCanvas.sendObjectToBack(activeObject);
-                                fabricCanvas.renderAll();
-                              }
-                            }}
-                            title="Nach hinten"
-                          >
-                            <ArrowDown className="w-4 h-4 mr-1" />
-                            Hinten
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* Delete Button (removed – use general element delete instead) */}
-                    </div>
-                    </>
-                  )}
-
-                    {/* Variation Selection - Show if product has variations */}
-                    {productId && (
-                      <>
-                        {(hasSelectedObject && fabricCanvas?.getActiveObject()?.type === "text") && <Separator />}
-                        <div>
-                      <h3 className="font-bold text-sm mb-5">
-                        {selectedColor ? (
-                          <>Farbe: <span className="text-primary">{selectedColor}</span></>
-                        ) : (
-                          "Variation auswählen"
-                        )}
-                      </h3>
-                      {/* Color Selection */}
-                      {availableColors.length > 0 && (
-                        <div className="mb-6">
-                          <label className="text-sm text-muted-foreground mb-4 block">Farbe</label>
                     <TooltipProvider>
-                      <div className="flex flex-wrap gap-5 items-center">
+                      <div className="flex flex-wrap gap-2">
                         {availableColors.map((color) => (
                           <Tooltip key={color.name}>
                             <TooltipTrigger asChild>
                               <button
+                                type="button"
                                 onClick={() => {
                                   setSelectedColor(color.name);
                                   setSelectedVariationImageIndex(0);
                                 }}
-                                className={`w-10 h-10 rounded-full border-2 transition-all flex items-center justify-center ${
+                                className={`w-9 h-9 rounded-full border-2 transition-all flex items-center justify-center shrink-0 ${
                                   selectedColor === color.name
                                     ? "border-primary ring-2 ring-primary/20 scale-110"
                                     : "border-border hover:border-primary/50 hover:scale-105"
                                 }`}
-                                style={{
-                                  backgroundColor: color.hex || "#ccc",
-                                }}
+                                style={{ backgroundColor: color.hex || "#ccc" }}
                                 aria-label={color.name}
                               >
                                 {selectedColor === color.name && (
-                                  <Check className="w-5 h-5 text-white drop-shadow-md" />
+                                  <Check className="w-4 h-4 text-white drop-shadow-md" />
                                 )}
                               </button>
                             </TooltipTrigger>
-                            <TooltipContent>
-                              <p>{color.name}</p>
-                            </TooltipContent>
+                            <TooltipContent><p>{color.name}</p></TooltipContent>
                           </Tooltip>
                         ))}
                       </div>
                     </TooltipProvider>
                   </div>
                 )}
-                
-                {/* Variation Image Gallery */}
-                {variationImages.length > 0 && (
-                  <div className="mt-6">
-                    <h4 className="text-sm font-semibold mb-4">
-                      {variationImages.length > 1 ? "Variation Bilder" : "Variation Bild"}
-                    </h4>
-                    <div className="flex gap-3 overflow-x-auto pb-2">
-                      {variationImages.map((img, index) => (
-                        <button
-                          key={img}
-                          onClick={() => setSelectedVariationImageIndex(index)}
-                          className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${
-                            selectedVariationImageIndex === index
-                              ? "border-primary ring-2 ring-primary/20"
-                              : "border-border hover:border-primary/50"
-                          }`}
-                        >
-                          <img
-                            src={img}
-                            alt={`Variation ${index + 1}`}
-                            className="w-full h-full object-cover"
-                          />
-                        </button>
-                      ))}
+
+                {currentStep === 1 ? (
+                  <>
+                {/* Separator + Label: aktueller Editor-Kontext (Text / Bild / Element) */}
+                {hasSelectedObject && selectedEditorType && (
+                  <div className="space-y-3 pt-2">
+                    <div className="border-t border-border" />
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {selectedEditorType === "text" && "Text bearbeiten"}
+                        {selectedEditorType === "image" && "Bild bearbeiten"}
+                        {selectedEditorType === "other" && "Element bearbeiten"}
+                      </span>
                     </div>
+                    {objectMmSize && (
+                      <div className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+                          Größe (ca.)
+                        </p>
+                        <p className="font-semibold tabular-nums">
+                          {objectMmSize.widthMm} × {objectMmSize.heightMm} mm
+                        </p>
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                          Basierend auf Zonenmaß in mm. Beim Skalieren live aktualisiert.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
-                {variationImages.length === 0 && availableColors.length === 0 && variations.length === 0 && (
-                  <p className="text-sm text-muted-foreground mt-4">
-                    Dieses Produkt hat keine Variationen.
-                  </p>
+
+                {/* Element: eine Zeile Icons (wie Referenz) */}
+                {hasSelectedObject && (
+                  <div className="flex flex-wrap gap-1.5">
+                    <TooltipProvider>
+                      <Tooltip><TooltipTrigger asChild><Button type="button" variant="outline" size="icon" className="h-9 w-9 rounded-lg" onClick={handleFlipHorizontal}><FlipHorizontal className="w-4 h-4" /></Button></TooltipTrigger><TooltipContent>Horizontal spiegeln</TooltipContent></Tooltip>
+                      <Tooltip><TooltipTrigger asChild><Button type="button" variant="outline" size="icon" className="h-9 w-9 rounded-lg" onClick={handleFlipVertical}><FlipVertical className="w-4 h-4" /></Button></TooltipTrigger><TooltipContent>Vertikal spiegeln</TooltipContent></Tooltip>
+                      <Tooltip><TooltipTrigger asChild><Button type="button" variant="outline" size="icon" className="h-9 w-9 rounded-lg" onClick={handleDuplicateSelected}><Copy className="w-4 h-4" /></Button></TooltipTrigger><TooltipContent>Duplizieren</TooltipContent></Tooltip>
+                      <Tooltip><TooltipTrigger asChild><Button type="button" variant="outline" size="icon" className="h-9 w-9 rounded-lg text-destructive hover:text-destructive hover:bg-destructive/10" onClick={handleDeleteSelected}><Trash2 className="w-4 h-4" /></Button></TooltipTrigger><TooltipContent>Löschen</TooltipContent></Tooltip>
+                    </TooltipProvider>
+                  </div>
                 )}
-                {variationImages.length === 0 && selectedColor && availableColors.length > 0 && (
-                  <p className="text-sm text-muted-foreground mt-4">
-                    Keine Variationen für diese Auswahl gefunden.
-                  </p>
-                )}
-                {variationImages.length === 0 && !selectedColor && availableColors.length > 0 && (
-                  <p className="text-sm text-muted-foreground mt-4">
-                          Wähle eine Farbe aus, um Variationen zu sehen.
-                        </p>
-                      )}
+
+                {/* Text – kompakt wie Referenz: Eingabe, Farbe, Format, Schrift, Größe, Ebene */}
+                    {hasSelectedObject && fabricCanvas?.getActiveObject()?.type === "text" && (
+                      <div className="space-y-4">
+                        <Input
+                          value={(fabricCanvas.getActiveObject() as FabricText)?.text || ""}
+                          onChange={(e) => {
+                            const activeObject = fabricCanvas.getActiveObject();
+                            if (activeObject && activeObject.type === "text") {
+                              (activeObject as FabricText).set("text", e.target.value);
+                              fabricCanvas.renderAll();
+                            }
+                          }}
+                          placeholder="Text eingeben..."
+                          className="rounded-xl"
+                        />
+                        <div className="flex flex-wrap items-center gap-2">
+                          {presetColors.map((color) => (
+                            <button
+                              key={color.value}
+                              type="button"
+                              onClick={() => handleColorChange(color.value)}
+                              className={`h-8 w-8 rounded-lg border-2 transition-all shrink-0 ${
+                                textColor === color.value ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/50"
+                              }`}
+                              style={{ backgroundColor: color.value }}
+                              title={color.name}
+                            />
+                          ))}
+                          <input
+                            type="color"
+                            value={textColor}
+                            onChange={(e) => handleColorChange(e.target.value)}
+                            className="h-8 w-8 rounded-lg border-2 border-border cursor-pointer shrink-0"
+                            title="Eigene Farbe"
+                          />
+                          <div className="flex gap-1 ml-1">
+                            <Button type="button" variant={textBold ? "secondary" : "outline"} size="icon" className="h-8 w-8 rounded-lg" onClick={() => handleApplyFormatting("bold")} title="Fett"><Bold className="w-4 h-4" /></Button>
+                            <Button type="button" variant={textItalic ? "secondary" : "outline"} size="icon" className="h-8 w-8 rounded-lg" onClick={() => handleApplyFormatting("italic")} title="Kursiv"><Italic className="w-4 h-4" /></Button>
+                            <Button type="button" variant={textStrikethrough ? "secondary" : "outline"} size="icon" className="h-8 w-8 rounded-lg" onClick={() => handleApplyFormatting("strikethrough")} title="Durchgestrichen"><Strikethrough className="w-4 h-4" /></Button>
+                          </div>
                         </div>
-                      </>
-                    )}
-                
-                    {!productImage && !productId && (
-                      <>
-                        {productId && <Separator />}
+                        <div className="flex items-center gap-2">
+                          <Select value={selectedFont} onValueChange={handleFontChange}>
+                            <SelectTrigger className="rounded-xl flex-1 h-9"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {fonts.map((font) => (
+                                <SelectItem key={font.value} value={font.value}><span style={{ fontFamily: font.value }}>{font.name}</span></SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <div className="flex items-center gap-1 rounded-xl border px-2 h-9">
+                            <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => { const o = fabricCanvas.getActiveObject(); if (o?.type === "text") { const t = o as FabricText; t.set("fontSize", Math.max(8, (t.fontSize || 20) - 2)); fabricCanvas.renderAll(); } }}><Minus className="w-3.5 h-3.5" /></Button>
+                            <span className="w-10 text-center text-sm font-medium tabular-nums">
+                              {fabricCanvas.getActiveObject()?.type === "text" ? (fabricCanvas.getActiveObject() as FabricText).fontSize || 20 : 20}
+                            </span>
+                            <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => { const o = fabricCanvas.getActiveObject(); if (o?.type === "text") { const t = o as FabricText; t.set("fontSize", Math.min(200, (t.fontSize || 20) + 2)); fabricCanvas.renderAll(); } }}><Plus className="w-3.5 h-3.5" /></Button>
+                          </div>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <Button type="button" variant="outline" size="sm" className="h-8 rounded-lg gap-1" onClick={() => { const o = fabricCanvas.getActiveObject(); if (o) { fabricCanvas.bringObjectToFront(o); fabricCanvas.renderAll(); } }} title="Nach vorne"><ArrowUp className="w-4 h-4" /> Vorne</Button>
+                          <Button type="button" variant="outline" size="sm" className="h-8 rounded-lg gap-1" onClick={() => { const o = fabricCanvas.getActiveObject(); if (o) { fabricCanvas.sendObjectToBack(o); fabricCanvas.renderAll(); } }} title="Nach hinten"><ArrowDown className="w-4 h-4" /> Hinten</Button>
+                        </div>
                         <div>
-                          <h3 className="font-bold text-sm mb-3">Produkt Farbe</h3>
-                          <div className="flex gap-3">
+                          <p className="text-xs font-medium text-muted-foreground mb-2">Text biegen</p>
+                          <div className="flex items-center gap-3">
+                            <Slider
+                              value={[textBend]}
+                              onValueChange={([v]) => handleTextBendChange(v)}
+                              min={-100}
+                              max={100}
+                              step={5}
+                              className="flex-1"
+                            />
+                            <span className="w-10 text-center text-sm tabular-nums text-muted-foreground">{textBend}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {!productImage && !productId && (
+                      <div className="flex flex-wrap gap-2">
                             {shirtColors.map((color) => (
                               <button
                                 key={color.name}
@@ -2880,37 +3114,23 @@ const TShirtDesigner = () => {
                               />
                             ))}
                           </div>
-                        </div>
-                      </>
                     )}
 
-                    {/* Price Display - Step 1 */}
-                    <Separator />
-                    <div>
-                    <div className="flex justify-between items-center mb-4">
+                    {/* Preis & CTA Step 1 – ein grüner Button wie im Referenz-UI */}
+                    <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">Preis pro Stück</span>
-                      <span className="text-2xl font-bold text-primary">{pricePerItem.toFixed(2).replace('.', ',')} €</span>
+                      <span className="text-xl font-bold text-primary">{pricePerItem.toFixed(2).replace('.', ',')} €</span>
                     </div>
                     {totalQuantity > 0 && (
-                      <div className="flex justify-between items-center pt-4 border-t border-border">
-                        <span className="text-sm text-muted-foreground">
-                          {totalQuantity} × {pricePerItem.toFixed(2).replace('.', ',')} €
-                        </span>
-                        <span className="text-lg font-semibold text-primary">
-                          Gesamt: {totalPrice.toFixed(2).replace('.', ',')} €
-                        </span>
+                      <div className="flex justify-between items-center pt-2 border-t border-border">
+                        <span className="text-sm text-muted-foreground">{totalQuantity} × {pricePerItem.toFixed(2).replace('.', ',')} €</span>
+                        <span className="font-semibold text-primary">Gesamt: {totalPrice.toFixed(2).replace('.', ',')} €</span>
                       </div>
                     )}
-                    </div>
-
-                    {/* Navigation Button - Step 1 */}
-                    <Separator />
-                    <div>
                     <Button
                       size="lg"
-                      className="w-full"
+                      className="w-full rounded-xl h-12 font-semibold text-base shadow-md hover:shadow-lg"
                       onClick={() => {
-                        // Prevent navigation to step 2 if any design elements are outside placement zones
                         if (hasOutOfBoundsElements()) {
                           setOutOfBoundsWarning("Bitte positioniere alle Elemente vollständig innerhalb der Druckbereiche, bevor du fortfährst.");
                           toast.error("Es befinden sich noch Elemente außerhalb der Druckbereiche.");
@@ -2922,15 +3142,16 @@ const TShirtDesigner = () => {
                       Größe & Anzahl wählen
                       <ChevronRight className="w-4 h-4 ml-2" />
                     </Button>
-                    </div>
                   </>
                 ) : (
-                  <>
-                    <Separator />
-                    {/* Size and Quantity Selection - Step 2 (Direct, no dialog button) */}
-                    <div>
-                    <h3 className="font-bold mb-4 text-sm">Größe und Menge</h3>
-                    <div className="space-y-3">
+                  <div className="space-y-4">
+                    {selectedColor && (
+                      <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2">
+                        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Shirtfarbe</span>
+                        <span className="text-sm font-semibold">{selectedColor}</span>
+                      </div>
+                    )}
+                    <div className="space-y-2">
                       {availableSizes.map((size) => {
                         const quantity = sizeQuantities[size] || 0;
                         return (
@@ -2973,10 +3194,7 @@ const TShirtDesigner = () => {
                         );
                       })}
                     </div>
-                  </div>
 
-                    {/* Price & Actions - Step 2 */}
-                    <Separator />
                     <div>
                     <div className="flex justify-between items-center mb-3">
                       <span className="text-sm text-muted-foreground">Preis pro Stück</span>
@@ -3060,20 +3278,16 @@ const TShirtDesigner = () => {
                     </div>
                     </div>
 
-                    {/* Navigation Button - Step 2 */}
-                    <Separator />
-                    <div>
                     <Button
                       variant="outline"
-                      size="default"
-                      className="w-full"
+                      size="sm"
+                      className="w-full rounded-xl"
                       onClick={() => setCurrentStep(1)}
                     >
                       <ChevronLeft className="w-4 h-4 mr-2" />
-                        Zurück
-                      </Button>
-                    </div>
-                  </>
+                      Zurück
+                    </Button>
+                  </div>
                 )}
                 </div>
               </div>
@@ -3081,69 +3295,77 @@ const TShirtDesigner = () => {
           </div>
         </div>
 
-      {/* Product Details Dialog */}
+      {/* Product Details Dialog – kompakt, nur vorhandene Produktdaten */}
       <Dialog open={showProductDetailsDialog} onOpenChange={setShowProductDetailsDialog}>
-        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{product?.name || "Produktdetails"}</DialogTitle>
-            <DialogDescription>
-              Hier finden Sie alle Informationen zu diesem Produkt
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col gap-0 p-0 overflow-hidden">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b bg-muted/30 shrink-0 text-left">
+            <DialogTitle className="text-xl pr-8">
+              {product?.name || "Produktdetails"}
+            </DialogTitle>
+            {/* Kein generischer Fließtext – Beschreibung folgt im Body */}
+            <DialogDescription className="sr-only">
+              Produktdetails und Beschreibung für {product?.name || "dieses Produkt"}
             </DialogDescription>
+            <div className="flex flex-wrap items-center gap-2 mt-2">
+              {product?.category && (
+                <span className="text-xs font-medium rounded-full bg-background border px-2.5 py-0.5 text-muted-foreground">
+                  {product.category}
+                </span>
+              )}
+              {(basePrice > 0 || product?.priceFormatted) && (
+                <span className="text-lg font-bold text-primary tabular-nums">
+                  {basePrice > 0
+                    ? `${basePrice.toFixed(2).replace(".", ",")} €`
+                    : product?.priceFormatted}
+                </span>
+              )}
+            </div>
           </DialogHeader>
-          
-          <div className="space-y-4 mt-4">
-            {product?.description && (
-              <div>
-                <h3 className="font-semibold mb-2">Beschreibung</h3>
-                <div 
-                  className="text-sm text-muted-foreground prose prose-sm max-w-none"
+
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+            {product?.description ? (
+              <div className="rounded-xl border bg-card p-4">
+                <div
+                  className="text-sm text-foreground prose prose-sm max-w-none dark:prose-invert prose-p:my-2 prose-headings:font-semibold"
                   dangerouslySetInnerHTML={{ __html: product.description }}
                 />
               </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Für dieses Produkt liegt keine ausführliche Beschreibung vor.
+              </p>
             )}
-            
-            {product?.shortDescription && (
+
+            {product?.features && product.features.length > 0 && (
               <div>
-                <h3 className="font-semibold mb-2">Kurzbeschreibung</h3>
-                <p className="text-sm text-muted-foreground">{product.shortDescription}</p>
+                <h3 className="text-sm font-semibold mb-2 text-foreground">Merkmale</h3>
+                <ul className="text-sm text-muted-foreground space-y-1.5 list-disc list-inside">
+                  {product.features.map((f, i) => (
+                    <li key={i}>{f}</li>
+                  ))}
+                </ul>
               </div>
             )}
 
-            {product?.sku && (
+            {product?.tags && product.tags.length > 0 && (
               <div>
-                <h3 className="font-semibold mb-2">Artikelnummer</h3>
-                <p className="text-sm text-muted-foreground">{product.sku}</p>
-              </div>
-            )}
-
-            {product?.categories && product.categories.length > 0 && (
-              <div>
-                <h3 className="font-semibold mb-2">Kategorien</h3>
+                <h3 className="text-sm font-semibold mb-2 text-foreground">Tags</h3>
                 <div className="flex flex-wrap gap-2">
-                  {product.categories.map((cat: any) => (
+                  {product.tags.map((tag) => (
                     <span
-                      key={cat.id || cat}
+                      key={tag.id}
                       className="px-2 py-1 text-xs rounded-md bg-muted text-muted-foreground"
                     >
-                      {cat.name || cat}
+                      {tag.name}
                     </span>
                   ))}
                 </div>
               </div>
             )}
-
-            {basePrice > 0 && (
-              <div>
-                <h3 className="font-semibold mb-2">Preis</h3>
-                <p className="text-lg font-bold text-primary">
-                  {basePrice.toFixed(2).replace('.', ',')} €
-                </p>
-              </div>
-            )}
           </div>
 
-          <DialogFooter>
-            <Button onClick={() => setShowProductDetailsDialog(false)}>
+          <DialogFooter className="px-6 py-4 border-t bg-muted/20 shrink-0 sm:justify-end">
+            <Button variant="default" onClick={() => setShowProductDetailsDialog(false)}>
               Schließen
             </Button>
           </DialogFooter>

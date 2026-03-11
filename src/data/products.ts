@@ -11,6 +11,15 @@ export interface PlacementZone {
   height: number; // 0-1 (percentage of canvas height)
   minSize?: number; // Optional: minimum element size in pixels
   maxSize?: number; // Optional: maximum element size in pixels
+  /**
+   * Reale Breite der Zone in mm (Druckbereich). Wird im Creator genutzt, um Motivgröße in mm anzuzeigen.
+   * Wenn nur widthMm gesetzt ist und customMmSize false: heightMm wird aus dem Seitenverhältnis der Zone abgeleitet.
+   */
+  widthMm?: number;
+  /** Reale Höhe in mm; bei customMmSize true manuell, sonst aus widthMm * (height/width) berechenbar */
+  heightMm?: number;
+  /** true = widthMm und heightMm unabhängig; false = nur widthMm nötig, Höhe folgt aus Zonen-Aspect */
+  customMmSize?: boolean;
 }
 
 export interface Product {

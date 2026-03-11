@@ -32,7 +32,9 @@ export function useProduct(id: number) {
       return mapWooCommerceToProduct(wcProduct);
     },
     enabled: !!id,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    // Placement-Zonen werden im Admin live angepasst; im Creator brauchen wir frische mm-Werte.
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 }
 

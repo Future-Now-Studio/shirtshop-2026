@@ -208,10 +208,9 @@ export interface WooCommerceVariation {
   meta_data: any[];
 }
 
-// Fetch product variations
+// Fetch product variations (with optional context=edit for more fields)
 export async function fetchWooCommerceVariations(productId: number): Promise<WooCommerceVariation[]> {
-  // Include images in the response (Smart Variations Images plugin stores gallery in images array)
-  const url = `${WOOCOMMERCE_CONFIG.baseUrl}/products/${productId}/variations?per_page=100`;
+  const url = `${WOOCOMMERCE_CONFIG.baseUrl}/products/${productId}/variations?per_page=100&context=edit`;
   
   const response = await fetch(url, {
     method: 'GET',
@@ -225,10 +224,47 @@ export async function fetchWooCommerceVariations(productId: number): Promise<Woo
     throw new Error(`WooCommerce API error: ${response.status} ${response.statusText}`);
   }
 
-  const variations = await response.json();
+  let variations: WooCommerceVariation[] = await response.json();
   
-  // The Smart Variations Images plugin may store gallery in meta_data or images array
-  // WooCommerce REST API should return images array if available
+  // Wenn die Liste keine Galerie-Bilder liefert: jede Variation einzeln abrufen
+  // (manche Setups/Plugins liefern images nur bei Einzelabfrage)
+  const hasAnyImages = variations.some(
+    (v) =>
+      (v.image && v.image.src) ||
+      (v.images && v.images.length > 0) ||
+      ((v as any).svi_gallery && (v as any).svi_gallery.length > 0)
+  );
+  if (!hasAnyImages && variations.length > 0 && variations.length <= 50) {
+    const enriched = await Promise.all(
+      variations.map(async (v) => {
+        try {
+          const r = await fetch(
+            `${WOOCOMMERCE_CONFIG.baseUrl}/products/${productId}/variations/${v.id}?context=edit`,
+            {
+              headers: {
+                Authorization: getAuthHeader(),
+                'Content-Type': 'application/json',
+              },
+            }
+          );
+          if (r.ok) {
+            const single = await r.json();
+            return {
+              ...v,
+              image: single.image ?? v.image,
+              images: single.images ?? v.images,
+              ...(single.svi_gallery && { svi_gallery: single.svi_gallery }),
+            };
+          }
+        } catch {
+          /* ignore */
+        }
+        return v;
+      })
+    );
+    variations = enriched;
+  }
+
   return variations;
 }
 

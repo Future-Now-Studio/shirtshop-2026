@@ -77,6 +77,9 @@ Zones are stored in WooCommerce product meta_data with the key: `design_placemen
 - **height**: Zone height (0-1, as percentage of canvas height)
 - **minSize** (optional): Minimum element size in pixels
 - **maxSize** (optional): Maximum element size in pixels
+- **widthMm** (optional): Real width of the zone in millimeters – used in the creator to show approximate motif size in mm when scaling text/images
+- **heightMm** (optional): Real height in mm; if **customMmSize** is false and **widthMm** is set, height is auto-calculated from the zone’s aspect ratio (`widthMm * height/width`)
+- **customMmSize** (optional): If `true`, **widthMm** and **heightMm** are independent; if `false`, only **widthMm** is required and **heightMm** follows the zone rectangle’s aspect
 
 ## How to Add Zones in WooCommerce
 

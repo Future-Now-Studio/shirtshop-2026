@@ -76,7 +76,6 @@ export function mapWooCommerceToProduct(wcProduct: WooCommerceProduct): Product 
         };
       }
     } catch (error) {
-      console.error('Error parsing placement zones:', error);
     }
   }
 
