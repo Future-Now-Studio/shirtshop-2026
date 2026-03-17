@@ -53,8 +53,8 @@ function getWooCommerceAuthHeader(): string {
   return `Basic ${btoa(credentials)}`;
 }
 
-// Password for Placement Zones access
-const PLACEMENT_ZONES_PASSWORD = "$PS2025$-PZ";
+// Password for Placement Zones access - loaded from environment variable
+const PLACEMENT_ZONES_PASSWORD = import.meta.env.VITE_ADMIN_PZ_PASSWORD || "";
 const AUTH_STORAGE_KEY = "placement_zones_auth";
 
 // Simple hash function for password verification (not cryptographically secure, but sufficient for this use case)
@@ -113,7 +113,8 @@ const AdminPlacementZones = () => {
   const { data: wcProduct } = useWooCommerceProduct(productId ? Number(productId) : 0);
   const { data: variations = [] } = useProductVariations(productId ? Number(productId) : 0);
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const fabricHostRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   /** Wrapper mit aspect-square – Größe für Fabric muss hier gemessen werden */
   const canvasWrapRef = useRef<HTMLDivElement>(null);
@@ -306,19 +307,35 @@ const AdminPlacementZones = () => {
     if (fabricCanvas) {
       return;
     }
-    
+
+    let disposed = false;
+    let retryCount = 0;
+    const maxRetries = 10;
+    const retryInterval = 100;
+    let retryTimer: ReturnType<typeof setInterval> | null = null;
+    let canvas: FabricCanvas | null = null;
+    let canvasEl: HTMLCanvasElement | null = null;
+
     // Function to initialize canvas
     const initializeCanvas = () => {
-      if (!canvasRef.current) {
+      if (!fabricHostRef.current || disposed) {
         return false;
       }
+      if (!canvasEl) {
+        canvasEl = document.createElement("canvas");
+        canvasEl.className = "absolute inset-0 cursor-crosshair w-full h-full block";
+        canvasEl.style.touchAction = "none";
+        canvasEl.style.pointerEvents = "auto";
+        fabricHostRef.current.appendChild(canvasEl);
+        canvasRef.current = canvasEl;
+      }
       // Größe vom direkten Wrapper (aspect-square), sonst ist Fabric-Offset/Hit-Test falsch → Klicks wirken „tot“
-      const wrap = canvasWrapRef.current || canvasRef.current.parentElement;
+      const wrap = canvasWrapRef.current || fabricHostRef.current.parentElement;
       const containerWidth = wrap?.clientWidth || containerRef.current?.offsetWidth || PLACEMENT_ZONE_CANVAS_SIZE;
       // Gleiche Logik wie Creator – feste Obergrenze, damit Zonen 1:1 passen
       const canvasSize = getPlacementCanvasSize(containerWidth);
 
-      const canvas = new FabricCanvas(canvasRef.current, {
+      canvas = new FabricCanvas(canvasEl, {
         width: canvasSize,
         height: canvasSize,
         backgroundColor: "transparent",
@@ -378,27 +395,30 @@ const AdminPlacementZones = () => {
     }
 
     // If refs not available, retry with increasing delays
-    let retryCount = 0;
-    const maxRetries = 10;
-    const retryInterval = 100;
-
-    const retryTimer = setInterval(() => {
+    retryTimer = setInterval(() => {
       retryCount++;
       
       if (initializeCanvas()) {
-        clearInterval(retryTimer);
+        clearInterval(retryTimer!);
         return;
       }
       
       if (retryCount >= maxRetries) {
-        clearInterval(retryTimer);
+        clearInterval(retryTimer!);
       }
     }, retryInterval);
 
     return () => {
-      clearInterval(retryTimer);
-      if (fabricCanvas) {
-        fabricCanvas.dispose();
+      disposed = true;
+      if (retryTimer) {
+        clearInterval(retryTimer);
+      }
+      if (canvas) {
+        canvas.dispose();
+      }
+      canvasRef.current = null;
+      if (canvasEl?.parentNode) {
+        canvasEl.parentNode.removeChild(canvasEl);
       }
     };
   }, [fabricCanvas]); // Only depend on fabricCanvas
@@ -1274,10 +1294,11 @@ const AdminPlacementZones = () => {
                         backgroundColor: 'transparent',
                       }}
                     >
-                      <canvas
-                        ref={canvasRef}
-                        className="absolute inset-0 cursor-crosshair w-full h-full block"
+                      <div
+                        ref={fabricHostRef}
+                        className="absolute inset-0"
                         style={{ touchAction: "none", pointerEvents: "auto" }}
+                        aria-hidden
                       />
                     </div>
                   </div>

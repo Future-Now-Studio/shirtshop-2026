@@ -48,7 +48,6 @@ const Grossbestellung = () => {
       ...formData,
       motive: motive,
     };
-    console.log("Form submitted:", submissionData);
     // TODO: Send to API
   };
 

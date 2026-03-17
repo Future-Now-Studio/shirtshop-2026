@@ -63,7 +63,6 @@ export const ChatButton = () => {
       setFormData({ name: "", email: "", phone: "", message: "" });
       setIsOpen(false);
     } catch (error) {
-      console.error('Error sending contact form:', error);
       toast.error(error instanceof Error ? error.message : "Fehler beim Senden der Nachricht. Bitte versuchen Sie es später erneut.");
     } finally {
       setIsSubmitting(false);

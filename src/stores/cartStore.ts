@@ -38,18 +38,14 @@ export const useCartStore = create<CartStore>()(
       isOpen: false,
 
       addItem: (item) => {
-        console.log('cartStore.addItem called with:', item);
         const id = `${item.productId}-${item.color}-${item.size}-${Date.now()}`;
-        console.log('Generated ID:', id);
         set((state) => {
           const newItems = [...state.items, { ...item, id }];
-          console.log('New cart items:', newItems);
           return {
             items: newItems,
             isOpen: true,
           };
         });
-        console.log('Cart state updated');
       },
 
       removeItem: (id) => {
@@ -83,16 +79,18 @@ export const useCartStore = create<CartStore>()(
       getTotalPrice: () => {
         return get().items.reduce((total, item) => {
           // Base price + (design elements * 10€) per item, multiplied by quantity
-          const pricePerUnit = item.price + ((item.designElementCount || 0) * 10);
-          return total + (pricePerUnit * item.quantity);
+          const designCount = Math.max(0, item.designElementCount || 0);
+          const pricePerUnit = Math.max(0, item.price) + (designCount * 10);
+          return total + (pricePerUnit * Math.max(1, item.quantity));
         }, 0);
       },
-      
+
       // Get price for a specific item
       getItemPrice: (item: CartItem) => {
         // Base price + (design elements * 10€) per unit
-        const pricePerUnit = item.price + ((item.designElementCount || 0) * 10);
-        return pricePerUnit * item.quantity;
+        const designCount = Math.max(0, item.designElementCount || 0);
+        const pricePerUnit = Math.max(0, item.price) + (designCount * 10);
+        return pricePerUnit * Math.max(1, item.quantity);
       },
     }),
     {

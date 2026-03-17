@@ -1,8 +1,9 @@
 // WooCommerce API Configuration
+// IMPORTANT: Credentials should be in environment variables, NOT hardcoded
 export const WOOCOMMERCE_CONFIG = {
-  baseUrl: 'https://timob10.sg-host.com/wp-json/wc/v3',
-  consumerKey: 'ck_17e70b1dcd1b0d0aab92da0c8ac7bda10a280827',
-  consumerSecret: 'cs_e7d6fe86192848c4d06c5b0eb4692d32d2b42a50',
+  baseUrl: import.meta.env.VITE_WC_BASE_URL || 'https://timob10.sg-host.com/wp-json/wc/v3',
+  consumerKey: import.meta.env.VITE_WC_CONSUMER_KEY || '',
+  consumerSecret: import.meta.env.VITE_WC_CONSUMER_SECRET || '',
 };
 
 // WooCommerce Product Interface (from API)
@@ -138,7 +139,8 @@ export async function fetchWooCommerceProducts(params?: {
 
 // Fetch single product by ID
 export async function fetchWooCommerceProductById(id: number): Promise<WooCommerceProduct> {
-  const url = `${WOOCOMMERCE_CONFIG.baseUrl}/products/${id}`;
+  // context=edit ensures meta_data is available reliably for authenticated requests
+  const url = `${WOOCOMMERCE_CONFIG.baseUrl}/products/${id}?context=edit`;
   
   const response = await fetch(url, {
     method: 'GET',

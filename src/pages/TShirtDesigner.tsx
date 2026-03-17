@@ -217,6 +217,39 @@ function computeObjectMmSize(
   return { widthMm, heightMm: heightMmObj };
 }
 
+function toFiniteNumber(value: unknown): number | undefined {
+  if (value == null || value === "") return undefined;
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function normalizePlacementZone(zone: any, index: number): PlacementZone {
+  return {
+    id: String(zone?.id ?? `zone-${index}`),
+    name: String(zone?.name ?? `Zone ${index + 1}`),
+    x: toFiniteNumber(zone?.x) ?? 0,
+    y: toFiniteNumber(zone?.y) ?? 0,
+    width: toFiniteNumber(zone?.width) ?? 0,
+    height: toFiniteNumber(zone?.height) ?? 0,
+    minSize: toFiniteNumber(zone?.minSize),
+    maxSize: toFiniteNumber(zone?.maxSize),
+    widthMm: toFiniteNumber(zone?.widthMm),
+    heightMm: toFiniteNumber(zone?.heightMm),
+    customMmSize: Boolean(zone?.customMmSize),
+  };
+}
+
+function normalizePlacementZoneList(zones: any): PlacementZone[] {
+  if (!Array.isArray(zones)) return [];
+  return zones.map((zone, index) => normalizePlacementZone(zone, index));
+}
+
+function formatMmSizeLabel(size: { widthMm: number; heightMm: number }): string {
+  return `B: ${(size.widthMm / 10).toFixed(1).replace(".", ",")} cm × H: ${(size.heightMm / 10)
+    .toFixed(1)
+    .replace(".", ",")} cm`;
+}
+
 const shirtColors = [
   { name: "Weiß", value: "#FFFFFF", image: tshirtWhite },
   { name: "Schwarz", value: "#1a1a1a", image: tshirtBlack },
@@ -289,7 +322,30 @@ const TShirtDesigner = () => {
   const { data: product } = useProduct(productId ? Number(productId) : 0);
   const { data: wcProduct } = useWooCommerceProduct(productId ? Number(productId) : 0);
   const { data: variations = [] } = useProductVariations(productId ? Number(productId) : 0);
-  const placementZones = product?.placementZones;
+  const placementZones = useMemo(() => {
+    const rawZonesMeta = wcProduct?.meta_data?.find(
+      (meta: any) => meta.key === "design_placement_zones" || meta.key === "_design_placement_zones"
+    );
+    if (rawZonesMeta?.value) {
+      try {
+        const rawZones =
+          typeof rawZonesMeta.value === "string"
+            ? JSON.parse(rawZonesMeta.value)
+            : rawZonesMeta.value;
+        if (rawZones && typeof rawZones === "object") {
+          return {
+            front: normalizePlacementZoneList(rawZones.front),
+            back: normalizePlacementZoneList(rawZones.back),
+            left: normalizePlacementZoneList(rawZones.left),
+            right: normalizePlacementZoneList(rawZones.right),
+          };
+        }
+      } catch {
+        /* ignore and fall back to mapped product */
+      }
+    }
+    return product?.placementZones;
+  }, [wcProduct, product]);
   
   // State for selected variation
   const [selectedColor, setSelectedColor] = useState("");
@@ -301,6 +357,8 @@ const TShirtDesigner = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   /** Gleicher Rahmen wie Admin Placement Zones – Canvas-Größe daraus, sonst Zonen verschoben */
   const designerCanvasWrapRef = useRef<HTMLDivElement>(null);
+  const scalingTooltipRef = useRef<HTMLDivElement>(null);
+  const scalingTooltipTextRef = useRef<HTMLParagraphElement>(null);
   const [fabricCanvas, setFabricCanvas] = useState<FabricCanvas | null>(null);
   const [selectedShirt, setSelectedShirt] = useState(
     productImage 
@@ -352,6 +410,57 @@ const TShirtDesigner = () => {
     right: null,
   });
   const addItem = useCartStore((state) => state.addItem);
+
+  const setSelectedShirtIfChanged = useCallback(
+    (next: { name: string; value: string; image: string }) => {
+      setSelectedShirt((prev) => {
+        if (
+          prev.name === next.name &&
+          prev.value === next.value &&
+          prev.image === next.image
+        ) {
+          return prev;
+        }
+        return next;
+      });
+    },
+    []
+  );
+
+  const hideScalingTooltip = useCallback(() => {
+    const tooltip = scalingTooltipRef.current;
+    if (!tooltip) return;
+    tooltip.style.opacity = "0";
+    tooltip.style.visibility = "hidden";
+  }, []);
+
+  const showScalingTooltip = useCallback(
+    (size: { widthMm: number; heightMm: number }, pos: { leftPct: number; topPct: number }) => {
+      const tooltip = scalingTooltipRef.current;
+      const text = scalingTooltipTextRef.current;
+      if (!tooltip || !text) return;
+      text.textContent = formatMmSizeLabel(size);
+      tooltip.style.left = `${pos.leftPct}%`;
+      tooltip.style.top = `${pos.topPct}%`;
+      tooltip.style.opacity = "1";
+      tooltip.style.visibility = "visible";
+    },
+    []
+  );
+
+  const showScalingTooltipText = useCallback(
+    (label: string, pos: { leftPct: number; topPct: number }) => {
+      const tooltip = scalingTooltipRef.current;
+      const text = scalingTooltipTextRef.current;
+      if (!tooltip || !text) return;
+      text.textContent = label;
+      tooltip.style.left = `${pos.leftPct}%`;
+      tooltip.style.top = `${pos.topPct}%`;
+      tooltip.style.opacity = "1";
+      tooltip.style.visibility = "visible";
+    },
+    []
+  );
 
   // Keep ref updated with the latest currentView for use inside stable callbacks
   useEffect(() => {
@@ -867,6 +976,7 @@ const TShirtDesigner = () => {
     const handleObjectModified = (e: any) => {
       setIsScalingMm(false);
       setScalingTooltipPos(null);
+      hideScalingTooltip();
       const obj = e.target;
       if (!obj) return;
       const currentZones = placementZones[currentView];
@@ -912,18 +1022,24 @@ const TShirtDesigner = () => {
           if (cw > 0 && ch > 0) {
             const box = getObjectPixelBox(obj);
             if (box && box.w > 0) {
-              setScalingTooltipPos({
+              const pos = {
                 leftPct: Math.max(0, Math.min(100, (box.cx / cw) * 100)),
                 topPct: Math.max(0, Math.min(100, ((box.cy - box.h / 2) / ch) * 100)),
-              });
+              };
+              setScalingTooltipPos(pos);
+              if (mm) showScalingTooltip(mm, pos);
+              else hideScalingTooltip();
             } else {
               setScalingTooltipPos(null);
+              hideScalingTooltip();
             }
           } else {
             setScalingTooltipPos(null);
+            hideScalingTooltip();
           }
         } catch {
           setScalingTooltipPos(null);
+          hideScalingTooltip();
         }
       };
       if (scalingRaf) cancelAnimationFrame(scalingRaf);
@@ -942,7 +1058,56 @@ const TShirtDesigner = () => {
       fabricCanvas.off("object:scaling", handleObjectScalingOrResizing);
       fabricCanvas.off("object:resizing", handleObjectScalingOrResizing);
     };
-  }, [fabricCanvas, placementZones, currentView, constrainToZones]);
+  }, [fabricCanvas, placementZones, currentView, constrainToZones, hideScalingTooltip, showScalingTooltip]);
+
+  // Fallback for uploaded images/text: read the active Fabric transform every render frame.
+  // This catches cases where object:scaling/object:resizing isn't emitted as expected.
+  useEffect(() => {
+    if (!fabricCanvas) return;
+
+    const handleAfterRender = () => {
+      const transform = (fabricCanvas as any)._currentTransform || (fabricCanvas as any).currentTransform;
+      const action = String(transform?.action || "");
+      const target = transform?.target;
+
+      if (!target || (!action.includes("scale") && !action.includes("resiz"))) {
+        if (!isScalingMm) hideScalingTooltip();
+        return;
+      }
+
+      const name = target.name || "";
+      if (name.startsWith("placement-zone-") || name.startsWith("zone-")) {
+        hideScalingTooltip();
+        return;
+      }
+
+      const cw = fabricCanvas.getWidth();
+      const ch = fabricCanvas.getHeight();
+      const zonesForView = placementZones?.[currentViewRef.current];
+      const box = getObjectPixelBox(target);
+      if (!box || cw <= 0 || ch <= 0) {
+        hideScalingTooltip();
+        return;
+      }
+
+      const pos = {
+        leftPct: Math.max(0, Math.min(100, (box.cx / cw) * 100)),
+        topPct: Math.max(0, Math.min(100, ((box.cy - box.h / 2) / ch) * 100)),
+      };
+
+      const mm = computeObjectMmSize(target, zonesForView, cw, ch);
+      if (mm) {
+        showScalingTooltip(mm, pos);
+      } else {
+        showScalingTooltipText("Kein Zonenmaß", pos);
+      }
+    };
+
+    fabricCanvas.on("after:render", handleAfterRender);
+    return () => {
+      fabricCanvas.off("after:render", handleAfterRender);
+    };
+  }, [fabricCanvas, placementZones, isScalingMm, hideScalingTooltip, showScalingTooltip, showScalingTooltipText]);
 
   // Helper to check if any design element is currently out of all placement zones
   const hasOutOfBoundsElements = useCallback(() => {
@@ -1317,7 +1482,7 @@ const TShirtDesigner = () => {
     if (currentViewImages && currentViewImages.length > 0) {
       const imageToUse = currentViewImages[selectedVariationImageIndex] || currentViewImages[0];
       if (imageToUse) {
-        setSelectedShirt({ 
+        setSelectedShirtIfChanged({
           name: selectedColor || "Produkt", 
           value: "#FFFFFF", 
           image: imageToUse 
@@ -1349,7 +1514,7 @@ const TShirtDesigner = () => {
         if (sviGallery && Array.isArray(sviGallery) && sviGallery.length > 0) {
           const sviImage = sviGallery[selectedVariationImageIndex]?.src || sviGallery[0]?.src;
           if (sviImage) {
-            setSelectedShirt({ 
+            setSelectedShirtIfChanged({
               name: selectedColor, 
               value: "#FFFFFF", 
               image: sviImage 
@@ -1366,7 +1531,7 @@ const TShirtDesigner = () => {
         // This is the image property directly on the variation object
         const variationImage = matchingVariation.image?.src;
         if (variationImage) {
-          setSelectedShirt({ 
+          setSelectedShirtIfChanged({
             name: selectedColor, 
             value: "#FFFFFF", 
             image: variationImage 
@@ -1380,7 +1545,7 @@ const TShirtDesigner = () => {
         // Fallback to gallery images if main image is not available
         const galleryImage = matchingVariation.images?.[selectedVariationImageIndex]?.src || matchingVariation.images?.[0]?.src;
         if (galleryImage) {
-          setSelectedShirt({ 
+          setSelectedShirtIfChanged({
             name: selectedColor, 
             value: "#FFFFFF", 
             image: galleryImage 
@@ -1397,12 +1562,12 @@ const TShirtDesigner = () => {
     // Fallback to product image only if no color is selected
     if (!selectedColor) {
       if (productImage) {
-        setSelectedShirt({ name: "Produkt", value: "#FFFFFF", image: productImage });
+        setSelectedShirtIfChanged({ name: "Produkt", value: "#FFFFFF", image: productImage });
       } else if (product?.image) {
-        setSelectedShirt({ name: "Produkt", value: "#FFFFFF", image: product.image });
+        setSelectedShirtIfChanged({ name: "Produkt", value: "#FFFFFF", image: product.image });
       }
     }
-  }, [viewImages, currentView, selectedVariationImageIndex, selectedColor, productImage, product, variationsWithGallery, fabricCanvas, placementZones, ensureZonesExist]);
+  }, [viewImages, currentView, selectedVariationImageIndex, selectedColor, productImage, product, variationsWithGallery, fabricCanvas, placementZones, ensureZonesExist, setSelectedShirtIfChanged]);
 
   // Load view function – optional imageSrcOverride setzt Hintergrund direkt (wichtig bei Galerie-Reihenfolge 1=front, 2=back, …)
   const loadView = useCallback((view: ViewType, imageIndex?: number, imageSrcOverride?: string) => {
@@ -1415,7 +1580,9 @@ const TShirtDesigner = () => {
     if (view === currentView && (imageSrcOverride || (imageIndex !== undefined && currentViewImages && currentViewImages[idx]))) {
       if (imageIndex !== undefined) setSelectedVariationImageIndex(imageIndex);
       const src = imageSrcOverride || currentViewImages![idx];
-      if (src) setSelectedShirt((prev) => ({ ...prev, image: src }));
+      if (src) {
+        setSelectedShirt((prev) => (prev.image === src ? prev : { ...prev, image: src }));
+      }
       // Nur Bild gewechselt – Zonen können fehlen (z. B. nach Resize); einmal sicher nachziehen
       if (placementZones) {
         setTimeout(() => ensureZonesExist(view), 0);
@@ -1474,11 +1641,13 @@ const TShirtDesigner = () => {
     
     // Hintergrund: Override hat Vorrang, sonst Bild aus viewImages[view]
     if (imageSrcOverride) {
-      setSelectedShirt((prev) => ({ ...prev, image: imageSrcOverride }));
+      setSelectedShirt((prev) =>
+        prev.image === imageSrcOverride ? prev : { ...prev, image: imageSrcOverride }
+      );
     } else if (currentViewImages && currentViewImages.length > 0) {
       const imageToUse = currentViewImages[idx] ?? currentViewImages[0];
       if (imageToUse) {
-        setSelectedShirt((prev) => ({ ...prev, image: imageToUse }));
+        setSelectedShirt((prev) => (prev.image === imageToUse ? prev : { ...prev, image: imageToUse }));
       }
     }
   }, [fabricCanvas, viewData, saveCurrentView, viewImages, selectedVariationImageIndex, currentView, ensureZonesExist, placementZones]);
@@ -1499,7 +1668,7 @@ const TShirtDesigner = () => {
   // Set base price from product
   useEffect(() => {
     if (product) {
-      setBasePrice(product.price);
+      setBasePrice((prev) => (prev === product.price ? prev : product.price));
     }
   }, [product]);
 
@@ -1519,9 +1688,9 @@ const TShirtDesigner = () => {
   // Update selected product when URL parameter changes
   useEffect(() => {
     if (productImage && !selectedColor) {
-      setSelectedShirt({ name: "Produkt", value: "#FFFFFF", image: productImage });
+      setSelectedShirtIfChanged({ name: "Produkt", value: "#FFFFFF", image: productImage });
     }
-  }, [productImage, selectedColor]);
+  }, [productImage, selectedColor, setSelectedShirtIfChanged]);
 
   // Update text color when shirt color changes (only if no text is selected)
   useEffect(() => {
@@ -1530,7 +1699,7 @@ const TShirtDesigner = () => {
     // Only update default color if no text is selected
     if (!activeObject || activeObject.type !== "text") {
       const defaultColor = selectedShirt.value === "#FFFFFF" ? "#1a1a1a" : "#FFFFFF";
-      setTextColor(defaultColor);
+      setTextColor((prev) => (prev === defaultColor ? prev : defaultColor));
     }
   }, [selectedShirt.value, fabricCanvas]);
 
@@ -1885,6 +2054,7 @@ const TShirtDesigner = () => {
         setObjectMmSize(null);
         setIsScalingMm(false);
         setScalingTooltipPos(null);
+        hideScalingTooltip();
       }
       else {
         const name = (activeObject as any).name || "";
@@ -1910,7 +2080,7 @@ const TShirtDesigner = () => {
       fabricCanvas.off("selection:updated", handleSelectionChange);
       fabricCanvas.off("selection:cleared", handleSelectionChange);
     };
-  }, [fabricCanvas]);
+  }, [fabricCanvas, hideScalingTooltip]);
 
   // Update selected text font when font selector changes
   const handleFontChange = (font: string) => {
@@ -2757,61 +2927,45 @@ const TShirtDesigner = () => {
                   backgroundColor: 'transparent',
                 }}
               >
-                {/* Sprechblase über dem Motiv beim Skalieren/Resizen, immer relativ zur Placement Zone */}
-                {isScalingMm && scalingTooltipPos && objectMmSize && (
+                {/* Persistenter Tooltip-Host: Sichtbarkeit/Position wird direkt von Fabric-Events gesetzt */}
+                <div
+                  ref={scalingTooltipRef}
+                  className="absolute z-30 pointer-events-none -translate-x-1/2 -translate-y-full flex flex-col items-center"
+                  style={{
+                    marginTop: "-6px",
+                    opacity: 0,
+                    visibility: "hidden",
+                  }}
+                  aria-live="polite"
+                >
                   <div
-                    className="absolute z-30 pointer-events-none left-0 top-0 w-full h-full"
-                    aria-live="polite"
+                    className="relative rounded-md border border-gray-300 bg-white px-3 py-2 shadow-md"
+                    style={{
+                      filter: "drop-shadow(0 1px 2px rgb(0 0 0 / 0.08))",
+                    }}
                   >
+                    <p
+                      ref={scalingTooltipTextRef}
+                      className="text-sm font-medium text-gray-900 whitespace-nowrap tabular-nums"
+                    />
                     <div
-                      className="absolute -translate-x-1/2 -translate-y-full flex flex-col items-center"
+                      className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0"
                       style={{
-                        left: `${scalingTooltipPos.leftPct}%`,
-                        top: `${scalingTooltipPos.topPct}%`,
-                        marginTop: "-6px",
+                        borderLeft: "7px solid transparent",
+                        borderRight: "7px solid transparent",
+                        borderTop: "8px solid #d1d5db",
                       }}
-                    >
-                      {/* Blase */}
-                      <div
-                        className="relative rounded-md border border-gray-300 bg-white px-3 py-2 shadow-md"
-                        style={{
-                          filter: "drop-shadow(0 1px 2px rgb(0 0 0 / 0.08))",
-                        }}
-                      >
-                        <p className="text-sm font-medium text-gray-900 whitespace-nowrap tabular-nums">
-                          B: {(objectMmSize.widthMm / 10).toFixed(1).replace(".", ",")} cm × H:{" "}
-                          {(objectMmSize.heightMm / 10).toFixed(1).replace(".", ",")} cm
-                        </p>
-                        {/* Pfeil nach unten */}
-                        <div
-                          className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0"
-                          style={{
-                            borderLeft: "7px solid transparent",
-                            borderRight: "7px solid transparent",
-                            borderTop: "8px solid #d1d5db",
-                          }}
-                        />
-                        <div
-                          className="absolute left-1/2 -translate-x-1/2 top-full -mt-px w-0 h-0"
-                          style={{
-                            borderLeft: "6px solid transparent",
-                            borderRight: "6px solid transparent",
-                            borderTop: "7px solid white",
-                          }}
-                        />
-                      </div>
-                    </div>
+                    />
+                    <div
+                      className="absolute left-1/2 -translate-x-1/2 top-full -mt-px w-0 h-0"
+                      style={{
+                        borderLeft: "6px solid transparent",
+                        borderRight: "6px solid transparent",
+                        borderTop: "7px solid white",
+                      }}
+                    />
                   </div>
-                )}
-                {/* Fallback unten, wenn Position nicht gesetzt werden konnte */}
-                {isScalingMm && !scalingTooltipPos && objectMmSize && (
-                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none rounded-lg border bg-background/95 px-3 py-2 shadow-md">
-                    <p className="text-center text-sm font-semibold tabular-nums">
-                      B: {(objectMmSize.widthMm / 10).toFixed(1).replace(".", ",")} cm × H:{" "}
-                      {(objectMmSize.heightMm / 10).toFixed(1).replace(".", ",")} cm
-                    </p>
-                  </div>
-                )}
+                </div>
                 {/* Fabric hängt eigenen Container ein – nur leerer Host, kein React-<canvas> (sonst insertBefore-Crash) */}
                 <div
                   ref={fabricHostRef}

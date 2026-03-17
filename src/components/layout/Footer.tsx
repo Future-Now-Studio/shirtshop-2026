@@ -29,6 +29,7 @@ export const Footer = () => {
                 href="https://www.instagram.com/privateshirt/"
                 target="_blank"
                 rel="noopener noreferrer"
+                aria-label="Private Shirt auf Instagram"
                 className="w-10 h-10 bg-muted hover:bg-primary rounded-full flex items-center justify-center transition-colors text-foreground"
               >
                 <Instagram className="w-5 h-5" />
@@ -49,11 +50,11 @@ export const Footer = () => {
                 <li key={item}>
                   <Link
                     to={`/${
-                      item.toLowerCase() === "home" 
-                        ? "" 
-                        : item === "Über uns"
+                      item === "home"
+                        ? ""
+                        : item === "über uns"
                         ? "unternehmen"
-                        : item.toLowerCase()
+                        : item
                     }`}
                     className="text-muted-foreground hover:text-primary transition-colors"
                   >

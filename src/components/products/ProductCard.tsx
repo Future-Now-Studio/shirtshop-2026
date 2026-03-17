@@ -57,6 +57,7 @@ export const ProductCard = forwardRef<HTMLDivElement, ProductCardProps>(({ produ
             <motion.img
               src={product.image}
               alt={product.name}
+              loading="lazy"
               className="w-full h-full object-cover"
               whileHover={{ scale: 1.1 }}
               transition={{ duration: 0.5, ease: "easeOut" }}

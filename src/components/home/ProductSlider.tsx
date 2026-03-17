@@ -36,9 +36,9 @@ export const ProductSlider = () => {
     );
   }
 
-  // Show error or empty state - still show the section structure
+  // Show error state with user-visible message
   if (error) {
-    console.error('Error loading highlighted products:', error);
+    console.error('ProductSlider: Failed to load highlighted products', error);
   }
 
   // If no highlighted products, show empty state with message

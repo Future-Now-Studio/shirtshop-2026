@@ -82,12 +82,8 @@ const ProduktDetail = () => {
 
   // Get all available images for the current selection
   const availableImages = useMemo(() => {
-    console.log('=== Loading Images ===');
-    console.log('Selected Color:', selectedColor);
-    console.log('Selected Size:', selectedSize);
     
     if (!product) {
-      console.log('No product, returning empty array');
       return [];
     }
 
@@ -95,24 +91,16 @@ const ProduktDetail = () => {
 
     // ALWAYS try to get SVI images first when color is selected (same logic as T-Shirt Designer)
     if (selectedColor && wcProduct) {
-      console.log('=== Searching for SVI Gallery Images ===');
-      console.log('Selected Color (Farbe attribute value):', selectedColor);
       
       const sviMeta = wcProduct.meta_data?.find((meta: any) => meta.key === 'woosvi_slug');
       
       if (sviMeta && sviMeta.value && Array.isArray(sviMeta.value)) {
-        console.log('✓ Found SVI meta data with', sviMeta.value.length, 'entries');
-        console.log('SVI Entries structure:', JSON.stringify(sviMeta.value, null, 2));
         
         // Find the entry that matches the selected color (by matching the "Farbe" attribute value)
         const matchingSviEntry = sviMeta.value.find((entry: any) => {
           if (!entry.slugs || !Array.isArray(entry.slugs)) {
-            console.log('  Entry has no slugs array:', entry);
             return false;
           }
-          
-          console.log('  Checking SVI entry with slugs:', entry.slugs);
-          console.log('  Comparing against selected color value:', selectedColor);
           
           // Match by comparing the selected color value with slugs in SVI data (case-insensitive)
           // Handle multi-word colors by normalizing both strings (remove special chars, normalize spaces)
@@ -135,99 +123,67 @@ const ProduktDetail = () => {
             if (!matches) {
               matches = slugStr.includes(colorStr) || colorStr.includes(slugStr);
             }
-            
-            console.log(`    Comparing SVI slug "${String(slug).trim()}" (normalized: "${slugStr}") with color "${String(selectedColor).trim()}" (normalized: "${colorStr}"): ${matches}`);
             return matches;
           });
           
           if (match) {
-            console.log('  ✓ Found matching SVI gallery entry!', entry);
           }
           return match;
         });
         
         if (matchingSviEntry && matchingSviEntry.imgs && Array.isArray(matchingSviEntry.imgs)) {
-          console.log('✓ Matching SVI gallery entry found with', matchingSviEntry.imgs.length, 'image IDs');
-          console.log('  SVI Image IDs:', matchingSviEntry.imgs);
           
           // Get image IDs from SVI data (convert to strings for comparison)
           const imageIds = matchingSviEntry.imgs.map((id: any) => String(id).trim());
-          
-          console.log('  Looking for images with these IDs in wcProduct.images...');
-          console.log('  SVI Image IDs (as strings):', imageIds);
-          console.log('  Available image IDs in wcProduct:', wcProduct.images?.map(img => ({ id: img.id, idAsString: String(img.id), name: img.name })));
           
           // Find images in product.images array that match these IDs
           const matchingImages = wcProduct.images?.filter(img => {
             const imgIdStr = String(img.id).trim();
             const matches = imageIds.includes(imgIdStr);
             if (matches) {
-              console.log(`    ✓ Found SVI gallery image: ID ${img.id} (${imgIdStr}), name: ${img.name}, src: ${img.src}`);
             } else {
-              console.log(`    ✗ Image ID ${img.id} (${imgIdStr}) not in SVI IDs list`);
             }
             return matches;
           }) || [];
-          
-          console.log('  Image ID matching details:');
           imageIds.forEach(id => {
             const found = wcProduct.images?.find(img => String(img.id).trim() === id);
             if (found) {
-              console.log(`    ✓ ID ${id}: Found image "${found.name}"`);
             } else {
-              console.log(`    ✗ ID ${id}: NOT FOUND in wcProduct.images`);
             }
           });
-          
-          console.log('✓ Found', matchingImages.length, 'SVI gallery images');
           
           // Add all SVI images to the gallery - these are the correct images to use
           matchingImages.forEach(img => {
             if (img.src && !images.includes(img.src)) {
-              console.log('  Adding SVI gallery image to display:', img.src);
               images.push(img.src);
             }
           });
           
-          console.log('✓ Total SVI gallery images loaded:', images.length);
-          
           // If we found SVI images, return them immediately - don't fall back to variation images
           if (images.length > 0) {
-            console.log('=== Returning SVI gallery images (skipping variation fallback) ===');
             const finalImages = images;
-            console.log('Final SVI images:', finalImages);
-            console.log('=== End Loading Images ===\n');
             return finalImages;
           }
         } else {
-          console.log('✗ No matching SVI gallery entry found or entry has no images');
           if (matchingSviEntry) {
-            console.log('  Entry structure:', matchingSviEntry);
           }
         }
       } else {
-        console.log('✗ No SVI meta data found or invalid format');
         if (wcProduct.meta_data) {
-          console.log('  Available meta_data keys:', wcProduct.meta_data.map((m: any) => m.key));
         } else {
-          console.log('  wcProduct.meta_data is undefined or null');
         }
       }
     } else {
-      console.log('✗ Skipping SVI search - selectedColor:', selectedColor, 'wcProduct:', !!wcProduct);
     }
 
     // Only fall back to variation images if NO SVI images were found
     if (images.length === 0 && variations.length > 0 && selectedColor) {
-      console.log('=== No SVI gallery images found, falling back to variation images ===');
-      console.log('Searching', variations.length, 'variations for color:', selectedColor);
       
       // Find all variations matching the selected color
       const matchingVariations = variations.filter(variation => {
         const colorAttr = findColorAttribute(variation.attributes || []);
         
         if (!colorAttr || !colorAttr.option) {
-          console.log('Variation', variation.id, 'has no color attribute');
           return false;
         }
         
@@ -235,23 +191,16 @@ const ProduktDetail = () => {
         const attrOption = String(colorAttr.option).trim();
         const selectedColorValue = String(selectedColor).trim();
         const matches = attrOption === selectedColorValue;
-        
-        console.log(`Variation ${variation.id}: color attribute "${attrOption}" vs selected "${selectedColorValue}": ${matches}`);
         return matches;
       });
 
-      console.log('Found', matchingVariations.length, 'matching variations');
-
       // Collect images from all matching variations
       matchingVariations.forEach(variation => {
-        console.log('Processing variation', variation.id);
         
         // First check for svi_gallery (from PHP script)
         if ((variation as any).svi_gallery && Array.isArray((variation as any).svi_gallery) && (variation as any).svi_gallery.length > 0) {
-          console.log('  Variation has', (variation as any).svi_gallery.length, 'SVI gallery images');
           (variation as any).svi_gallery.forEach((img: any) => {
             if (img.src && !images.includes(img.src)) {
-              console.log('  Adding SVI gallery image:', img.src);
               images.push(img.src);
             }
           });
@@ -259,11 +208,9 @@ const ProduktDetail = () => {
         
         // Check if variation has a gallery (images array from Smart Variations Images plugin)
         if (variation.images && variation.images.length > 0) {
-          console.log('  Variation has', variation.images.length, 'gallery images');
           // Use the variation's gallery images
           variation.images.forEach(img => {
             if (img.src && !images.includes(img.src)) {
-              console.log('  Adding gallery image:', img.src);
               images.push(img.src);
             }
           });
@@ -271,7 +218,6 @@ const ProduktDetail = () => {
         
         // Also check for main variation image
         if (variation.image?.src && !images.includes(variation.image.src)) {
-          console.log('  Adding main variation image:', variation.image.src);
           images.push(variation.image.src);
         }
       });
@@ -343,17 +289,11 @@ const ProduktDetail = () => {
     }
 
     const finalImages = images.length > 0 ? images : [product.image];
-    console.log('=== Final Result ===');
-    console.log('Total images found:', finalImages.length);
     if (finalImages.length > 0) {
-      console.log('Image sources:', finalImages);
       if (images.length > 0) {
-        console.log('✓ Using SVI gallery images');
       } else {
-        console.log('⚠ Using fallback images (variation or product)');
       }
     }
-    console.log('=== End Loading Images ===\n');
     return finalImages;
   }, [product, wcProduct, variations, selectedColor, selectedSize]);
 

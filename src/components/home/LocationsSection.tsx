@@ -83,6 +83,7 @@ export const LocationsSection = () => {
                 <img
                   src={location.image}
                   alt={location.name}
+                  loading="lazy"
                   className="w-full h-full object-cover"
                 />
               </div>
@@ -130,7 +131,9 @@ export const LocationsSection = () => {
                     style={{ border: 0 }}
                     allowFullScreen
                     loading="lazy"
-                    referrerPolicy="no-referrer-when-downgrade"
+                    referrerPolicy="no-referrer"
+                    sandbox="allow-scripts allow-same-origin"
+                    title={`Google Maps - ${location.name}`}
                     className="w-full"
                   ></iframe>
                 </div>

@@ -1,5 +1,3 @@
-import { useLocation } from "react-router-dom";
-import { useEffect } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
@@ -7,11 +5,6 @@ import { Home } from "lucide-react";
 import { motion } from "framer-motion";
 
 const NotFound = () => {
-  const location = useLocation();
-
-  useEffect(() => {
-    console.error("404 Error: User attempted to access non-existent route:", location.pathname);
-  }, [location.pathname]);
 
   return (
     <Layout>

@@ -20,7 +20,6 @@ import type { StripeElementsOptions } from "@stripe/stripe-js";
 const stripePromise = loadStripe(
   import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || ""
 ).catch((error) => {
-  console.error('Stripe initialization error:', error);
   // Return null to indicate Stripe failed to load
   return null;
 });
@@ -161,13 +160,18 @@ const CheckoutForm = ({ paymentIntentId }: CheckoutFormProps) => {
           },
         };
       } else {
-        // Fallback - provide at least email and name
+        // Fallback - require valid email
+        if (!shippingForm.email) {
+          toast.error("Bitte geben Sie Ihre E-Mail-Adresse ein");
+          setIsProcessing(false);
+          return;
+        }
         confirmParams.payment_method_data = {
           billing_details: {
-            email: shippingForm.email || 'customer@example.com',
-            name: shippingForm.firstName && shippingForm.lastName 
-              ? `${shippingForm.firstName} ${shippingForm.lastName}` 
-              : 'Customer',
+            email: shippingForm.email,
+            name: shippingForm.firstName && shippingForm.lastName
+              ? `${shippingForm.firstName} ${shippingForm.lastName}`
+              : 'Kunde',
           },
         };
       }
@@ -251,7 +255,6 @@ const CheckoutForm = ({ paymentIntentId }: CheckoutFormProps) => {
               throw new Error(orderData.error || 'Order creation returned unsuccessful');
             }
         } catch (orderError: any) {
-          console.error("Error creating WooCommerce order:", orderError);
           const errorMessage = orderError?.message || orderError?.toString() || 'Unknown error';
           // Payment succeeded but order creation failed - this is critical!
           toast.error(`Zahlung erfolgreich, aber Bestellung konnte nicht erstellt werden. Bitte kontaktieren Sie uns mit Ihrer Payment Intent ID: ${paymentIntent.id}`);
@@ -277,7 +280,6 @@ const CheckoutForm = ({ paymentIntentId }: CheckoutFormProps) => {
         navigate('/checkout/success');
       }
     } catch (error) {
-      console.error("Payment error:", error);
       toast.error("Ein Fehler ist aufgetreten. Bitte versuchen Sie es erneut.");
     } finally {
       setIsProcessing(false);
@@ -560,7 +562,6 @@ const Checkout = () => {
           setStripeError('Stripe konnte nicht geladen werden. Bitte deaktivieren Sie Ad-Blocker oder Privacy-Erweiterungen.');
         }
       }).catch((error) => {
-        console.error('Stripe load error:', error);
         if (error.message?.includes('Failed to fetch') || error.message?.includes('blocked')) {
           setStripeError('Stripe-Anfragen werden blockiert. Bitte deaktivieren Sie Ad-Blocker oder Privacy-Erweiterungen.');
         }
@@ -594,7 +595,6 @@ const Checkout = () => {
         setClientSecret(data.clientSecret);
         setPaymentIntentId(data.paymentIntentId);
       } catch (error: any) {
-        console.error("Error creating payment intent:", error);
         // Check if it's a network/blocking error
         if (error.message?.includes('Failed to fetch') || error.message?.includes('blocked') || error.name === 'TypeError') {
           setStripeError('Netzwerkanfragen werden blockiert. Bitte deaktivieren Sie Ad-Blocker oder Privacy-Erweiterungen.');

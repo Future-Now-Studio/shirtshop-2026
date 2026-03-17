@@ -1,6 +1,33 @@
 import { WooCommerceProduct } from './woocommerce';
 import { Product, PlacementZone } from '@/data/products';
 
+function toFiniteNumber(value: unknown): number | undefined {
+  if (value == null || value === '') return undefined;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function normalizePlacementZone(zone: any, index: number): PlacementZone {
+  return {
+    id: String(zone?.id ?? `zone-${index}`),
+    name: String(zone?.name ?? `Zone ${index + 1}`),
+    x: toFiniteNumber(zone?.x) ?? 0,
+    y: toFiniteNumber(zone?.y) ?? 0,
+    width: toFiniteNumber(zone?.width) ?? 0,
+    height: toFiniteNumber(zone?.height) ?? 0,
+    minSize: toFiniteNumber(zone?.minSize),
+    maxSize: toFiniteNumber(zone?.maxSize),
+    widthMm: toFiniteNumber(zone?.widthMm),
+    heightMm: toFiniteNumber(zone?.heightMm),
+    customMmSize: Boolean(zone?.customMmSize),
+  };
+}
+
+function normalizePlacementZoneList(zones: any): PlacementZone[] {
+  if (!Array.isArray(zones)) return [];
+  return zones.map((zone, index) => normalizePlacementZone(zone, index));
+}
+
 /**
  * Maps WooCommerce product data to our application's Product interface
  */
@@ -69,13 +96,14 @@ export function mapWooCommerceToProduct(wcProduct: WooCommerceProduct): Product 
       // Validate and structure the zones
       if (zonesData && typeof zonesData === 'object') {
         placementZones = {
-          front: zonesData.front || [],
-          back: zonesData.back || [],
-          left: zonesData.left || [],
-          right: zonesData.right || [],
+          front: normalizePlacementZoneList(zonesData.front),
+          back: normalizePlacementZoneList(zonesData.back),
+          left: normalizePlacementZoneList(zonesData.left),
+          right: normalizePlacementZoneList(zonesData.right),
         };
       }
     } catch (error) {
+      console.warn(`Failed to parse placement zones for product ${wcProduct.id}:`, error);
     }
   }
 
