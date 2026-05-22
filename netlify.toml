@@ -3,14 +3,7 @@
   publish = "dist"
   functions = "netlify/functions"
 
-# Proxy WooCommerce API calls through Netlify Functions
-# This avoids CORS issues and hides API credentials
-[[redirects]]
-  from = "/api/wc/*"
-  to = "/.netlify/functions/wc-proxy/:splat"
-  status = 200
-
-# SPA fallback - must be LAST redirect rule
+# SPA fallback – Netlify Functions V2 handle /api/wc/* via config.path automatically
 [[redirects]]
   from = "/*"
   to = "/index.html"
