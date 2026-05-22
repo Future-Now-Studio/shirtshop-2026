@@ -1,9 +1,15 @@
 // WooCommerce API Configuration
-// IMPORTANT: Credentials should be in environment variables, NOT hardcoded
+// In production (Netlify): calls go through /api/wc/* proxy → no CORS, credentials stay server-side
+// In development: calls go directly to WooCommerce with credentials from env
+const isDev = import.meta.env.DEV;
+
 export const WOOCOMMERCE_CONFIG = {
-  baseUrl: import.meta.env.VITE_WC_BASE_URL || 'https://timob10.sg-host.com/wp-json/wc/v3',
-  consumerKey: import.meta.env.VITE_WC_CONSUMER_KEY || '',
-  consumerSecret: import.meta.env.VITE_WC_CONSUMER_SECRET || '',
+  // In production the proxy strips the need for the full WC URL
+  baseUrl: isDev
+    ? (import.meta.env.VITE_WC_BASE_URL || 'https://timob10.sg-host.com/wp-json/wc/v3')
+    : '/api/wc',
+  consumerKey: isDev ? (import.meta.env.VITE_WC_CONSUMER_KEY || '') : '',
+  consumerSecret: isDev ? (import.meta.env.VITE_WC_CONSUMER_SECRET || '') : '',
 };
 
 // WooCommerce Product Interface (from API)
@@ -93,10 +99,17 @@ export interface WooCommerceProduct {
   meta_data: any[];
 }
 
-// Create Basic Auth header
-function getAuthHeader(): string {
-  const credentials = `${WOOCOMMERCE_CONFIG.consumerKey}:${WOOCOMMERCE_CONFIG.consumerSecret}`;
-  return `Basic ${btoa(credentials)}`;
+// Create request headers – in production the Netlify proxy handles auth
+function getRequestHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  // Only attach credentials in dev mode (production uses server-side proxy auth)
+  if (isDev && WOOCOMMERCE_CONFIG.consumerKey) {
+    const credentials = `${WOOCOMMERCE_CONFIG.consumerKey}:${WOOCOMMERCE_CONFIG.consumerSecret}`;
+    headers['Authorization'] = `Basic ${btoa(credentials)}`;
+  }
+  return headers;
 }
 
 // Fetch products from WooCommerce
@@ -124,10 +137,7 @@ export async function fetchWooCommerceProducts(params?: {
   
   const response = await fetch(url, {
     method: 'GET',
-    headers: {
-      'Authorization': getAuthHeader(),
-      'Content-Type': 'application/json',
-    },
+    headers: getRequestHeaders(),
   });
 
   if (!response.ok) {
@@ -144,10 +154,7 @@ export async function fetchWooCommerceProductById(id: number): Promise<WooCommer
   
   const response = await fetch(url, {
     method: 'GET',
-    headers: {
-      'Authorization': getAuthHeader(),
-      'Content-Type': 'application/json',
-    },
+    headers: getRequestHeaders(),
   });
 
   if (!response.ok) {
@@ -216,10 +223,7 @@ export async function fetchWooCommerceVariations(productId: number): Promise<Woo
   
   const response = await fetch(url, {
     method: 'GET',
-    headers: {
-      'Authorization': getAuthHeader(),
-      'Content-Type': 'application/json',
-    },
+    headers: getRequestHeaders(),
   });
 
   if (!response.ok) {
@@ -243,10 +247,7 @@ export async function fetchWooCommerceVariations(productId: number): Promise<Woo
           const r = await fetch(
             `${WOOCOMMERCE_CONFIG.baseUrl}/products/${productId}/variations/${v.id}?context=edit`,
             {
-              headers: {
-                Authorization: getAuthHeader(),
-                'Content-Type': 'application/json',
-              },
+              headers: getRequestHeaders(),
             }
           );
           if (r.ok) {
@@ -281,10 +282,7 @@ export async function fetchWooCommerceCategories(): Promise<Array<{
   
   const response = await fetch(url, {
     method: 'GET',
-    headers: {
-      'Authorization': getAuthHeader(),
-      'Content-Type': 'application/json',
-    },
+    headers: getRequestHeaders(),
   });
 
   if (!response.ok) {
