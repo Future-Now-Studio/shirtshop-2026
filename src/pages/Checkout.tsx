@@ -9,7 +9,7 @@ import { useNavigate } from "react-router-dom";
 import { loadStripe } from "@stripe/stripe-js";
 import { PaymentElement, Elements, useStripe, useElements } from "@stripe/react-stripe-js";
 import { toast } from "sonner";
-import { ArrowLeft, Package, Truck, CreditCard, Lock } from "lucide-react";
+import { ArrowLeft, Package, Truck, CreditCard, Lock, Loader2 } from "lucide-react";
 import type { StripeElementsOptions } from "@stripe/stripe-js";
 
 // Initialize Stripe - Get publishable key from environment
@@ -99,17 +99,46 @@ const CheckoutForm = ({ paymentIntentId }: CheckoutFormProps) => {
       return;
     }
 
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
     // Only validate shipping form if not using express checkout
     if (!useExpressCheckout) {
-      if (!shippingForm.firstName || !shippingForm.lastName || !shippingForm.email || 
-          !shippingForm.address || !shippingForm.city || !shippingForm.postalCode) {
-        toast.error("Bitte füllen Sie alle Pflichtfelder aus");
+      const requiredFields: Array<{ field: keyof ShippingFormData; id: string; label: string }> = [
+        { field: 'firstName', id: 'firstName', label: 'Vorname' },
+        { field: 'lastName', id: 'lastName', label: 'Nachname' },
+        { field: 'email', id: 'email', label: 'E-Mail-Adresse' },
+        { field: 'address', id: 'address', label: 'Straße und Hausnummer' },
+        { field: 'postalCode', id: 'postalCode', label: 'Postleitzahl' },
+        { field: 'city', id: 'city', label: 'Stadt' },
+      ];
+
+      for (const { field, id, label } of requiredFields) {
+        if (!shippingForm[field]) {
+          toast.error(`Bitte füllen Sie "${label}" aus`);
+          document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          document.getElementById(id)?.focus();
+          return;
+        }
+      }
+
+      if (!emailRegex.test(shippingForm.email)) {
+        toast.error("Bitte geben Sie eine gültige E-Mail-Adresse ein");
+        document.getElementById('email')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        document.getElementById('email')?.focus();
         return;
       }
     } else {
       // For express checkout, only email is required
       if (!shippingForm.email) {
         toast.error("Bitte geben Sie Ihre E-Mail-Adresse ein");
+        document.getElementById('express-email')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        document.getElementById('express-email')?.focus();
+        return;
+      }
+      if (!emailRegex.test(shippingForm.email)) {
+        toast.error("Bitte geben Sie eine gültige E-Mail-Adresse ein");
+        document.getElementById('express-email')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        document.getElementById('express-email')?.focus();
         return;
       }
     }
@@ -191,7 +220,7 @@ const CheckoutForm = ({ paymentIntentId }: CheckoutFormProps) => {
       // Payment succeeded - NOW create WooCommerce order
       if (paymentIntent && paymentIntent.status === 'succeeded') {
         try {
-          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+          const apiUrl = '/api';
           
           // Get billing details from payment intent if express checkout was used
           let billingData = {
@@ -220,7 +249,7 @@ const CheckoutForm = ({ paymentIntentId }: CheckoutFormProps) => {
               },
               billing: billingData,
               paymentIntentId: paymentIntent.id,
-              transactionId: (paymentIntent as any).latest_charge || paymentIntent.id,
+              transactionId: paymentIntent.id,
               total: total,
             }),
           });
@@ -311,9 +340,9 @@ const CheckoutForm = ({ paymentIntentId }: CheckoutFormProps) => {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
-      <div className="grid lg:grid-cols-3 gap-8">
+      <div className="grid lg:grid-cols-3 gap-6 lg:gap-8">
         {/* Left Column - Shipping & Payment */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-6 order-2 lg:order-1">
           {/* Shipping Information - Only show if not using express checkout */}
           {!useExpressCheckout && (
             <motion.div
@@ -461,12 +490,12 @@ const CheckoutForm = ({ paymentIntentId }: CheckoutFormProps) => {
           </motion.div>
         </div>
 
-        {/* Right Column - Order Summary */}
-        <div className="lg:col-span-1">
+        {/* Right Column - Order Summary (shown first on mobile) */}
+        <div className="lg:col-span-1 order-1 lg:order-2">
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="glass-card p-6 sticky top-8"
+            className="glass-card p-4 sm:p-6 lg:sticky lg:top-28"
           >
             <h2 className="text-xl font-bold mb-6">Bestellübersicht</h2>
 
@@ -527,9 +556,16 @@ const CheckoutForm = ({ paymentIntentId }: CheckoutFormProps) => {
               type="submit"
               size="lg"
               className="w-full mt-6"
-              disabled={isProcessing || !stripe}
+              disabled={isProcessing || !stripe || !elements}
             >
-              {isProcessing ? "Wird verarbeitet..." : `Jetzt zahlen (${total.toFixed(2).replace(".", ",")} €)`}
+              {isProcessing ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Wird verarbeitet…
+                </span>
+              ) : (
+                `Jetzt zahlen (${total.toFixed(2).replace(".", ",")} €)`
+              )}
             </Button>
 
             <p className="text-xs text-muted-foreground text-center mt-4">
@@ -573,10 +609,7 @@ const Checkout = () => {
     // Create PaymentIntent on backend
     const createPaymentIntent = async () => {
       try {
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
-        
-        // Call backend API to create PaymentIntent
-        const response = await fetch(`${apiUrl}/create-payment-intent`, {
+        const response = await fetch(`/api/create-payment-intent`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -595,11 +628,12 @@ const Checkout = () => {
         setClientSecret(data.clientSecret);
         setPaymentIntentId(data.paymentIntentId);
       } catch (error: any) {
-        // Check if it's a network/blocking error
-        if (error.message?.includes('Failed to fetch') || error.message?.includes('blocked') || error.name === 'TypeError') {
-          setStripeError('Netzwerkanfragen werden blockiert. Bitte deaktivieren Sie Ad-Blocker oder Privacy-Erweiterungen.');
+        const isBlocked = error.name === 'TypeError' && error.message?.includes('Failed to fetch');
+        if (isBlocked) {
+          setStripeError('Zahlungsoptionen konnten nicht geladen werden. Bitte deaktivieren Sie Ad-Blocker oder Privacy-Erweiterungen.');
         } else {
-          toast.error("Fehler beim Laden der Zahlungsoptionen. Bitte konfigurieren Sie einen Backend-Endpoint.");
+          toast.error("Zahlungsoptionen konnten nicht geladen werden. Bitte versuche es erneut.");
+          console.error("PaymentIntent error:", error);
         }
       }
     };
@@ -687,19 +721,9 @@ const Checkout = () => {
             <CheckoutForm paymentIntentId={paymentIntentId} />
           </Elements>
         ) : (
-          <div className="text-center py-12">
-            <div className="glass-card p-8 max-w-md mx-auto">
-              <p className="text-muted-foreground mb-4">Lade Zahlungsoptionen...</p>
-              <p className="text-xs text-muted-foreground mb-2">
-                Bitte konfigurieren Sie einen Backend-Endpoint in Ihrer .env Datei:
-              </p>
-              <p className="text-xs text-muted-foreground font-mono bg-muted p-2 rounded mb-2">
-                VITE_API_URL=your-backend-url/api
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Der Backend-Endpoint muss PaymentIntents erstellen können.
-              </p>
-            </div>
+          <div className="flex flex-col items-center justify-center py-24 gap-4">
+            <Loader2 className="w-8 h-8 text-primary animate-spin" />
+            <p className="text-muted-foreground text-sm">Zahlungsoptionen werden geladen…</p>
           </div>
         )}
       </div>

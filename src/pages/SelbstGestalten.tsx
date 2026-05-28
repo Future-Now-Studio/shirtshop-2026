@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { Layout } from "@/components/layout/Layout";
+import { Seo } from "@/components/Seo";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { ArrowRight, Upload, Palette, Package, Truck, Sparkles } from "lucide-react";
@@ -77,6 +78,11 @@ const DesignerProductsGrid = () => {
 const SelbstGestalten = () => {
   return (
     <Layout>
+      <Seo
+        title="Selbst gestalten – Dein eigenes Design"
+        description="Gestalte dein T-Shirt, Hoodie oder Sweatshirt online selbst. Mit unserem Designer kannst du Text, Bilder und Logos individuell platzieren."
+        canonical="/selbst-gestalten"
+      />
       {/* Hero */}
       <section className="relative min-h-[70vh] flex items-center overflow-hidden">
         <div className="absolute inset-0">

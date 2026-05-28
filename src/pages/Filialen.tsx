@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { Layout } from "@/components/layout/Layout";
+import { Seo, localBusinessJsonLd } from "@/components/Seo";
 import { MapPin, Phone, Mail } from "lucide-react";
 import europaPassage from "@/assets/20210421_001_Private_Shirt_Hamburg.webp";
 import altona from "@/assets/Altona-Store.webp";
@@ -28,6 +29,12 @@ const locations = [
 const Filialen = () => {
   return (
     <Layout>
+      <Seo
+        title="Filialen in Hamburg"
+        description="Besuche unsere Private Shirt Filiale in Hamburg. Persönliche Beratung für Textildruck, Stickerei und individuelle Veredelung."
+        canonical="/filialen"
+        jsonLd={localBusinessJsonLd}
+      />
       {/* Hero */}
       <section className="pt-12 pb-16 bg-background">
         <div className="container-wide">

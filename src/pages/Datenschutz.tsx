@@ -1,9 +1,11 @@
 import { Layout } from "@/components/layout/Layout";
+import { Seo } from "@/components/Seo";
 import { motion } from "framer-motion";
 
 const Datenschutz = () => {
   return (
     <Layout>
+      <Seo title="Datenschutz" canonical="/datenschutz" />
       <div className="container-wide py-12">
         <motion.div
           initial={{ opacity: 0, y: 20 }}

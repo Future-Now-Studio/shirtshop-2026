@@ -7,7 +7,7 @@ import { useCartStore } from "@/stores/cartStore";
 import logo from "@/assets/group-25.svg";
 
 const navLinks = [
-  { name: "produkte", path: "/produkte" },
+  // { name: "produkte", path: "/produkte" }, // TEMP: hidden
   { name: "selbst gestalten", path: "/selbst-gestalten" },
   { name: "filialen", path: "/#filialen" },
   { name: "über uns", path: "/unternehmen" },

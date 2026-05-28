@@ -1,11 +1,13 @@
 import { motion } from "framer-motion";
 import { Layout } from "@/components/layout/Layout";
+import { Seo } from "@/components/Seo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowRight, Check, Users, Percent, Truck, HeadphonesIcon, Upload, Plus, X } from "lucide-react";
+import { ArrowRight, Check, Users, Percent, Truck, HeadphonesIcon, Upload, Plus, X, Loader2 } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import tshirtShelvesImage from "@/assets/ryoji-hayasaka-gkb-ayjimvda-unsplash@3x-1024x684.jpg";
 import screenPrintingImage from "@/assets/naomi-august-ZQPekfTkImw-unsplash (1).jpg";
 
@@ -40,15 +42,67 @@ const Grossbestellung = () => {
   const [motive, setMotive] = useState<MotiveData[]>([
     { datei: null, druckposition: "" }
   ]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle form submission
-    const submissionData = {
-      ...formData,
-      motive: motive,
-    };
-    // TODO: Send to API
+    if (!formData.vorname || !formData.nachname || !formData.email || !formData.stueckzahl) {
+      toast.error("Bitte füllen Sie alle Pflichtfelder aus.");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const motivLines = motive.map((m, i) =>
+        `  Motiv ${i + 1}: ${m.datei ? m.datei.name : "kein Dateiname"} – Position: ${m.druckposition || "nicht angegeben"}`
+      ).join("\n");
+
+      const message = [
+        `=== GROSSBESTELLUNG ANFRAGE ===`,
+        ``,
+        `FILIALE: ${formData.filiale || "–"}`,
+        ``,
+        `TEXTILIEN`,
+        `Art: ${formData.textilArt || "–"}`,
+        `Qualität: ${formData.textilQualitaet || "–"}`,
+        `Stückzahl: ${formData.stueckzahl}`,
+        ``,
+        `DRUCK`,
+        `Verfahren: ${formData.druckverfahren || "–"}`,
+        `Motive:`,
+        motivLines,
+        ``,
+        `KONTAKT`,
+        `Anrede: ${formData.anrede || "–"}`,
+        `Name: ${formData.vorname} ${formData.nachname}`,
+        `Firma: ${formData.firma || "–"}`,
+        `Telefon: ${formData.telefon || "–"}`,
+        ``,
+        `BEMERKUNGEN`,
+        formData.nachricht || "–",
+      ].filter(l => l !== undefined).join("\n");
+
+      const fd = new FormData();
+      fd.append("name", `${formData.vorname} ${formData.nachname}`);
+      fd.append("email", formData.email);
+      fd.append("phone", formData.telefon || "");
+      fd.append("message", message);
+      motive.forEach((m, i) => {
+        if (m.datei) fd.append(`file_${i}`, m.datei, m.datei.name);
+      });
+
+      const res = await fetch(`/api/send-contact-email`, {
+        method: "POST",
+        body: fd,
+      });
+      if (!res.ok) throw new Error("Sendefehler");
+      setIsSuccess(true);
+      toast.success("Anfrage erfolgreich gesendet! Wir melden uns bald.");
+    } catch {
+      toast.error("Fehler beim Senden. Bitte versuchen Sie es erneut oder rufen Sie uns an.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleFileChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
@@ -80,16 +134,21 @@ const Grossbestellung = () => {
 
   return (
     <Layout>
+      <Seo
+        title="Großbestellung anfragen"
+        description="Großbestellungen für Vereine, Firmen und Events – individuelle Angebote, Mengenrabatte und persönliche Beratung."
+        canonical="/grossbestellung"
+      />
       {/* Hero */}
       <section className="relative pt-12 pb-20 bg-background">
         <div className="container-wide">
-          <div className="grid lg:grid-cols-2 gap-12 items-center mb-20">
+          <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center mb-12 lg:mb-20">
             <motion.div
               initial={{ opacity: 0, x: -30 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.6 }}
             >
-              <h1 className="text-5xl lg:text-7xl font-black mb-6 leading-tight">
+              <h1 className="text-4xl sm:text-5xl lg:text-7xl font-black mb-6 leading-tight">
                 <span className="text-primary block">du brauchst</span>
                 <span className="text-primary block">masse?</span>
                 <span className="text-secondary italic block">können wir.</span>
@@ -206,12 +265,27 @@ const Grossbestellung = () => {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
-            className="glass-card p-8 lg:p-12 max-w-4xl mx-auto rounded-3xl shadow-lg"
+            className="glass-card p-4 sm:p-8 lg:p-12 max-w-4xl mx-auto rounded-3xl shadow-lg"
           >
             <div className="text-center mb-8">
               <h2 className="text-3xl lg:text-4xl font-bold text-primary mb-2">jetzt anfragen und angebot erhalten</h2>
               <p className="text-muted-foreground">Füllen Sie das Formular aus und wir erstellen Ihnen ein individuelles Angebot</p>
             </div>
+
+            {isSuccess ? (
+              <div className="text-center py-16 space-y-4">
+                <div className="w-20 h-20 mx-auto rounded-full bg-green-100 flex items-center justify-center">
+                  <Check className="w-10 h-10 text-green-600" />
+                </div>
+                <h3 className="text-2xl font-bold text-primary">Anfrage gesendet!</h3>
+                <p className="text-muted-foreground max-w-sm mx-auto">
+                  Vielen Dank. Wir melden uns innerhalb von 1–2 Werktagen mit einem individuellen Angebot.
+                </p>
+                <Button variant="outline" onClick={() => setIsSuccess(false)}>
+                  Neue Anfrage
+                </Button>
+              </div>
+            ) : (
             <form onSubmit={handleSubmit} className="space-y-8">
               {/* Filiale */}
               <div className="glass-card p-6 rounded-2xl border border-border/50">
@@ -521,11 +595,15 @@ const Grossbestellung = () => {
                 </div>
               </div>
 
-              <Button type="submit" size="lg" className="w-full group h-14 text-lg font-semibold">
-                abschicken
-                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              <Button type="submit" size="lg" disabled={isSubmitting} className="w-full group h-14 text-lg font-semibold">
+                {isSubmitting ? (
+                  <><Loader2 className="w-5 h-5 animate-spin" /> Wird gesendet…</>
+                ) : (
+                  <>abschicken <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" /></>
+                )}
               </Button>
             </form>
+            )}
           </motion.div>
         </div>
       </section>

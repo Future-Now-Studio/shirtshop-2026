@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Layout } from "@/components/layout/Layout";
+import { Seo } from "@/components/Seo";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProduct, useProductVariations, useWooCommerceProduct } from "@/hooks/useProducts";
@@ -362,8 +363,40 @@ const ProduktDetail = () => {
     toast.success("Zum Warenkorb hinzugefügt!");
   };
 
+  const productJsonLd = product
+    ? {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        name: product.name,
+        description: product.description?.replace(/<[^>]*>/g, "").substring(0, 300),
+        image: product.image,
+        sku: String(product.id),
+        brand: { "@type": "Brand", name: "Private Shirt" },
+        offers: {
+          "@type": "Offer",
+          url: `https://private-shirt.de/produkt/${product.id}`,
+          priceCurrency: "EUR",
+          price: product.price,
+          availability: "https://schema.org/InStock",
+        },
+      }
+    : null;
+
   return (
     <Layout>
+      {product && (
+        <Seo
+          title={product.name}
+          description={
+            product.description?.replace(/<[^>]*>/g, "").substring(0, 160) ||
+            `${product.name} bei Private Shirt – individuell veredelbar mit Druck oder Stickerei.`
+          }
+          canonical={`/produkt/${product.id}`}
+          image={product.image}
+          type="product"
+          jsonLd={productJsonLd!}
+        />
+      )}
       <div className="container-wide py-8">
         {/* Breadcrumb */}
         <motion.div

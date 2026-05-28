@@ -1,15 +1,11 @@
 // WooCommerce API Configuration
-// In production (Netlify): calls go through /api/wc/* proxy → no CORS, credentials stay server-side
-// In development: calls go directly to WooCommerce with credentials from env
-const isDev = import.meta.env.DEV;
-
+// All calls go through /api/wc/* — in production via Netlify Function (wc-proxy.mjs),
+// in dev via the Vite proxy in vite.config.ts which injects Basic Auth from env vars.
+// → No credentials in the browser bundle, no CORS preflights.
 export const WOOCOMMERCE_CONFIG = {
-  // In production the proxy strips the need for the full WC URL
-  baseUrl: isDev
-    ? (import.meta.env.VITE_WC_BASE_URL || 'https://timob10.sg-host.com/wp-json/wc/v3')
-    : '/api/wc',
-  consumerKey: isDev ? (import.meta.env.VITE_WC_CONSUMER_KEY || '') : '',
-  consumerSecret: isDev ? (import.meta.env.VITE_WC_CONSUMER_SECRET || '') : '',
+  baseUrl: '/api/wc',
+  consumerKey: '',
+  consumerSecret: '',
 };
 
 // WooCommerce Product Interface (from API)
@@ -99,13 +95,12 @@ export interface WooCommerceProduct {
   meta_data: any[];
 }
 
-// Create request headers – in production the Netlify proxy handles auth
+// Create request headers – the proxy (Netlify Function in prod, Vite in dev) handles auth
 function getRequestHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
-  // Only attach credentials in dev mode (production uses server-side proxy auth)
-  if (isDev && WOOCOMMERCE_CONFIG.consumerKey) {
+  if (WOOCOMMERCE_CONFIG.consumerKey) {
     const credentials = `${WOOCOMMERCE_CONFIG.consumerKey}:${WOOCOMMERCE_CONFIG.consumerSecret}`;
     headers['Authorization'] = `Basic ${btoa(credentials)}`;
   }

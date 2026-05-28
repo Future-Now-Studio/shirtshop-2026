@@ -1,9 +1,11 @@
 import { Layout } from "@/components/layout/Layout";
+import { Seo } from "@/components/Seo";
 import { motion } from "framer-motion";
 
 const AGB = () => {
   return (
     <Layout>
+      <Seo title="AGB" canonical="/agb" />
       <div className="container-wide py-12 md:py-20">
         <motion.h1
           initial={{ opacity: 0, y: 20 }}

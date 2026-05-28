@@ -68,6 +68,7 @@ import tshirtWhite from "@/assets/tshirt-mockup-white.png";
 import tshirtBlack from "@/assets/tshirt-mockup-black.png";
 import { Check } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
+import { SizeChart } from "@/components/SizeChart";
 
 /** Erzeugt einen SVG-Pfad für einen Bogen (quadratische Kurve). bend: -100 … 100, 0 = gerade. */
 function createArcPathD(width: number, bend: number): string {
@@ -319,9 +320,10 @@ const TShirtDesigner = () => {
   const productId = searchParams.get("productId");
   
   // Fetch product data to get placement zones
-  const { data: product } = useProduct(productId ? Number(productId) : 0);
-  const { data: wcProduct } = useWooCommerceProduct(productId ? Number(productId) : 0);
-  const { data: variations = [] } = useProductVariations(productId ? Number(productId) : 0);
+  const { data: product, isLoading: productLoading } = useProduct(productId ? Number(productId) : 0);
+  const { data: wcProduct, isLoading: wcProductLoading } = useWooCommerceProduct(productId ? Number(productId) : 0);
+  const { data: variations = [], isLoading: variationsLoading } = useProductVariations(productId ? Number(productId) : 0);
+  const isProductLoading = productLoading || wcProductLoading || variationsLoading;
   const placementZones = useMemo(() => {
     const rawZonesMeta = wcProduct?.meta_data?.find(
       (meta: any) => meta.key === "design_placement_zones" || meta.key === "_design_placement_zones"
@@ -2333,15 +2335,16 @@ const TShirtDesigner = () => {
   const handleDownload = async () => {
     if (!fabricCanvas) return;
 
-    // Save current view before processing
-    saveCurrentView();
+    // Capture current view's canvas state synchronously (state update is async, can't rely on it)
+    const currentViewJson = JSON.stringify(fabricCanvas.toJSON());
+    const latestViewData: Record<string, string | null> = { ...viewData, [currentView]: currentViewJson };
 
     // Export each view that has design elements
     const views: ViewType[] = ["front", "back", "left", "right"];
     let exportedCount = 0;
 
     for (const view of views) {
-      const viewJson = viewData[view];
+      const viewJson = latestViewData[view];
       if (!viewJson) continue; // Skip views without design
 
       try {
@@ -2533,24 +2536,20 @@ const TShirtDesigner = () => {
       return;
     }
 
-    // Save current view before processing
+    // Capture current view synchronously (setViewData is async — don't rely on updated state here)
+    let latestViewData = viewData;
     if (fabricCanvas) {
       try {
         const json = JSON.stringify(fabricCanvas.toJSON());
-        setViewData(prev => ({
-          ...prev,
-          [currentView]: json,
-        }));
+        latestViewData = { ...viewData, [currentView]: json };
+        setViewData(latestViewData);
       } catch (error) {
         console.error('Error saving current view:', error);
       }
     }
 
-    // Use the memoized hasAnyDesign value
-    console.log('hasAnyDesign:', hasAnyDesign);
-    
     // Get all views data for processing
-    const allViewsData = Object.values(viewData).filter(v => v !== null);
+    const allViewsData = Object.values(latestViewData).filter(v => v !== null);
     
     // Only require checkbox acceptance if there are custom designs
     if (hasAnyDesign && !importantPointsAccepted) {
@@ -2565,13 +2564,17 @@ const TShirtDesigner = () => {
     let totalDesignElementCount = 0;
 
     if (hasAnyDesign) {
-      // Count design elements across all views
+      // Count design elements across all views (exclude placement zones)
       allViewsData.forEach(viewJson => {
         if (viewJson) {
           try {
-            const viewData = JSON.parse(viewJson);
-            if (viewData.objects && Array.isArray(viewData.objects)) {
-              totalDesignElementCount += viewData.objects.length;
+            const parsed = JSON.parse(viewJson);
+            if (parsed.objects && Array.isArray(parsed.objects)) {
+              const designObjs = parsed.objects.filter((obj: any) => {
+                const n = obj.name || '';
+                return !n.startsWith('placement-zone-') && !n.startsWith('zone-');
+              });
+              totalDesignElementCount += designObjs.length;
             }
           } catch (error) {
             console.error('Error parsing view data:', error);
@@ -2581,7 +2584,7 @@ const TShirtDesigner = () => {
 
       // Save all views data as JSON
       rawDesignData = JSON.stringify({
-        views: viewData,
+        views: latestViewData,
         version: "1.0",
       });
 
@@ -2598,7 +2601,7 @@ const TShirtDesigner = () => {
         
         // Generate individual images for each view
           for (const view of views) {
-            const viewJson = viewData[view];
+            const viewJson = latestViewData[view];
           console.log(`Checking view ${view}:`, viewJson ? 'has data' : 'no data');
           if (!viewJson) continue; // Skip views without design
           
@@ -2714,9 +2717,9 @@ const TShirtDesigner = () => {
           if (quantity > 0) {
             console.log(`Adding item (no design): size=${size}, quantity=${quantity}`);
             addItem({
-              productId: 999,
-              name: "Custom T-Shirt",
-              price: 24.95,
+              productId: wcProduct?.id || (productId ? Number(productId) : 999),
+              name: wcProduct?.name || product?.name || selectedShirt?.name || "Custom T-Shirt",
+              price: wcProduct?.price ? parseFloat(wcProduct.price) : (product?.price || 24.95),
               image: selectedShirt.image,
               color: selectedShirt.name,
               size: size,
@@ -2800,9 +2803,9 @@ const TShirtDesigner = () => {
           console.log(`Adding item: size=${size}, quantity=${quantity}`);
           try {
             const itemToAdd = {
-              productId: 999,
-              name: "Custom T-Shirt",
-              price: 24.95,
+              productId: wcProduct?.id || (productId ? Number(productId) : 999),
+              name: wcProduct?.name || product?.name || selectedShirt?.name || "Custom T-Shirt",
+              price: wcProduct?.price ? parseFloat(wcProduct.price) : (product?.price || 24.95),
               image: selectedShirt.image,
               color: selectedShirt.name,
               size: size,
@@ -2849,14 +2852,41 @@ const TShirtDesigner = () => {
           </div>
         </motion.div>
 
-        <div className="grid lg:grid-cols-12 gap-6">
-          {/* Left Sidebar – kompakt, wenige Klicks (Referenz + modern) */}
+        {isProductLoading && (
+          <div className="grid lg:grid-cols-12 gap-4 lg:gap-6 animate-pulse">
+            <div className="lg:col-span-2">
+              <div className="flex flex-row lg:flex-col gap-2">
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} className="h-10 rounded-xl bg-muted flex-shrink-0 w-20 lg:w-full" />
+                ))}
+              </div>
+            </div>
+            <div className="lg:col-span-7">
+              <div className="glass-card rounded-2xl overflow-hidden" style={{ minHeight: 'min(500px, 70vw)', maxHeight: '600px' }}>
+                <div className="w-full h-full bg-muted flex items-center justify-center" style={{ minHeight: 'min(500px, 70vw)', maxHeight: '600px' }}>
+                  <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                    <div className="w-8 h-8 border-2 border-primary/40 border-t-primary rounded-full animate-spin" />
+                    <span className="text-sm">Produkt wird geladen…</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="lg:col-span-3 space-y-4">
+              <div className="h-48 rounded-2xl bg-muted" />
+              <div className="h-32 rounded-2xl bg-muted" />
+              <div className="h-16 rounded-2xl bg-muted" />
+            </div>
+          </div>
+        )}
+
+        <div className={`grid lg:grid-cols-12 gap-4 lg:gap-6${isProductLoading ? ' hidden' : ''}`}>
+          {/* Toolbar – horizontal on mobile, vertical sidebar on desktop */}
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             className="lg:col-span-2"
           >
-            <div className="flex flex-col gap-2 rounded-2xl border bg-card p-2 shadow-sm">
+            <div className="flex flex-row lg:flex-col gap-2 rounded-2xl border bg-card p-2 shadow-sm overflow-x-auto">
               <input
                 id="designer-file-upload"
                 type="file"
@@ -2867,29 +2897,29 @@ const TShirtDesigner = () => {
               <Button
                 variant="default"
                 size="sm"
-                className="w-full justify-start gap-2.5 h-11 rounded-xl font-medium"
+                className="flex-shrink-0 lg:w-full justify-start gap-2.5 h-11 rounded-xl font-medium px-4"
                 onClick={() => document.getElementById('designer-file-upload')?.click()}
               >
                 <Upload className="w-4 h-4 flex-shrink-0" />
-                Hochladen
+                <span className="hidden sm:inline">Hochladen</span>
               </Button>
               <Button
                 variant="default"
                 size="sm"
-                className="w-full justify-start gap-2.5 h-11 rounded-xl font-medium"
+                className="flex-shrink-0 lg:w-full justify-start gap-2.5 h-11 rounded-xl font-medium px-4"
                 onClick={() => setShowTextDialog(true)}
               >
                 <Type className="w-4 h-4 flex-shrink-0" />
-                Text
+                <span className="hidden sm:inline">Text</span>
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
-                className="w-full justify-start gap-2.5 h-11 rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                className="flex-shrink-0 lg:w-full justify-start gap-2.5 h-11 rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10 px-4"
                 onClick={handleClearAll}
               >
                 <RotateCcw className="w-4 h-4 flex-shrink-0" />
-                Zurücksetzen
+                <span className="hidden sm:inline">Zurücksetzen</span>
               </Button>
             </div>
           </motion.div>
@@ -2903,8 +2933,8 @@ const TShirtDesigner = () => {
 
             <div
               ref={containerRef}
-              className="relative bg-muted/30 rounded-2xl p-4 sm:p-6 flex items-center justify-center"
-              style={{ minHeight: '500px', maxHeight: '600px' }}
+              className="relative bg-muted/30 rounded-2xl p-3 sm:p-6 flex items-center justify-center"
+              style={{ minHeight: 'min(500px, 70vw)', maxHeight: '600px' }}
             >
               {/* Warning Message - shown inside creator area */}
               {outOfBoundsWarning && (
@@ -3058,7 +3088,7 @@ const TShirtDesigner = () => {
             animate={{ opacity: 1, x: 0 }}
             className="lg:col-span-4"
           >
-            <div className="pr-2">
+            <div className="lg:pr-2">
               <div className="rounded-2xl border bg-card p-5 shadow-sm space-y-5">
                 {product?.name && (
                   <div className="flex items-center justify-between gap-2">
@@ -3305,6 +3335,13 @@ const TShirtDesigner = () => {
                         <span className="text-sm font-semibold">{selectedColor}</span>
                       </div>
                     )}
+
+                    {/* Größentabelle */}
+                    <div className="rounded-xl border bg-card p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Größenangaben</p>
+                      <SizeChart wcProductMetaData={wcProduct?.meta_data} />
+                    </div>
+
                     <div className="space-y-2">
                       {availableSizes.map((size) => {
                         const quantity = sizeQuantities[size] || 0;
@@ -3516,6 +3553,12 @@ const TShirtDesigner = () => {
                 </div>
               </div>
             )}
+
+            {/* Größentabelle */}
+            <div className="rounded-xl border bg-card p-4">
+              <h3 className="text-sm font-semibold mb-4 text-foreground">Größenangaben</h3>
+              <SizeChart wcProductMetaData={wcProduct?.meta_data} />
+            </div>
           </div>
 
           <DialogFooter className="px-6 py-4 border-t bg-muted/20 shrink-0 sm:justify-end">

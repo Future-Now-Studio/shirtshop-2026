@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Layout } from "@/components/layout/Layout";
+import { Seo } from "@/components/Seo";
 import { Button } from "@/components/ui/button";
 import { ProductCard } from "@/components/products/ProductCard";
 import { useProductsByCategory, useWooCommerceCategories } from "@/hooks/useProducts";
@@ -40,6 +41,11 @@ const Produkte = () => {
 
   return (
     <Layout>
+      <Seo
+        title="Produkte – T-Shirts, Hoodies & mehr"
+        description="Entdecke unser Sortiment an T-Shirts, Hoodies und Sweatshirts. Hochwertige Textilien, individuell veredelbar mit Druck oder Stickerei."
+        canonical="/produkte"
+      />
       {/* Hero */}
       <section className="pt-12 pb-8 bg-gradient-to-b from-accent/30 to-background">
         <div className="container-wide">
@@ -107,36 +113,13 @@ const Produkte = () => {
         </div>
       </section>
 
-      {/* Products Grid */}
+      {/* TEMP: Product grid hidden – coming soon */}
       <section className="section-padding">
-        <div className="container-wide">
-          {isLoading ? (
-            <div className="flex items-center justify-center min-h-[400px]">
-              <div className="text-center">
-                <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
-                <p className="text-muted-foreground">Produkte werden geladen...</p>
-              </div>
-            </div>
-          ) : error ? (
-            <div className="flex items-center justify-center min-h-[400px]">
-              <div className="text-center">
-                <p className="text-destructive mb-4">Fehler beim Laden der Produkte</p>
-                <Button onClick={() => window.location.reload()}>Neu laden</Button>
-              </div>
-            </div>
-          ) : filteredProducts.length === 0 ? (
-            <div className="flex items-center justify-center min-h-[400px]">
-              <p className="text-muted-foreground">Keine Produkte gefunden</p>
-            </div>
-          ) : (
-            <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              <AnimatePresence mode="popLayout">
-                {filteredProducts.map((product, index) => (
-                  <ProductCard key={product.id} product={product} index={index} />
-                ))}
-              </AnimatePresence>
-            </motion.div>
-          )}
+        <div className="container-wide flex items-center justify-center min-h-[400px]">
+          <div className="text-center space-y-4">
+            <p className="text-2xl font-semibold">Bald verfügbar</p>
+            <p className="text-muted-foreground">Unser Shop wird gerade vorbereitet.<br />Schau bald wieder rein!</p>
+          </div>
         </div>
       </section>
     </Layout>

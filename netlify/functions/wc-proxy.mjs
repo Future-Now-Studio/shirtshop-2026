@@ -4,11 +4,30 @@
 
 const WC_BASE = 'https://timob10.sg-host.com/wp-json/wc/v3';
 
+const ALLOWED_ORIGINS = [
+  'https://private-shirt.de',
+  'https://www.private-shirt.de',
+];
+
+function isAllowedOrigin(req) {
+  // Same-origin browser navigations send no Origin header → allow (server-rendered fetches/SSR).
+  // Cross-origin browser fetches MUST come from our domains.
+  const origin = req.headers.get('origin');
+  if (!origin) return true;
+  return ALLOWED_ORIGINS.includes(origin);
+}
+
 export default async (req) => {
-  // Only allow GET (product reads)
   if (req.method !== 'GET') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
       status: 405,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  if (!isAllowedOrigin(req)) {
+    return new Response(JSON.stringify({ error: 'Forbidden' }), {
+      status: 403,
       headers: { 'Content-Type': 'application/json' },
     });
   }

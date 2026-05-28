@@ -11,12 +11,16 @@ import nodemailer from 'nodemailer';
 // Load environment variables
 dotenv.config();
 
-// WooCommerce Configuration
+// WooCommerce Configuration – credentials must come from .env, never commit them.
 const WOOCOMMERCE_CONFIG = {
-  baseUrl: 'https://timob10.sg-host.com/wp-json/wc/v3',
-  consumerKey: 'ck_17e70b1dcd1b0d0aab92da0c8ac7bda10a280827',
-  consumerSecret: 'cs_e7d6fe86192848c4d06c5b0eb4692d32d2b42a50',
+  baseUrl: process.env.WC_BASE_URL || 'https://timob10.sg-host.com/wp-json/wc/v3',
+  consumerKey: process.env.WC_CONSUMER_KEY || '',
+  consumerSecret: process.env.WC_CONSUMER_SECRET || '',
 };
+
+if (!WOOCOMMERCE_CONFIG.consumerKey || !WOOCOMMERCE_CONFIG.consumerSecret) {
+  console.warn('⚠️  WC_CONSUMER_KEY / WC_CONSUMER_SECRET missing from .env — WooCommerce calls will fail');
+}
 
 // Create Basic Auth header for WooCommerce
 function getWooCommerceAuthHeader() {

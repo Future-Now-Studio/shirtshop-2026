@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { Layout } from "@/components/layout/Layout";
+import { Seo } from "@/components/Seo";
 import { Check } from "lucide-react";
 import hamburgImage from "@/assets/julia-solonina-4fLxfNI3ohE-unsplash.jpg";
 import lifestyleImage from "@/assets/lifestyle-woman.jpg";
@@ -14,6 +15,11 @@ const values = [
 const Unternehmen = () => {
   return (
     <Layout>
+      <Seo
+        title="Über uns – Private Shirt Hamburg"
+        description="Lerne Private Shirt kennen – dein Partner für hochwertige Textilveredelung aus Hamburg. Persönlich, regional, in Top-Qualität."
+        canonical="/unternehmen"
+      />
       {/* Hero */}
       <section className="relative pt-12 pb-20 overflow-hidden">
         <div className="container-wide">
