@@ -3080,6 +3080,12 @@ const TShirtDesigner = () => {
                 </div>
               )}
 
+              {/* Größentabelle – direkt unter Ansichten */}
+              <div className="mt-4 rounded-2xl border bg-card p-4 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Größenangaben</p>
+                <SizeChart wcProductMetaData={wcProduct?.meta_data} />
+              </div>
+
           </motion.div>
 
           {/* Right Sidebar – Shirtfarbe hier + Optionen & Größe/Menge */}
@@ -3335,12 +3341,6 @@ const TShirtDesigner = () => {
                         <span className="text-sm font-semibold">{selectedColor}</span>
                       </div>
                     )}
-
-                    {/* Größentabelle */}
-                    <div className="rounded-xl border bg-card p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Größenangaben</p>
-                      <SizeChart wcProductMetaData={wcProduct?.meta_data} />
-                    </div>
 
                     <div className="space-y-2">
                       {availableSizes.map((size) => {

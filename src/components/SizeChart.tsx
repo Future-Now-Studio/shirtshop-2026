@@ -83,7 +83,7 @@ export const SizeChart: React.FC<SizeChartProps> = ({ wcProductMetaData }) => {
         </div>
 
         {/* Table */}
-        <div className="overflow-x-auto w-full">
+        <div className="w-full">
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="border-b border-border">
