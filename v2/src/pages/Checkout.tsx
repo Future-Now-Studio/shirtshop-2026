@@ -24,8 +24,8 @@ function cartPayload(items: ReturnType<typeof useCart.getState>["items"]) {
     sizeId: i.sizeId,
     qty: i.qty,
     designElementCount: i.designElementCount,
-    designRenders: i.designRenders,
-    designData: i.designData,
+    designId: i.designId,
+    designManifest: i.designManifest,
   }));
 }
 

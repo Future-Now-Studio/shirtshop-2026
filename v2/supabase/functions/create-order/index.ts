@@ -15,15 +15,6 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 );
 
-function dataUrlToBytes(dataUrl: string): { bytes: Uint8Array; contentType: string } {
-  const [head, b64] = dataUrl.split(",");
-  const contentType = head.match(/data:(.*?);/)?.[1] ?? "image/png";
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return { bytes, contentType };
-}
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
@@ -72,21 +63,9 @@ Deno.serve(async (req) => {
       .single();
     if (orderErr) throw orderErr;
 
-    // Insert items + upload design renders.
+    // Insert items. Design media already lives in the order-designs bucket under
+    // item.designId; we store the id + manifest so the admin can list every file.
     for (const { item, unit } of lines) {
-      const renderPaths: string[] = [];
-      const renders = item.designRenders ?? {};
-      for (const [view, dataUrl] of Object.entries(renders)) {
-        try {
-          const { bytes, contentType } = dataUrlToBytes(dataUrl as string);
-          const path = `${order.id}/${item.variantId}-${view}.png`;
-          const { error: upErr } = await supabase.storage.from("design-renders").upload(path, bytes, {
-            contentType,
-            upsert: true,
-          });
-          if (!upErr) renderPaths.push(path);
-        } catch { /* skip bad render */ }
-      }
       await supabase.from("order_items").insert({
         order_id: order.id,
         product_id: item.productId,
@@ -94,8 +73,8 @@ Deno.serve(async (req) => {
         size_id: item.sizeId,
         qty: item.qty,
         unit_price: unit.toFixed(2),
-        design_data: item.designData ? JSON.parse(item.designData) : null,
-        design_render_paths: renderPaths,
+        design_data: item.designId ? { designId: item.designId, manifest: item.designManifest ?? [] } : null,
+        design_render_paths: [],
       });
     }
 

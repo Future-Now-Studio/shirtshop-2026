@@ -1,8 +1,36 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, ChevronLeft } from "lucide-react";
+import { ChevronRight, ChevronLeft, Download } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { Button } from "@/components/ui/button";
+
+function FileRow({ title, files, manifest }: { title: string; files: any[]; manifest?: any[] }) {
+  return (
+    <div>
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
+      <div className="flex flex-wrap gap-2">
+        {files.map((f, i) => {
+          const m = manifest?.[i];
+          return (
+            <a
+              key={f.name}
+              href={f.url}
+              download={f.name}
+              target="_blank"
+              rel="noreferrer"
+              className="group relative"
+              title={(m?.text ? `"${m.text}"` : f.name) + " — herunterladen"}
+            >
+              <img src={f.url} alt="" className="h-16 w-16 rounded border bg-[repeating-conic-gradient(#eee_0_25%,#fff_0_50%)] bg-[length:12px_12px] object-contain" />
+              <span className="absolute inset-0 flex items-center justify-center rounded bg-black/0 opacity-0 transition group-hover:bg-black/40 group-hover:opacity-100">
+                <Download className="h-5 w-5 text-white" />
+              </span>
+            </a>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 const STATUSES = ["pending", "paid", "fulfilled", "cancelled"] as const;
 const STATUS_LABEL: Record<string, string> = {
@@ -35,12 +63,20 @@ async function fetchOrder(id: string) {
     .eq("id", id)
     .single();
   if (error) throw error;
-  // sign render URLs (private bucket)
+  // list + sign every design file for each item (order-designs/<designId>/...)
   for (const it of data.order_items ?? []) {
-    it.renderUrls = [];
-    for (const path of it.design_render_paths ?? []) {
-      const { data: signed } = await supabase.storage.from("design-renders").createSignedUrl(path, 3600);
-      if (signed?.signedUrl) it.renderUrls.push(signed.signedUrl);
+    it.files = [];
+    const designId = it.design_data?.designId;
+    if (designId) {
+      const { data: list } = await supabase.storage.from("order-designs").list(designId, { limit: 300 });
+      for (const f of list ?? []) {
+        if (f.name.endsWith(".json")) continue;
+        const { data: signed } = await supabase.storage
+          .from("order-designs")
+          .createSignedUrl(`${designId}/${f.name}`, 3600);
+        if (signed?.signedUrl) it.files.push({ name: f.name, url: signed.signedUrl });
+      }
+      it.files.sort((a: any, b: any) => a.name.localeCompare(b.name));
     }
   }
   return data;
@@ -104,24 +140,44 @@ export default function Orders() {
 
         <p className="mb-2 mt-6 font-semibold">Positionen</p>
         <ul className="divide-y rounded-xl border">
-          {order.order_items?.map((it: any) => (
-            <li key={it.id} className="flex items-center gap-4 p-4">
-              <div className="flex gap-1.5">
-                {(it.renderUrls ?? []).length > 0 ? (
-                  it.renderUrls.map((u: string, i: number) => (
-                    <img key={i} src={u} alt="" className="h-14 w-14 rounded border object-cover" />
-                  ))
-                ) : (
-                  <div className="flex h-14 w-14 items-center justify-center rounded border bg-muted text-[10px] text-muted-foreground">kein Design</div>
+          {order.order_items?.map((it: any) => {
+            const composites = (it.files ?? []).filter((f: any) => f.name.includes("composite"));
+            const designs = (it.files ?? []).filter((f: any) => f.name.includes("-design.png"));
+            const elements = (it.files ?? []).filter((f: any) => f.name.includes("element"));
+            return (
+              <li key={it.id} className="p-4">
+                <div className="flex items-center gap-4">
+                  <div className="flex gap-1.5">
+                    {composites.length > 0 ? (
+                      composites.map((f: any) => (
+                        <a key={f.name} href={f.url} target="_blank" rel="noreferrer">
+                          <img src={f.url} alt="" className="h-16 w-16 rounded border object-contain bg-white" />
+                        </a>
+                      ))
+                    ) : (
+                      <div className="flex h-16 w-16 items-center justify-center rounded border bg-muted text-[10px] text-muted-foreground">kein Design</div>
+                    )}
+                  </div>
+                  <div className="flex-1 text-sm">
+                    <p className="font-medium">{it.products?.name ?? "—"}</p>
+                    <p className="text-muted-foreground">{it.variants?.colors?.name} · {it.sizes?.name} · {it.qty}×</p>
+                  </div>
+                  <span className="text-sm tabular-nums">{(Number(it.unit_price) * it.qty).toFixed(2)} €</span>
+                </div>
+
+                {(it.files ?? []).length > 0 && (
+                  <div className="mt-3 space-y-3 rounded-lg bg-muted/40 p-3">
+                    {designs.length > 0 && (
+                      <FileRow title="Motiv (transparent)" files={designs} />
+                    )}
+                    {elements.length > 0 && (
+                      <FileRow title={`Einzel-Elemente (${elements.length})`} files={elements} manifest={it.design_data?.manifest} />
+                    )}
+                  </div>
                 )}
-              </div>
-              <div className="flex-1 text-sm">
-                <p className="font-medium">{it.products?.name ?? "—"}</p>
-                <p className="text-muted-foreground">{it.variants?.colors?.name} · {it.sizes?.name} · {it.qty}×</p>
-              </div>
-              <span className="text-sm tabular-nums">{(Number(it.unit_price) * it.qty).toFixed(2)} €</span>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       </div>
     );

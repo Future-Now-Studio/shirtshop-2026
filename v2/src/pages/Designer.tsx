@@ -5,6 +5,7 @@ import * as fabric from "fabric";
 import { Type, ImagePlus, Trash2, ShoppingCart, Loader2, ArrowRight, ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { publicUrl } from "@/lib/storage";
+import { uploadDesignFile, uploadDesignJson } from "@/lib/design-upload";
 import { Button } from "@/components/ui/button";
 import { useCart } from "@/stores/cart";
 
@@ -231,26 +232,67 @@ export default function Designer() {
     if (entries.length === 0) return;
     saveView(view);
 
-    // Render each view that has design objects to a PNG (once, reused for all sizes)
     const c = canvasRef.current!;
-    const renders: Record<string, string> = {};
     const originalView = view;
+    const designId = (crypto as any).randomUUID();
+    const manifest: any[] = [];
+    let thumbnail: string | undefined;
+    let anyDesign = false;
+
+    // For every view that has design objects: upload composite, design-only and each element.
     for (const v of VIEWS) {
-      const hasObjects = (viewJson.current[v]?.objects?.length ?? 0) > 0;
-      if (!hasObjects) continue;
+      const objs = (viewJson.current[v]?.objects ?? []).filter((o: any) => !o.__zone);
+      if (objs.length === 0) continue;
+      anyDesign = true;
       await loadView(v, variant);
+
+      // composite (garment + design)
       try {
-        renders[v] = c.toDataURL({ format: "png", multiplier: 1 });
-      } catch {
-        /* tainted canvas — skip render */
+        const composite = c.toDataURL({ format: "png", multiplier: 1.5 });
+        await uploadDesignFile(designId, `${v}-composite.png`, composite);
+        if (!thumbnail) thumbnail = c.toDataURL({ format: "png", multiplier: 0.28 }); // tiny cart preview
+      } catch { /* skip */ }
+
+      // design-only (objects on transparent, no garment)
+      const bg = c.backgroundImage;
+      c.backgroundImage = undefined;
+      c.renderAll();
+      try {
+        const designOnly = c.toDataURL({ format: "png", multiplier: 2 });
+        await uploadDesignFile(designId, `${v}-design.png`, designOnly);
+      } catch { /* skip */ }
+
+      // each element separately
+      const live = c.getObjects().filter((o: any) => !o.__zone);
+      for (let i = 0; i < live.length; i++) {
+        const o: any = live[i];
+        try {
+          const png = o.toDataURL({ format: "png", multiplier: 2 });
+          await uploadDesignFile(designId, `${v}-element-${i + 1}.png`, png);
+        } catch { /* skip */ }
+        manifest.push({
+          view: v,
+          index: i + 1,
+          type: o.type,
+          text: o.type === "textbox" || o.type === "i-text" ? o.text : undefined,
+          fontFamily: o.fontFamily,
+          fill: o.fill,
+          left: Math.round(o.left),
+          top: Math.round(o.top),
+          width: Math.round(o.getScaledWidth?.() ?? o.width),
+          height: Math.round(o.getScaledHeight?.() ?? o.height),
+          angle: Math.round(o.angle ?? 0),
+        });
       }
+      c.backgroundImage = bg;
+      c.renderAll();
     }
-    await loadView(originalView, variant);
 
-    const designData = JSON.stringify(viewJson.current);
-    const thumbnail = renders[originalView] ?? renders[Object.keys(renders)[0]];
+    if (anyDesign) {
+      await uploadDesignJson(designId, viewJson.current);
+    }
 
-    // one cart line per chosen size
+    // one cart line per chosen size; heavy media lives in storage, cart keeps only ids
     for (const [sid, q] of entries) {
       addToCart({
         productId: p.id,
@@ -264,11 +306,12 @@ export default function Designer() {
         basePrice: Number(p.base_price),
         designElementPrice: Number(p.design_element_price),
         designElementCount: elementCount,
-        designRenders: renders,
-        designData,
+        designId: anyDesign ? designId : undefined,
+        designManifest: anyDesign ? manifest : undefined,
         thumbnail,
       });
     }
+    await loadView(originalView, variant);
     navigate("/warenkorb");
   }
 

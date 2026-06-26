@@ -14,9 +14,10 @@ export interface CartItem {
   basePrice: number;
   designElementPrice: number;
   designElementCount: number;
-  // Per-view rendered design previews (data URLs) and raw fabric JSON
-  designRenders?: Record<string, string>;
-  designData?: string;
+  // Design media lives in Supabase Storage under order-designs/<designId>/.
+  // The cart keeps only the id + a lightweight manifest + a tiny preview.
+  designId?: string;
+  designManifest?: any[];
   thumbnail?: string;
 }
 
