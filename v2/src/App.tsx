@@ -16,6 +16,7 @@ import Colors from "@/pages/admin/Colors";
 import Sizes from "@/pages/admin/Sizes";
 import Products from "@/pages/admin/Products";
 import ProductEditor from "@/pages/admin/ProductEditor";
+import Discounts from "@/pages/admin/Discounts";
 
 function CartLink() {
   const count = useCart((s) => s.items.reduce((n, i) => n + i.qty, 0));
@@ -68,7 +69,7 @@ export default function App() {
             <Route path="products/:id" element={<ProductEditor />} />
             <Route path="colors" element={<Colors />} />
             <Route path="sizes" element={<Sizes />} />
-            <Route path="discounts" element={<div>Rabatte (kommt)</div>} />
+            <Route path="discounts" element={<Discounts />} />
           </Route>
         </Routes>
       </main>
