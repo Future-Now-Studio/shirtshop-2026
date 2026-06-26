@@ -17,13 +17,22 @@ const sizeRows = [
   { name: 'XL', sort_order: 4 }, { name: 'XXL', sort_order: 5 },
 ];
 
-const c = await admin.from('colors').upsert(colorRows, { onConflict: 'name' }).select();
-die('colors', c.error);
-const s = await admin.from('sizes').upsert(sizeRows, { onConflict: 'name' }).select();
-die('sizes', s.error);
+// colors/sizes have no DB unique on name, so upsert manually: insert only missing names.
+async function ensureByName(table, rows) {
+  const existing = await admin.from(table).select('id,name');
+  die(table, existing.error);
+  const have = new Set(existing.data.map(r => r.name));
+  const missing = rows.filter(r => !have.has(r.name));
+  if (missing.length) {
+    const ins = await admin.from(table).insert(missing).select('id,name');
+    die(table, ins.error);
+    existing.data.push(...ins.data);
+  }
+  return Object.fromEntries(existing.data.map(r => [r.name, r.id]));
+}
 
-const colorByName = Object.fromEntries(c.data.map(r => [r.name, r.id]));
-const sizeByName  = Object.fromEntries(s.data.map(r => [r.name, r.id]));
+const colorByName = await ensureByName('colors', colorRows);
+const sizeByName  = await ensureByName('sizes', sizeRows);
 
 const productRows = [
   { slug: 'basic-tee', name: 'Basic Tee', description: 'Klassisches T-Shirt', category: 'shirts', base_price: 19.90, design_element_price: 10.00, status: 'published' },
