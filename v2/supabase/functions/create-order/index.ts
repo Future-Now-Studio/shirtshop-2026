@@ -2,11 +2,14 @@
 // with Stripe, recomputes the authoritative total from DB prices, stores the
 // order + items, and uploads each design render PNG to the private
 // design-renders bucket. Never trusts client-sent prices.
-import Stripe from "npm:stripe@^17";
+import Stripe from "https://esm.sh/stripe@17.7.0?target=denonext";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 
-const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") ?? "", { apiVersion: "2024-12-18.acacia" });
+const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") ?? "", {
+  apiVersion: "2024-12-18.acacia",
+  httpClient: Stripe.createFetchHttpClient(),
+});
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!

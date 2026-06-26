@@ -2,11 +2,14 @@
 // server-side from the database in `create-order`; here we create an intent
 // for the client-reported total so the payment sheet can render. The order is
 // only persisted after payment via create-order, which re-validates pricing.
-import Stripe from "npm:stripe@^17";
+import Stripe from "https://esm.sh/stripe@17.7.0?target=denonext";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
 
-const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") ?? "", { apiVersion: "2024-12-18.acacia" });
+const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") ?? "", {
+  apiVersion: "2024-12-18.acacia",
+  httpClient: Stripe.createFetchHttpClient(),
+});
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
