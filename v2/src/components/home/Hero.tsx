@@ -4,9 +4,9 @@ import heroImage from "@/assets/hero-image.jpg";
 import heroVideo from "@/assets/browsing.mp4";
 
 const TRUST = [
-  { icon: CheckCircle, text: "über 1 millionen bestellungen" },
-  { icon: Factory, text: "lokale produktion" },
-  { icon: Truck, text: "schnelle lieferung" },
+  { icon: CheckCircle, stat: "1 mio.+", label: "zufriedene bestellungen" },
+  { icon: Factory, stat: "100 % lokal", label: "produziert in hamburg" },
+  { icon: Truck, stat: "24–48 h", label: "blitzschnelle lieferung" },
 ];
 
 export default function Hero() {
@@ -50,12 +50,17 @@ export default function Hero() {
           </div>
         </div>
 
-        <div className="absolute inset-x-0 bottom-0 z-20 border-t border-white/15 bg-background/85 backdrop-blur-md">
-          <div className="container grid grid-cols-1 gap-6 py-6 md:grid-cols-3">
-            {TRUST.map(({ icon: Icon, text }) => (
-              <div key={text} className="flex items-center justify-center gap-3">
-                <Icon className="h-5 w-5 shrink-0 text-primary" />
-                <span className="text-sm font-medium lowercase">{text}</span>
+        <div className="absolute inset-x-0 bottom-0 z-20 border-t-2 border-primary/20 bg-background/90 backdrop-blur-xl">
+          <div className="container grid grid-cols-1 divide-y divide-border/60 py-4 md:grid-cols-3 md:divide-x md:divide-y-0">
+            {TRUST.map(({ icon: Icon, stat, label }) => (
+              <div key={label} className="group flex items-center justify-center gap-4 py-3 md:py-2">
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl gradient-bg text-primary-foreground shadow-soft transition-transform group-hover:scale-110">
+                  <Icon className="h-6 w-6" />
+                </span>
+                <div className="leading-tight">
+                  <div className="text-xl font-black lowercase tracking-tight">{stat}</div>
+                  <div className="text-sm lowercase text-muted-foreground">{label}</div>
+                </div>
               </div>
             ))}
           </div>
