@@ -3,6 +3,8 @@ import Home from "@/pages/Home";
 import ProductDetail from "@/pages/ProductDetail";
 import Designer from "@/pages/Designer";
 import Cart from "@/pages/Cart";
+import Checkout from "@/pages/Checkout";
+import OrderSuccess from "@/pages/OrderSuccess";
 import { useCart } from "@/stores/cart";
 import AdminLayout from "@/pages/admin/AdminLayout";
 import Overview from "@/pages/admin/Overview";
@@ -38,6 +40,8 @@ export default function App() {
           <Route path="/produkt/:slug" element={<ProductDetail />} />
           <Route path="/gestalten/:slug" element={<Designer />} />
           <Route path="/warenkorb" element={<Cart />} />
+          <Route path="/kasse" element={<Checkout />} />
+          <Route path="/bestellung/:orderId" element={<OrderSuccess />} />
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<Overview />} />
             <Route path="products" element={<Products />} />
