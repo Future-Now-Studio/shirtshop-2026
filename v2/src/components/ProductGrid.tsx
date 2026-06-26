@@ -67,15 +67,17 @@ export default function ProductGrid() {
               to={`/produkt/${p.slug}`}
               className="hover-lift group overflow-hidden rounded-2xl border border-border/60 bg-card shadow-card"
             >
-              <div className="flex h-44 overflow-hidden">
+              <div className="flex aspect-square items-center justify-center overflow-hidden bg-white">
                 {url ? (
-                  <img src={url} alt={p.name} className="h-full w-full object-cover" />
+                  <img src={url} alt={p.name} className="h-full w-full object-contain p-3" />
                 ) : (p.variants ?? []).length > 0 ? (
-                  (p.variants ?? []).slice(0, 6).map((v: any) => (
-                    <div key={v.id} className="h-full flex-1" style={{ backgroundColor: v.colors?.hex }} title={v.colors?.name} />
-                  ))
+                  <div className="flex h-full w-full">
+                    {(p.variants ?? []).slice(0, 6).map((v: any) => (
+                      <div key={v.id} className="h-full flex-1" style={{ backgroundColor: v.colors?.hex }} title={v.colors?.name} />
+                    ))}
+                  </div>
                 ) : (
-                  <div className="h-full flex-1 bg-gradient-to-br from-muted to-accent" />
+                  <div className="h-full w-full bg-gradient-to-br from-muted to-accent" />
                 )}
               </div>
               <div className="p-5">

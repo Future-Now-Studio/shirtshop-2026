@@ -37,9 +37,9 @@ export function ProductHighlights() {
               to={`/produkt/${p.slug}`}
               className="hover-lift w-64 shrink-0 snap-start overflow-hidden rounded-2xl border border-border/60 bg-card shadow-card"
             >
-              <div className="h-48 overflow-hidden bg-muted">
+              <div className="flex aspect-square items-center justify-center overflow-hidden bg-white">
                 {url ? (
-                  <img src={url} alt={p.name} className="h-full w-full object-cover" />
+                  <img src={url} alt={p.name} className="h-full w-full object-contain p-3" />
                 ) : (
                   <div className="flex h-full">
                     {(p.variants ?? []).slice(0, 4).map((v: any) => (

@@ -59,9 +59,9 @@ export default function ProductDetail() {
     <div className="grid gap-10 md:grid-cols-2">
       {/* Gallery */}
       <div>
-        <div className="aspect-square overflow-hidden rounded-xl border bg-muted/30">
+        <div className="flex aspect-square items-center justify-center overflow-hidden rounded-xl border bg-white">
           {image ? (
-            <img src={publicUrl(image.storage_path)} alt={p.name} className="h-full w-full object-cover" />
+            <img src={publicUrl(image.storage_path)} alt={p.name} className="h-full w-full object-contain p-4" />
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Kein Bild</div>
           )}
