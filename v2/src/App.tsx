@@ -5,6 +5,8 @@ import Designer from "@/pages/Designer";
 import Cart from "@/pages/Cart";
 import Checkout from "@/pages/Checkout";
 import OrderSuccess from "@/pages/OrderSuccess";
+import Footer from "@/components/layout/Footer";
+import { Unternehmen, Leistungen, Filialen, Grossbestellung, Impressum, AGB, Datenschutz } from "@/pages/marketing";
 import { useCart } from "@/stores/cart";
 import AdminLayout from "@/pages/admin/AdminLayout";
 import Overview from "@/pages/admin/Overview";
@@ -42,6 +44,13 @@ export default function App() {
           <Route path="/warenkorb" element={<Cart />} />
           <Route path="/kasse" element={<Checkout />} />
           <Route path="/bestellung/:orderId" element={<OrderSuccess />} />
+          <Route path="/unternehmen" element={<Unternehmen />} />
+          <Route path="/leistungen" element={<Leistungen />} />
+          <Route path="/filialen" element={<Filialen />} />
+          <Route path="/grossbestellung" element={<Grossbestellung />} />
+          <Route path="/impressum" element={<Impressum />} />
+          <Route path="/agb" element={<AGB />} />
+          <Route path="/datenschutz" element={<Datenschutz />} />
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<Overview />} />
             <Route path="products" element={<Products />} />
@@ -52,6 +61,7 @@ export default function App() {
           </Route>
         </Routes>
       </main>
+      <Footer />
     </div>
   );
 }
