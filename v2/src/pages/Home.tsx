@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 
 async function fetchProducts() {
@@ -25,7 +26,7 @@ export default function Home() {
       </p>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {data?.map((p) => (
-          <div key={p.id} className="rounded-lg border p-4">
+          <Link key={p.id} to={`/produkt/${p.slug}`} className="rounded-lg border p-4 transition-colors hover:bg-accent">
             <div className="flex items-baseline justify-between">
               <h2 className="font-medium">{p.name}</h2>
               <span className="text-sm tabular-nums">{Number(p.base_price).toFixed(2)} €</span>
@@ -46,7 +47,7 @@ export default function Home() {
                 />
               ))}
             </div>
-          </div>
+          </Link>
         ))}
       </div>
     </div>

@@ -1,5 +1,6 @@
 import { Routes, Route, Link } from "react-router-dom";
 import Home from "@/pages/Home";
+import ProductDetail from "@/pages/ProductDetail";
 import AdminLayout from "@/pages/admin/AdminLayout";
 import Overview from "@/pages/admin/Overview";
 import Colors from "@/pages/admin/Colors";
@@ -21,6 +22,7 @@ export default function App() {
       <main className="container py-8">
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/produkt/:slug" element={<ProductDetail />} />
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<Overview />} />
             <Route path="products" element={<Products />} />
