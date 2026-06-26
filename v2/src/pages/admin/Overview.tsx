@@ -18,7 +18,7 @@ const LABELS: Record<string, { label: string; to: string }> = {
   products: { label: "Produkte", to: "/admin/products" },
   colors: { label: "Farben", to: "/admin/colors" },
   sizes: { label: "Größen", to: "/admin/sizes" },
-  orders: { label: "Bestellungen", to: "/admin" },
+  orders: { label: "Bestellungen", to: "/admin/orders" },
 };
 
 export default function Overview() {
