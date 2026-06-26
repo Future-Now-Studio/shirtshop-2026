@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { Check } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { publicUrl } from "@/lib/storage";
 import { Button } from "@/components/ui/button";
+import { useCart } from "@/stores/cart";
 
 const VIEWS = ["front", "back", "left", "right"] as const;
 const VIEW_LABEL: Record<string, string> = { front: "Vorne", back: "Hinten", left: "Links", right: "Rechts" };
@@ -43,6 +45,9 @@ export default function ProductDetail() {
   const [variantIdx, setVariantIdx] = useState(0);
   const [view, setView] = useState<string>("front");
   const [sizeId, setSizeId] = useState<string | null>(null);
+  const [added, setAdded] = useState(false);
+  const addToCart = useCart((s) => s.add);
+  const navigate = useNavigate();
 
   if (isLoading) return <p className="text-muted-foreground">Lade…</p>;
   if (error || !p) return <p className="text-destructive">Produkt nicht gefunden.</p>;
@@ -54,6 +59,27 @@ export default function ProductDetail() {
     variant?.variant_images?.[0];
   const availForSize = (sid: string) =>
     variant?.variant_size_availability?.find((a: any) => a.size_id === sid && a.available && a.stock > 0);
+
+  function handleAdd() {
+    if (!sizeId) return;
+    const front = variant?.variant_images?.find((i: any) => i.view === "front") || variant?.variant_images?.[0];
+    addToCart({
+      productId: p.id,
+      productName: p.name,
+      slug: p.slug,
+      variantId: variant.id,
+      colorName: variant.colors?.name,
+      sizeId,
+      sizeName: sizes.find((s: any) => s.id === sizeId)?.name ?? null,
+      qty: 1,
+      basePrice: Number(p.base_price),
+      designElementPrice: Number(p.design_element_price),
+      designElementCount: 0,
+      thumbnail: front ? publicUrl(front.storage_path) : undefined,
+    });
+    setAdded(true);
+    setTimeout(() => navigate("/warenkorb"), 600);
+  }
 
   return (
     <div className="grid gap-10 md:grid-cols-2">
@@ -141,8 +167,8 @@ export default function ProductDetail() {
         </div>
 
         <div className="mt-8 flex gap-3">
-          <Button disabled={!sizeId} className="px-8">
-            In den Warenkorb
+          <Button disabled={!sizeId || added} className="px-8" onClick={handleAdd}>
+            {added ? <><Check className="mr-2 h-4 w-4" /> Hinzugefügt</> : "In den Warenkorb"}
           </Button>
           <Link to={`/gestalten/${p.slug}`}>
             <Button variant="outline">Selbst gestalten</Button>

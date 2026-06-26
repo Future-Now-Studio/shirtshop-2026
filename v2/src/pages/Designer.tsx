@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import * as fabric from "fabric";
-import { Type, ImagePlus, Trash2, ShoppingCart } from "lucide-react";
+import { Type, ImagePlus, Trash2, ShoppingCart, Loader2, ArrowRight, ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { publicUrl } from "@/lib/storage";
 import { Button } from "@/components/ui/button";
@@ -44,6 +44,9 @@ export default function Designer() {
   const [sizeId, setSizeId] = useState<string | null>(null);
   const [qty, setQty] = useState(1);
   const [elementCount, setElementCount] = useState(0);
+  const [imgLoading, setImgLoading] = useState(false);
+  const [step, setStep] = useState(1);
+  const imgCache = useRef<Map<string, fabric.FabricImage>>(new Map());
 
   const variants = (p?.variants ?? []).slice().sort((a: any, b: any) => a.sort_order - b.sort_order);
   const variant: any = variants[variantIdx];
@@ -105,9 +108,16 @@ export default function Designer() {
         targetVariant?.variant_images?.find((i: any) => i.view === "front") ||
         targetVariant?.variant_images?.[0];
       if (img) {
+        const url = publicUrl(img.storage_path);
         try {
-          const fImg = await fabric.FabricImage.fromURL(publicUrl(img.storage_path), { crossOrigin: "anonymous" });
+          let base = imgCache.current.get(url);
+          if (!base) {
+            setImgLoading(true);
+            base = await fabric.FabricImage.fromURL(url, { crossOrigin: "anonymous" });
+            imgCache.current.set(url, base);
+          }
           if (token !== loadTokenRef.current) return; // a newer load started — discard
+          const fImg = await base.clone();
           const scale = Math.min(SIZE / (fImg.width || SIZE), SIZE / (fImg.height || SIZE));
           fImg.scale(scale);
           fImg.set({ left: (SIZE - (fImg.width || 0) * scale) / 2, top: (SIZE - (fImg.height || 0) * scale) / 2 });
@@ -117,6 +127,7 @@ export default function Designer() {
         }
       }
       if (token !== loadTokenRef.current) return;
+      setImgLoading(false);
 
       // zone guides
       const zones = (p?.print_zones ?? []).filter((z: any) => z.view === targetView);
@@ -303,8 +314,13 @@ export default function Designer() {
         {/* Canvas + views */}
         <div className="lg:col-span-6">
           <div className="flex items-center justify-center rounded-2xl bg-muted/30 p-4 sm:p-6">
-            <div className="overflow-hidden rounded-xl bg-white shadow-sm">
+            <div className="relative overflow-hidden rounded-xl bg-white shadow-sm">
               <canvas ref={canvasElRef} width={SIZE} height={SIZE} />
+              {imgLoading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-white/60 backdrop-blur-sm">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+              )}
             </div>
           </div>
 
@@ -341,7 +357,7 @@ export default function Designer() {
           </div>
         </div>
 
-        {/* Config */}
+        {/* Config — step based */}
         <div className="lg:col-span-4">
           <div className="space-y-5 rounded-2xl border bg-card p-5 shadow-sm">
             <div>
@@ -352,59 +368,78 @@ export default function Designer() {
               </p>
             </div>
 
-            <div>
-              <p className="mb-2 text-sm font-medium">Farbe: {variant?.colors?.name}</p>
-              <div className="flex flex-wrap gap-2">
-                {variants.map((v: any, i: number) => (
-                  <button
-                    key={v.id}
-                    onClick={() => { saveView(view); setVariantIdx(i); setSizeId(null); }}
-                    title={v.colors?.name}
-                    className={"h-8 w-8 rounded-full border-2 " + (i === variantIdx ? "border-primary" : "border-transparent")}
-                    style={{ backgroundColor: v.colors?.hex }}
+            {/* Step indicator */}
+            <div className="flex items-center gap-2 text-xs font-medium">
+              <span className={"flex h-6 w-6 items-center justify-center rounded-full " + (step >= 1 ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>1</span>
+              <span className={step === 1 ? "text-foreground" : "text-muted-foreground"}>design & farbe</span>
+              <span className="mx-1 h-px flex-1 bg-border" />
+              <span className={"flex h-6 w-6 items-center justify-center rounded-full " + (step >= 2 ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>2</span>
+              <span className={step === 2 ? "text-foreground" : "text-muted-foreground"}>größe & menge</span>
+            </div>
+
+            {step === 1 ? (
+              <>
+                <div>
+                  <p className="mb-2 text-sm font-medium">Farbe: {variant?.colors?.name}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {variants.map((v: any, i: number) => (
+                      <button
+                        key={v.id}
+                        onClick={() => { saveView(view); setVariantIdx(i); setSizeId(null); }}
+                        title={v.colors?.name}
+                        className={"h-8 w-8 rounded-full border-2 " + (i === variantIdx ? "border-primary ring-2 ring-primary/30" : "border-border")}
+                        style={{ backgroundColor: v.colors?.hex }}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <Button className="w-full" size="lg" onClick={() => setStep(2)}>
+                  weiter zu größe & menge <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => setStep(1)} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-primary">
+                  <ArrowLeft className="h-4 w-4" /> zurück zu design & farbe
+                </button>
+                <div>
+                  <p className="mb-2 text-sm font-medium">Größe</p>
+                  <div className="flex flex-wrap gap-2">
+                    {sizes.map((s: any) => {
+                      const ok = availForSize(s.id);
+                      return (
+                        <button
+                          key={s.id}
+                          disabled={!ok}
+                          onClick={() => setSizeId(s.id)}
+                          className={
+                            "min-w-[3rem] rounded-md border px-3 py-2 text-sm " +
+                            (sizeId === s.id ? "border-primary bg-primary text-primary-foreground" : "") +
+                            (!ok ? " cursor-not-allowed text-muted-foreground line-through opacity-40" : "")
+                          }
+                        >
+                          {s.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-2 text-sm font-medium">Menge</p>
+                  <input
+                    type="number"
+                    min={1}
+                    value={qty}
+                    onChange={(e) => setQty(Math.max(1, Number(e.target.value)))}
+                    className="h-10 w-24 rounded-md border border-input bg-background px-3 text-sm"
                   />
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <p className="mb-2 text-sm font-medium">Größe</p>
-              <div className="flex flex-wrap gap-2">
-                {sizes.map((s: any) => {
-                  const ok = availForSize(s.id);
-                  return (
-                    <button
-                      key={s.id}
-                      disabled={!ok}
-                      onClick={() => setSizeId(s.id)}
-                      className={
-                        "min-w-[3rem] rounded-md border px-3 py-2 text-sm " +
-                        (sizeId === s.id ? "border-primary bg-primary text-primary-foreground" : "") +
-                        (!ok ? " cursor-not-allowed text-muted-foreground line-through opacity-40" : "")
-                      }
-                    >
-                      {s.name}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div>
-              <p className="mb-2 text-sm font-medium">Menge</p>
-              <input
-                type="number"
-                min={1}
-                value={qty}
-                onChange={(e) => setQty(Math.max(1, Number(e.target.value)))}
-                className="h-10 w-24 rounded-md border border-input bg-background px-3 text-sm"
-              />
-            </div>
-
-            <Button className="w-full" size="lg" disabled={!sizeId} onClick={handleAddToCart}>
-              <ShoppingCart className="mr-2 h-4 w-4" /> In den Warenkorb
-            </Button>
-            {!sizeId && <p className="text-center text-xs text-muted-foreground">Bitte Größe wählen.</p>}
+                </div>
+                <Button className="w-full" size="lg" disabled={!sizeId} onClick={handleAddToCart}>
+                  <ShoppingCart className="mr-2 h-4 w-4" /> In den Warenkorb
+                </Button>
+                {!sizeId && <p className="text-center text-xs text-muted-foreground">Bitte Größe wählen.</p>}
+              </>
+            )}
           </div>
         </div>
       </div>
