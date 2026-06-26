@@ -48,7 +48,10 @@ export default function ProductDetail() {
   if (error || !p) return <p className="text-destructive">Produkt nicht gefunden.</p>;
 
   const variant: any = variants[variantIdx];
-  const image = variant?.variant_images?.find((i: any) => i.view === view);
+  const image =
+    variant?.variant_images?.find((i: any) => i.view === view) ||
+    variant?.variant_images?.find((i: any) => i.view === "front") ||
+    variant?.variant_images?.[0];
   const availForSize = (sid: string) =>
     variant?.variant_size_availability?.find((a: any) => a.size_id === sid && a.available && a.stock > 0);
 

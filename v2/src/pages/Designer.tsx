@@ -95,8 +95,11 @@ export default function Designer() {
       if (!c) return;
       c.remove(...c.getObjects());
 
-      // background image for this variant+view
-      const img = variant?.variant_images?.find((i: any) => i.view === targetView);
+      // background image for this variant+view (fall back to front, then any view)
+      const img =
+        variant?.variant_images?.find((i: any) => i.view === targetView) ||
+        variant?.variant_images?.find((i: any) => i.view === "front") ||
+        variant?.variant_images?.[0];
       if (img) {
         try {
           const fImg = await fabric.FabricImage.fromURL(publicUrl(img.storage_path), { crossOrigin: "anonymous" });
@@ -304,7 +307,10 @@ export default function Designer() {
             <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">Ansichten</p>
             <div className="flex flex-wrap gap-2">
               {VIEWS.map((v) => {
-                const img = variant?.variant_images?.find((i: any) => i.view === v);
+                const img =
+                  variant?.variant_images?.find((i: any) => i.view === v) ||
+                  variant?.variant_images?.find((i: any) => i.view === "front") ||
+                  variant?.variant_images?.[0];
                 const active = view === v;
                 return (
                   <button
