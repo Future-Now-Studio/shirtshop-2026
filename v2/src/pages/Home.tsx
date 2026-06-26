@@ -4,6 +4,7 @@ import { ArrowRight } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import heroImage from "@/assets/hero-image.jpg";
+import { AboutTeaser, FaqSection, ContactBanner } from "@/components/home/sections";
 
 async function fetchProducts() {
   const { data, error } = await supabase
@@ -98,6 +99,10 @@ export default function Home() {
           ))}
         </div>
       </section>
+
+      <AboutTeaser />
+      <FaqSection />
+      <ContactBanner />
     </div>
   );
 }
