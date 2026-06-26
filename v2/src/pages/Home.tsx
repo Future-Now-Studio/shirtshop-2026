@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -18,6 +19,18 @@ async function fetchProducts() {
 
 export default function Home() {
   const { data, isLoading, error } = useQuery({ queryKey: ["products"], queryFn: fetchProducts });
+  const [activeCat, setActiveCat] = useState<string>("alle");
+
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    (data ?? []).forEach((p) => p.category && set.add(p.category));
+    return ["alle", ...Array.from(set).sort()];
+  }, [data]);
+
+  const visible = useMemo(
+    () => (data ?? []).filter((p) => activeCat === "alle" || p.category === activeCat),
+    [data, activeCat]
+  );
 
   return (
     <div>
@@ -56,14 +69,33 @@ export default function Home() {
             <h2 className="text-3xl font-extrabold">Unsere Produkte</h2>
             <p className="mt-1 text-muted-foreground">Wähle ein Produkt und gestalte es nach deinen Wünschen.</p>
           </div>
-          <span className="text-sm text-muted-foreground">{data?.length ?? 0} Artikel</span>
+          <span className="text-sm text-muted-foreground">{visible.length} Artikel</span>
         </div>
+
+        {categories.length > 2 && (
+          <div className="mb-8 flex flex-wrap gap-2">
+            {categories.map((c) => (
+              <button
+                key={c}
+                onClick={() => setActiveCat(c)}
+                className={
+                  "rounded-full px-4 py-1.5 text-sm font-medium capitalize transition-colors " +
+                  (activeCat === c
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground")
+                }
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        )}
 
         {isLoading && <p className="text-muted-foreground">Lade Produkte…</p>}
         {error && <p className="text-destructive">Fehler: {(error as Error).message}</p>}
 
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {data?.map((p) => (
+          {visible.map((p) => (
             <Link
               key={p.id}
               to={`/produkt/${p.slug}`}
