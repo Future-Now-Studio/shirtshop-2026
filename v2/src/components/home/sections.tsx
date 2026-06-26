@@ -25,7 +25,7 @@ export function ProductHighlights() {
     <section className="mt-4">
       <div className="mb-6 flex items-center gap-2">
         <Sparkles className="h-6 w-6 text-secondary" />
-        <h2 className="text-3xl font-extrabold">Highlights</h2>
+        <h2 className="text-3xl font-extrabold lowercase">highlights</h2>
       </div>
       <div className="-mx-4 flex snap-x gap-5 overflow-x-auto px-4 pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {data.map((p: any) => {
@@ -108,8 +108,8 @@ export function LocationsTeaser() {
   return (
     <section className="mt-20">
       <div className="mb-8 text-center">
-        <h2 className="text-3xl font-extrabold">Besuch uns in Hamburg</h2>
-        <p className="mt-2 text-muted-foreground">Persönliche Beratung in unseren beiden Filialen.</p>
+        <h2 className="text-3xl font-extrabold lowercase">besuch uns in hamburg</h2>
+        <p className="mt-2 text-muted-foreground">persönliche beratung in unseren beiden filialen.</p>
       </div>
       <div className="grid gap-6 md:grid-cols-2">
         {STORES.map((s) => (
@@ -162,8 +162,8 @@ export function AboutTeaser() {
     <section className="mt-20 grid items-center gap-10 overflow-hidden rounded-3xl border border-border/60 bg-card shadow-card md:grid-cols-2">
       <img src={aboutImage} alt="Private Shirt Hamburg" className="h-full max-h-80 w-full object-cover" />
       <div className="p-8 sm:p-12">
-        <p className="text-sm font-semibold uppercase tracking-wide text-primary">Aus Hamburg</p>
-        <h2 className="mt-2 text-3xl font-extrabold">Professionelle Textilveredelung</h2>
+        <p className="text-sm font-semibold uppercase tracking-wide text-primary">aus hamburg</p>
+        <h2 className="mt-2 text-3xl font-extrabold lowercase">professionelle textilveredelung</h2>
         <p className="mt-4 text-muted-foreground">
           Seit über zehn Jahren stehen wir für Qualität und Service — von der Kleinstauflage bis zur
           Großserie. Markentextilien, erstklassige Druckverfahren und freundliche Fachberatung.
@@ -181,8 +181,10 @@ export function AboutTeaser() {
 export function FaqSection() {
   return (
     <section className="mt-20">
-      <h2 className="text-center text-3xl font-extrabold">Häufige Fragen</h2>
-      <p className="mt-2 text-center text-muted-foreground">Alles Wichtige rund um Bestellung, Druck und Versand.</p>
+      <h2 className="text-center text-4xl font-black lowercase">
+        häufig gestellte <span className="italic text-secondary">fragen.</span>
+      </h2>
+      <p className="mt-2 text-center text-muted-foreground">hier findest du antworten auf die häufigsten fragen zu produkten, bestellungen und services.</p>
       <div className="mx-auto mt-8 max-w-3xl space-y-3">
         {FAQ.map((f) => (
           <details key={f.q} className="group rounded-2xl border border-border/60 bg-card p-5 shadow-sm [&_svg]:open:rotate-45">
@@ -201,7 +203,7 @@ export function FaqSection() {
 export function ContactBanner() {
   return (
     <section className="mt-20 overflow-hidden rounded-3xl gradient-bg px-8 py-14 text-center text-primary-foreground shadow-glow sm:px-14">
-      <h2 className="text-3xl font-extrabold sm:text-4xl">Bereit für dein eigenes Design?</h2>
+      <h2 className="text-3xl font-extrabold lowercase sm:text-4xl">bereit für dein eigenes design?</h2>
       <p className="mx-auto mt-3 max-w-xl text-primary-foreground/90">
         Gestalte jetzt dein Textil im Browser — oder frag ein individuelles Angebot für deine
         Großbestellung an.

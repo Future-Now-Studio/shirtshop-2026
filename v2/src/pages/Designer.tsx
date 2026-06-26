@@ -73,7 +73,7 @@ export default function Designer() {
     const c = new fabric.Canvas(canvasElRef.current, {
       width: SIZE,
       height: SIZE,
-      backgroundColor: "#f4f4f5",
+      backgroundColor: "#ffffff",
       preserveObjectStacking: true,
     });
     canvasRef.current = c;

@@ -43,12 +43,15 @@ export default function App() {
           <Link to="/" className="flex items-center">
             <img src={logo} alt="Private Shirt" className="h-8 w-auto" />
           </Link>
-          <nav className="flex items-center gap-6 text-sm font-medium">
-            <Link to="/produkte" className="hidden text-muted-foreground transition-colors hover:text-primary sm:inline">Shop</Link>
-            <Link to="/selbst-gestalten" className="hidden text-muted-foreground transition-colors hover:text-primary sm:inline">Selbst gestalten</Link>
-            <Link to="/grossbestellung" className="hidden text-muted-foreground transition-colors hover:text-primary md:inline">Großbestellung</Link>
+          <nav className="flex items-center gap-5 text-sm font-medium lowercase">
+            <Link to="/selbst-gestalten" className="hidden text-muted-foreground transition-colors hover:text-primary md:inline">selbst gestalten</Link>
+            <Link to="/filialen" className="hidden text-muted-foreground transition-colors hover:text-primary lg:inline">filialen</Link>
+            <Link to="/unternehmen" className="hidden text-muted-foreground transition-colors hover:text-primary lg:inline">über uns</Link>
+            <Link to="/leistungen" className="hidden text-muted-foreground transition-colors hover:text-primary lg:inline">leistungen</Link>
+            <Link to="/grossbestellung" className="hidden text-muted-foreground transition-colors hover:text-primary md:inline">großbestellung</Link>
+            <Link to="/kontakt" className="hidden text-muted-foreground transition-colors hover:text-primary md:inline">kontakt</Link>
             <CartLink />
-            <Link to="/admin" className="text-muted-foreground transition-colors hover:text-primary">Admin</Link>
+            <Link to="/admin" className="text-muted-foreground transition-colors hover:text-primary">admin</Link>
           </nav>
         </div>
       </header>
