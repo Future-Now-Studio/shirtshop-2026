@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import logo from "@/assets/group-25.svg";
 
 const COLS = [
   {
@@ -28,31 +29,29 @@ const COLS = [
 
 export default function Footer() {
   return (
-    <footer className="mt-16 border-t bg-muted/20">
-      <div className="container grid gap-8 py-12 sm:grid-cols-2 md:grid-cols-4">
+    <footer className="mt-20 border-t border-border/60 bg-muted/30">
+      <div className="container grid gap-10 py-14 sm:grid-cols-2 md:grid-cols-4">
         <div>
-          <p className="font-semibold">ShirtShop v2</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Individuell bedruckte Textilien. Selbst gestalten, in deiner Größe und Farbe.
+          <img src={logo} alt="Private Shirt" className="h-9 w-auto" />
+          <p className="mt-4 max-w-xs text-sm text-muted-foreground">
+            Individuell bedruckte Textilien aus Hamburg. Selbst gestalten — in deiner Größe und Farbe.
           </p>
         </div>
         {COLS.map((c) => (
           <div key={c.title}>
-            <p className="mb-3 text-sm font-medium">{c.title}</p>
-            <ul className="space-y-2 text-sm text-muted-foreground">
+            <p className="mb-4 text-sm font-semibold">{c.title}</p>
+            <ul className="space-y-2.5 text-sm text-muted-foreground">
               {c.links.map((l) => (
                 <li key={l.to}>
-                  <Link to={l.to} className="hover:text-foreground">{l.label}</Link>
+                  <Link to={l.to} className="transition-colors hover:text-primary">{l.label}</Link>
                 </li>
               ))}
             </ul>
           </div>
         ))}
       </div>
-      <div className="border-t py-4">
-        <p className="container text-xs text-muted-foreground">
-          © {/* year set at build via static text */}2026 ShirtShop. Alle Rechte vorbehalten.
-        </p>
+      <div className="border-t border-border/60 py-5">
+        <p className="container text-xs text-muted-foreground">© 2026 Private Shirt. Alle Rechte vorbehalten.</p>
       </div>
     </footer>
   );

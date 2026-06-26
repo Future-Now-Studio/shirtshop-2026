@@ -8,6 +8,8 @@ import OrderSuccess from "@/pages/OrderSuccess";
 import Footer from "@/components/layout/Footer";
 import { Unternehmen, Leistungen, Filialen, Grossbestellung, Impressum, AGB, Datenschutz } from "@/pages/marketing";
 import { useCart } from "@/stores/cart";
+import { ShoppingBag } from "lucide-react";
+import logo from "@/assets/group-25.svg";
 import AdminLayout from "@/pages/admin/AdminLayout";
 import Overview from "@/pages/admin/Overview";
 import Colors from "@/pages/admin/Colors";
@@ -18,8 +20,13 @@ import ProductEditor from "@/pages/admin/ProductEditor";
 function CartLink() {
   const count = useCart((s) => s.items.reduce((n, i) => n + i.qty, 0));
   return (
-    <Link to="/warenkorb" className="hover:text-foreground">
-      Warenkorb{count > 0 ? ` (${count})` : ""}
+    <Link to="/warenkorb" className="relative flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-primary">
+      <ShoppingBag className="h-5 w-5" />
+      {count > 0 && (
+        <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[0.65rem] font-bold text-primary-foreground">
+          {count}
+        </span>
+      )}
     </Link>
   );
 }
@@ -27,16 +34,20 @@ function CartLink() {
 export default function App() {
   return (
     <div className="min-h-screen">
-      <header className="border-b">
-        <div className="container flex h-14 items-center justify-between">
-          <Link to="/" className="font-semibold">ShirtShop v2</Link>
-          <nav className="flex items-center gap-4 text-sm text-muted-foreground">
+      <header className="glass-nav sticky top-0 z-40">
+        <div className="container flex h-16 items-center justify-between">
+          <Link to="/" className="flex items-center">
+            <img src={logo} alt="Private Shirt" className="h-8 w-auto" />
+          </Link>
+          <nav className="flex items-center gap-6 text-sm font-medium">
+            <Link to="/" className="hidden text-muted-foreground transition-colors hover:text-primary sm:inline">Shop</Link>
+            <Link to="/grossbestellung" className="hidden text-muted-foreground transition-colors hover:text-primary sm:inline">Großbestellung</Link>
             <CartLink />
-            <Link to="/admin" className="hover:text-foreground">Admin</Link>
+            <Link to="/admin" className="text-muted-foreground transition-colors hover:text-primary">Admin</Link>
           </nav>
         </div>
       </header>
-      <main className="container py-8">
+      <main className="container py-10">
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/produkt/:slug" element={<ProductDetail />} />
