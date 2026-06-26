@@ -1,7 +1,134 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, Plus } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { ArrowRight, Plus, MapPin, Phone, Mail, Sparkles, Layers, Palette } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { supabase } from "@/lib/supabase";
 import aboutImage from "@/assets/lifestyle-woman.jpg";
+
+/* ---------- Highlights slider ---------- */
+async function fetchHighlights() {
+  const { data, error } = await supabase
+    .from("products")
+    .select("id, slug, name, base_price, variants(id, colors(hex), variant_images(view, storage_path))")
+    .eq("status", "published")
+    .order("created_at", { ascending: false })
+    .limit(8);
+  if (error) throw error;
+  return data;
+}
+
+export function ProductHighlights() {
+  const { data } = useQuery({ queryKey: ["highlights"], queryFn: fetchHighlights });
+  if (!data || data.length === 0) return null;
+
+  return (
+    <section className="mt-4">
+      <div className="mb-6 flex items-center gap-2">
+        <Sparkles className="h-6 w-6 text-secondary" />
+        <h2 className="text-3xl font-extrabold">Highlights</h2>
+      </div>
+      <div className="-mx-4 flex snap-x gap-5 overflow-x-auto px-4 pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {data.map((p: any) => {
+          const img = p.variants?.[0]?.variant_images?.find((i: any) => i.view === "front");
+          const url = img ? supabase.storage.from("product-images").getPublicUrl(img.storage_path).data.publicUrl : null;
+          return (
+            <Link
+              key={p.id}
+              to={`/produkt/${p.slug}`}
+              className="hover-lift w-64 shrink-0 snap-start overflow-hidden rounded-2xl border border-border/60 bg-card shadow-card"
+            >
+              <div className="h-48 overflow-hidden bg-muted">
+                {url ? (
+                  <img src={url} alt={p.name} className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full">
+                    {(p.variants ?? []).slice(0, 4).map((v: any) => (
+                      <div key={v.id} className="h-full flex-1" style={{ backgroundColor: v.colors?.hex }} />
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="p-4">
+                <h3 className="truncate font-bold">{p.name}</h3>
+                <p className="mt-1 font-bold text-primary">{Number(p.base_price).toFixed(2)} €</p>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/* ---------- Shop bento ---------- */
+export function ShopBento() {
+  return (
+    <section className="mt-20">
+      <div className="grid gap-5 md:grid-cols-3 md:grid-rows-2">
+        <Link
+          to="/produkte"
+          className="hover-lift group relative flex flex-col justify-end overflow-hidden rounded-3xl gradient-bg p-8 text-primary-foreground shadow-glow md:col-span-2 md:row-span-2 md:min-h-[320px]"
+        >
+          <Layers className="mb-4 h-10 w-10" />
+          <h3 className="text-3xl font-extrabold">Shop, shop, hooray.</h3>
+          <p className="mt-2 max-w-sm text-primary-foreground/90">Entdecke unsere neuesten Kollektionen und gestalte sie nach deinen Wünschen.</p>
+          <span className="mt-4 inline-flex items-center gap-1 font-semibold">Jetzt shoppen <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></span>
+        </Link>
+
+        <Link
+          to="/grossbestellung"
+          className="hover-lift group flex flex-col justify-end rounded-3xl border border-border/60 bg-gradient-to-br from-secondary/20 to-secondary/5 p-7 shadow-card"
+        >
+          <h3 className="text-xl font-bold">Du brauchst Masse?</h3>
+          <p className="mt-1 text-sm text-muted-foreground">Großbestellungen mit Mengenrabatt.</p>
+          <span className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-primary">Mehr <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></span>
+        </Link>
+
+        <Link
+          to="/leistungen"
+          className="hover-lift group flex flex-col justify-end rounded-3xl border border-border/60 bg-gradient-to-br from-primary/10 to-primary/5 p-7 shadow-card"
+        >
+          <Palette className="mb-2 h-7 w-7 text-primary" />
+          <h3 className="text-xl font-bold">Das können wir.</h3>
+          <p className="mt-1 text-sm text-muted-foreground">Unsere professionellen Druckverfahren.</p>
+          <span className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-primary">Mehr erfahren <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></span>
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+/* ---------- Locations ---------- */
+export const STORES = [
+  { name: "Europa Passage", address: "Ballindamm 40, 20095 Hamburg", phone: "040 328 738 04", email: "europa-passage@private-shirt.de" },
+  { name: "Mercado Altona", address: "Ottenser Hauptstraße 10, 22765 Hamburg", phone: "040 399 077 78", email: "altona@private-shirt.de" },
+];
+
+export function LocationsTeaser() {
+  return (
+    <section className="mt-20">
+      <div className="mb-8 text-center">
+        <h2 className="text-3xl font-extrabold">Besuch uns in Hamburg</h2>
+        <p className="mt-2 text-muted-foreground">Persönliche Beratung in unseren beiden Filialen.</p>
+      </div>
+      <div className="grid gap-6 md:grid-cols-2">
+        {STORES.map((s) => (
+          <div key={s.name} className="rounded-2xl border border-border/60 bg-card p-6 shadow-card">
+            <h3 className="text-xl font-bold text-primary">{s.name}</h3>
+            <div className="mt-4 space-y-2 text-sm text-muted-foreground">
+              <p className="flex items-center gap-2"><MapPin className="h-4 w-4 text-primary" /> {s.address}</p>
+              <p className="flex items-center gap-2"><Phone className="h-4 w-4 text-primary" /> {s.phone}</p>
+              <a href={`mailto:${s.email}`} className="flex items-center gap-2 hover:text-primary"><Mail className="h-4 w-4 text-primary" /> {s.email}</a>
+            </div>
+            <Link to="/filialen" className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-primary">
+              Anfahrt & Details <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 const FAQ = [
   {

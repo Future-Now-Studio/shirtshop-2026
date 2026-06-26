@@ -1,37 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
-import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import heroImage from "@/assets/hero-image.jpg";
-import { AboutTeaser, FaqSection, ContactBanner } from "@/components/home/sections";
-
-async function fetchProducts() {
-  const { data, error } = await supabase
-    .from("products")
-    .select("id, slug, name, description, base_price, category, variants(id, colors(name, hex))")
-    .eq("status", "published")
-    .order("created_at");
-  if (error) throw error;
-  return data;
-}
+import ProductGrid from "@/components/ProductGrid";
+import { AboutTeaser, FaqSection, ContactBanner, ProductHighlights, ShopBento, LocationsTeaser } from "@/components/home/sections";
 
 export default function Home() {
-  const { data, isLoading, error } = useQuery({ queryKey: ["products"], queryFn: fetchProducts });
-  const [activeCat, setActiveCat] = useState<string>("alle");
-
-  const categories = useMemo(() => {
-    const set = new Set<string>();
-    (data ?? []).forEach((p) => p.category && set.add(p.category));
-    return ["alle", ...Array.from(set).sort()];
-  }, [data]);
-
-  const visible = useMemo(
-    () => (data ?? []).filter((p) => activeCat === "alle" || p.category === activeCat),
-    [data, activeCat]
-  );
-
   return (
     <div>
       {/* Hero */}
@@ -59,81 +33,29 @@ export default function Home() {
               <Button size="lg" variant="outline">Großbestellung</Button>
             </Link>
           </div>
+          <div className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-sm font-medium text-muted-foreground">
+            <span>★ Über 1 Mio. Bestellungen</span>
+            <span>★ Lokale Produktion</span>
+            <span>★ Schnelle Lieferung</span>
+          </div>
         </div>
       </section>
 
+      <ProductHighlights />
+      <ShopBento />
+
       {/* Products */}
-      <section id="produkte">
-        <div className="mb-8 flex items-end justify-between">
-          <div>
-            <h2 className="text-3xl font-extrabold">Unsere Produkte</h2>
-            <p className="mt-1 text-muted-foreground">Wähle ein Produkt und gestalte es nach deinen Wünschen.</p>
-          </div>
-          <span className="text-sm text-muted-foreground">{visible.length} Artikel</span>
+      <section id="produkte" className="mt-20">
+        <div className="mb-6">
+          <h2 className="text-3xl font-extrabold">Unsere Produkte</h2>
+          <p className="mt-1 text-muted-foreground">Wähle ein Produkt und gestalte es nach deinen Wünschen.</p>
         </div>
-
-        {categories.length > 2 && (
-          <div className="mb-8 flex flex-wrap gap-2">
-            {categories.map((c) => (
-              <button
-                key={c}
-                onClick={() => setActiveCat(c)}
-                className={
-                  "rounded-full px-4 py-1.5 text-sm font-medium capitalize transition-colors " +
-                  (activeCat === c
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground")
-                }
-              >
-                {c}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {isLoading && <p className="text-muted-foreground">Lade Produkte…</p>}
-        {error && <p className="text-destructive">Fehler: {(error as Error).message}</p>}
-
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {visible.map((p) => (
-            <Link
-              key={p.id}
-              to={`/produkt/${p.slug}`}
-              className="hover-lift group overflow-hidden rounded-2xl border border-border/60 bg-card shadow-card"
-            >
-              {/* color band */}
-              <div className="flex h-36 overflow-hidden">
-                {(p.variants ?? []).slice(0, 6).map((v: any) => (
-                  <div key={v.id} className="h-full flex-1" style={{ backgroundColor: v.colors?.hex }} title={v.colors?.name} />
-                ))}
-                {(!p.variants || p.variants.length === 0) && (
-                  <div className="h-full flex-1 bg-gradient-to-br from-muted to-accent" />
-                )}
-              </div>
-              <div className="p-5">
-                <div className="flex items-start justify-between gap-2">
-                  <h3 className="text-lg font-bold leading-tight transition-colors group-hover:text-primary">{p.name}</h3>
-                </div>
-                {p.category && (
-                  <span className="mt-1 inline-block rounded-full bg-accent px-2.5 py-0.5 text-xs font-medium text-accent-foreground">
-                    {p.category}
-                  </span>
-                )}
-                <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{p.description}</p>
-                <div className="mt-4 flex items-center justify-between">
-                  <span className="text-lg font-bold text-primary">{Number(p.base_price).toFixed(2)} €</span>
-                  <span className="flex items-center gap-1 text-sm font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
-                    Gestalten <ArrowRight className="h-4 w-4" />
-                  </span>
-                </div>
-              </div>
-            </Link>
-          ))}
-        </div>
+        <ProductGrid />
       </section>
 
       <AboutTeaser />
       <FaqSection />
+      <LocationsTeaser />
       <ContactBanner />
     </div>
   );

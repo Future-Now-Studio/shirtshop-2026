@@ -132,18 +132,18 @@ export function Leistungen() {
 /* ---------- Filialen ---------- */
 const STORES = [
   {
-    name: "Private Shirt — Europa-Passage",
+    name: "Private Shirt — Europa Passage",
     address: "Ballindamm 40, 20095 Hamburg",
     email: "europa-passage@private-shirt.de",
-    phone: "040 – 328 73 804",
+    phone: "040 328 738 04",
     image: europaStore,
     map: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2370.3681842109295!2d9.993753077509476!3d53.55119465937556!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x47b18f1dc6346d17%3A0xb2e7e85ab405c7a7!2sPrivate%20Shirt!5e0!3m2!1sde!2sus!4v1765191779388",
   },
   {
-    name: "Private Shirt — Altona",
+    name: "Private Shirt — Mercado Altona",
     address: "Ottenser Hauptstraße 10, 22765 Hamburg",
     email: "altona@private-shirt.de",
-    phone: "040 – 328 73 804",
+    phone: "040 399 077 78",
     image: altonaStore,
     map: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2370.3038069233694!2d9.93002827750953!3d53.55234395928927!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x47b18585ff23b8bb%3A0x3a3a59770b6ae2fa!2sPrivate%20Shirt%20Hamburg%20Altona!5e0!3m2!1sde!2sus!4v1765191827970",
   },

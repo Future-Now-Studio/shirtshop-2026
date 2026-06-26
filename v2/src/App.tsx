@@ -8,6 +8,8 @@ import OrderSuccess from "@/pages/OrderSuccess";
 import Footer from "@/components/layout/Footer";
 import { Unternehmen, Leistungen, Filialen, Grossbestellung, Impressum, AGB, Datenschutz } from "@/pages/marketing";
 import Kontakt from "@/pages/Kontakt";
+import Produkte from "@/pages/Produkte";
+import SelbstGestalten from "@/pages/SelbstGestalten";
 import { useCart } from "@/stores/cart";
 import { ShoppingBag } from "lucide-react";
 import logo from "@/assets/group-25.svg";
@@ -42,8 +44,9 @@ export default function App() {
             <img src={logo} alt="Private Shirt" className="h-8 w-auto" />
           </Link>
           <nav className="flex items-center gap-6 text-sm font-medium">
-            <Link to="/" className="hidden text-muted-foreground transition-colors hover:text-primary sm:inline">Shop</Link>
-            <Link to="/grossbestellung" className="hidden text-muted-foreground transition-colors hover:text-primary sm:inline">Großbestellung</Link>
+            <Link to="/produkte" className="hidden text-muted-foreground transition-colors hover:text-primary sm:inline">Shop</Link>
+            <Link to="/selbst-gestalten" className="hidden text-muted-foreground transition-colors hover:text-primary sm:inline">Selbst gestalten</Link>
+            <Link to="/grossbestellung" className="hidden text-muted-foreground transition-colors hover:text-primary md:inline">Großbestellung</Link>
             <CartLink />
             <Link to="/admin" className="text-muted-foreground transition-colors hover:text-primary">Admin</Link>
           </nav>
@@ -52,6 +55,8 @@ export default function App() {
       <main className="container py-10">
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/produkte" element={<Produkte />} />
+          <Route path="/selbst-gestalten" element={<SelbstGestalten />} />
           <Route path="/produkt/:slug" element={<ProductDetail />} />
           <Route path="/gestalten/:slug" element={<Designer />} />
           <Route path="/warenkorb" element={<Cart />} />

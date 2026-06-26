@@ -6,7 +6,8 @@ const COLS = [
   {
     title: "Shop",
     links: [
-      { to: "/", label: "Produkte" },
+      { to: "/produkte", label: "Produkte" },
+      { to: "/selbst-gestalten", label: "Selbst gestalten" },
       { to: "/grossbestellung", label: "Großbestellung" },
       { to: "/leistungen", label: "Leistungen" },
     ],
