@@ -80,7 +80,7 @@ export default function Designer() {
     const onChange = () => recountRef.current();
     c.on("object:added", onChange);
     c.on("object:removed", onChange);
-    loadView(view);
+    loadView(view, variant);
     return () => {
       c.dispose();
       canvasRef.current = null;
@@ -88,21 +88,26 @@ export default function Designer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
-  // Render the current view: background image + zone guides + saved objects
+  // Render a view of a specific variant: background image + zone guides + saved objects.
+  // A monotonic token ensures only the latest load wins (variant/view can change fast).
+  const loadTokenRef = useRef(0);
   const loadView = useCallback(
-    async (targetView: string) => {
+    async (targetView: string, targetVariant: any) => {
       const c = canvasRef.current;
       if (!c) return;
+      const token = ++loadTokenRef.current;
       c.remove(...c.getObjects());
+      c.backgroundImage = undefined;
 
       // background image for this variant+view (fall back to front, then any view)
       const img =
-        variant?.variant_images?.find((i: any) => i.view === targetView) ||
-        variant?.variant_images?.find((i: any) => i.view === "front") ||
-        variant?.variant_images?.[0];
+        targetVariant?.variant_images?.find((i: any) => i.view === targetView) ||
+        targetVariant?.variant_images?.find((i: any) => i.view === "front") ||
+        targetVariant?.variant_images?.[0];
       if (img) {
         try {
           const fImg = await fabric.FabricImage.fromURL(publicUrl(img.storage_path), { crossOrigin: "anonymous" });
+          if (token !== loadTokenRef.current) return; // a newer load started — discard
           const scale = Math.min(SIZE / (fImg.width || SIZE), SIZE / (fImg.height || SIZE));
           fImg.scale(scale);
           fImg.set({ left: (SIZE - (fImg.width || 0) * scale) / 2, top: (SIZE - (fImg.height || 0) * scale) / 2 });
@@ -110,9 +115,8 @@ export default function Designer() {
         } catch {
           c.backgroundImage = undefined;
         }
-      } else {
-        c.backgroundImage = undefined;
       }
+      if (token !== loadTokenRef.current) return;
 
       // zone guides
       const zones = (p?.print_zones ?? []).filter((z: any) => z.view === targetView);
@@ -138,12 +142,13 @@ export default function Designer() {
         const saved = viewJson.current[targetView];
         const designOnly = { ...saved, objects: saved.objects.filter((o: any) => !o.__zone) };
         const objs = await fabric.util.enlivenObjects(designOnly.objects);
+        if (token !== loadTokenRef.current) return;
         objs.forEach((o: any) => c.add(o));
       }
       c.renderAll();
       recount();
     },
-    [p, variant, recount]
+    [p, recount]
   );
 
   // Save current view's objects to memory
@@ -157,9 +162,9 @@ export default function Designer() {
 
   // When variant or view changes, swap canvas content
   useEffect(() => {
-    loadView(view);
+    loadView(view, variant);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, variantIdx, p]);
+  }, [view, variant?.id, p]);
 
   function switchView(v: string) {
     if (v === view) return;
@@ -219,14 +224,14 @@ export default function Designer() {
     for (const v of VIEWS) {
       const hasObjects = (viewJson.current[v]?.objects?.length ?? 0) > 0;
       if (!hasObjects) continue;
-      await loadView(v);
+      await loadView(v, variant);
       try {
         renders[v] = c.toDataURL({ format: "png", multiplier: 1 });
       } catch {
         /* tainted canvas — skip render */
       }
     }
-    await loadView(originalView);
+    await loadView(originalView, variant);
 
     addToCart({
       productId: p.id,

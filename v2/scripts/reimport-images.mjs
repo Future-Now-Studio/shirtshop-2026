@@ -1,11 +1,14 @@
-// Re-import REAL variant images from WooCommerce, all available views per colour.
-// Two filename schemes exist in the store:
-//   A (Stanley/Stella):  PFM0_<style>_C<code>.jpg   F=front B=back, code is colour
-//   B (B&C/Russell):     <style>_<n>_<code>_<view>-<year>_NN.jpg  view∈F/B/SR/SL
-// In scheme B only the FRONT is colour-specific; back/sides are a generic garment
-// outline (code 000) shared by all colours.
-// Strategy per variant: front = the variation's own image (always colour-correct);
-// back/left/right = colour-specific from the gallery if present, else the generic view.
+// Re-import REAL variant images from WooCommerce, colour-correct per variant.
+//
+// Two cases:
+//  A) variations carry distinct own images (Stella PFM..._C<code>) → use each
+//     variation's own colour code.
+//  B) all variations share one generic image (B&C/Russell) → WC never linked
+//     colours to gallery images, so we pair variation ORDER ↔ the gallery's
+//     distinct colour-code order (best effort; extra variations fall back to
+//     the generic view).
+// Views come from the gallery for that colour code; back/sides fall back to the
+// product's generic (code 000) view, then to the front.
 import { admin } from "./checks/_clients.mjs";
 
 const WC_BASE = process.env.WC_BASE_URL;
@@ -16,7 +19,6 @@ async function wc(path) {
   if (!r.ok) throw new Error(`WC ${path}: ${r.status}`);
   return r.json();
 }
-
 function mapView(x) {
   x = (x || "").toUpperCase();
   if (x === "F") return "front";
@@ -56,7 +58,7 @@ async function uploadFromUrl(productId, variantId, view, srcUrl) {
   }
 }
 
-const EXTRA_VIEWS = ["back", "left", "right"];
+const EXTRA = ["back", "left", "right"];
 const wcProducts = await wc(`/products?per_page=100&status=publish`);
 let total = 0;
 
@@ -65,45 +67,51 @@ for (const wp of wcProducts) {
   if (dbProd.error) { console.warn(`skip ${wp.name}: ${dbProd.error.message}`); continue; }
   const productId = dbProd.data.id;
 
-  // Index gallery: by code+view, and a generic view fallback.
-  const byCodeView = {};        // code -> { view: url }
-  const genericByView = {};     // view -> url (prefer code 000 / first seen)
+  // Index gallery
+  const byCodeView = {};      // code -> { view: url }
+  const genericByView = {};   // view -> url
+  const orderedCodes = [];    // distinct non-000 colour codes in first-appearance order
+  const seen = new Set();
   for (const img of wp.images || []) {
     const { code, view } = parseFile(fileOf(img.src));
     if (!view) continue;
     if (code) ((byCodeView[code] ||= {})[view] ||= img.src);
+    if (code && code !== "000" && !seen.has(code)) { seen.add(code); orderedCodes.push(code); }
     if (view !== "front" && (code === "000" || !genericByView[view])) genericByView[view] = img.src;
   }
 
-  // variation: colour name -> { code, frontUrl }
   const variations = await wc(`/products/${wp.id}/variations?per_page=100`);
-  const infoByColor = {};
-  for (const v of variations) {
-    const colorName = v.attributes?.find((a) => /farbe|color/i.test(a.name))?.option?.trim();
-    if (!colorName) continue;
-    const code = v.image?.src ? parseFile(fileOf(v.image.src)).code : null;
-    infoByColor[colorName] = { code, frontUrl: v.image?.src || null };
-  }
+  const varCodes = variations.map((v) => (v.image?.src ? parseFile(fileOf(v.image.src)).code : null));
+  const distinct = new Set(varCodes.filter(Boolean));
+  const schemeA = distinct.size > 1; // variations have their own distinct images
+
+  // colour name -> resolved code + generic front url
+  const resolved = {};
+  variations.forEach((v, i) => {
+    const name = v.attributes?.find((a) => /farbe|color/i.test(a.name))?.option?.trim();
+    if (!name) return;
+    const code = schemeA ? varCodes[i] : orderedCodes[i]; // own code, or order-paired
+    resolved[name] = { code, genericFront: v.image?.src || null };
+  });
 
   const variants = await admin.from("variants").select("id, colors(name)").eq("product_id", productId);
   if (variants.error) { console.warn(`skip ${wp.name}: ${variants.error.message}`); continue; }
 
   let imgs = 0;
   for (const variant of variants.data) {
-    const colorName = variant.colors?.name?.trim();
-    const info = infoByColor[colorName];
+    const info = resolved[variant.colors?.name?.trim()];
     if (!info) continue;
+    const cv = info.code ? byCodeView[info.code] || {} : {};
 
-    if (info.frontUrl && (await uploadFromUrl(productId, variant.id, "front", info.frontUrl))) imgs++;
-
-    const colorViews = info.code ? byCodeView[info.code] || {} : {};
-    for (const view of EXTRA_VIEWS) {
-      const url = colorViews[view] || genericByView[view];
+    const frontUrl = cv.front || info.genericFront;
+    if (frontUrl && (await uploadFromUrl(productId, variant.id, "front", frontUrl))) imgs++;
+    for (const view of EXTRA) {
+      const url = cv[view] || genericByView[view];
       if (url && (await uploadFromUrl(productId, variant.id, view, url))) imgs++;
     }
   }
   total += imgs;
-  console.log(`✓ ${wp.name}: ${imgs} Bilder / ${variants.data.length} Varianten`);
+  console.log(`✓ ${wp.name}: ${imgs} Bilder / ${variants.data.length} Var. (${schemeA ? "eigene" : "order-paarung"})`);
 }
 
-console.log(`\nFertig: ${total} Variant-Bilder importiert.`);
+console.log(`\nFertig: ${total} Variant-Bilder.`);
