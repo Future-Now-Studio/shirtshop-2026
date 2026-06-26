@@ -5,6 +5,7 @@ import Overview from "@/pages/admin/Overview";
 import Colors from "@/pages/admin/Colors";
 import Sizes from "@/pages/admin/Sizes";
 import Products from "@/pages/admin/Products";
+import ProductEditor from "@/pages/admin/ProductEditor";
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<Overview />} />
             <Route path="products" element={<Products />} />
+            <Route path="products/:id" element={<ProductEditor />} />
             <Route path="colors" element={<Colors />} />
             <Route path="sizes" element={<Sizes />} />
             <Route path="discounts" element={<div>Rabatte (kommt)</div>} />

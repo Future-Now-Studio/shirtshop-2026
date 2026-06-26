@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,12 +68,12 @@ export default function Products() {
         <ul className="divide-y rounded-lg border">
           {data?.map((p) => (
             <li key={p.id} className="flex items-center gap-3 px-4 py-3">
-              <div className="flex-1">
+              <Link to={`/admin/products/${p.id}`} className="flex-1 hover:underline">
                 <p className="font-medium">{p.name}</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground no-underline">
                   {p.variants?.length ?? 0} Varianten · {Number(p.base_price).toFixed(2)} €
                 </p>
-              </div>
+              </Link>
               <button
                 onClick={() => toggleStatus.mutate({ id: p.id, status: p.status })}
                 className={
