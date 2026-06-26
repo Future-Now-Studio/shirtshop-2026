@@ -29,9 +29,11 @@ export default function Kontakt() {
 
   return (
     <div className="mx-auto max-w-4xl animate-fade-in">
-      <h1 className="text-4xl font-extrabold sm:text-5xl">Kontakt</h1>
-      <p className="mt-4 max-w-2xl text-lg text-muted-foreground">
-        Frage, Sonderwunsch oder Großbestellung? Schreib uns — wir melden uns schnell.
+      <h1 className="text-5xl font-black lowercase leading-[0.95] sm:text-6xl">
+        <span className="text-primary">sag </span><span className="italic text-secondary">hallo.</span>
+      </h1>
+      <p className="mt-5 max-w-2xl text-lg text-muted-foreground">
+        frage, sonderwunsch oder großbestellung? schreib uns — wir melden uns schnell.
       </p>
 
       <div className="mt-10 grid gap-10 md:grid-cols-2">

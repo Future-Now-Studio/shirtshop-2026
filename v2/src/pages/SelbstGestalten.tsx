@@ -13,9 +13,9 @@ export default function SelbstGestalten() {
   return (
     <div className="animate-fade-in">
       <section className="overflow-hidden rounded-3xl gradient-bg px-8 py-16 text-center text-primary-foreground shadow-glow sm:px-14">
-        <h1 className="text-4xl font-extrabold sm:text-6xl">Selbst gestalten</h1>
+        <h1 className="text-4xl font-black lowercase sm:text-6xl">selbst gestalten.</h1>
         <p className="mx-auto mt-4 max-w-xl text-lg text-primary-foreground/90">
-          In drei Schritten zu deinem individuellen Textil — komplett im Browser, ohne Vorkenntnisse.
+          in drei schritten zu deinem individuellen textil — komplett im browser, ohne vorkenntnisse.
         </p>
       </section>
 
