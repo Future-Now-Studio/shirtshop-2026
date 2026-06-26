@@ -252,118 +252,150 @@ export default function Designer() {
   if (!p) return <p className="text-muted-foreground">Lade…</p>;
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[480px_1fr]">
-      <div>
-        <div className="mb-3 flex gap-2">
-          {VIEWS.map((v) => {
-            const has = variant?.variant_images?.some((i: any) => i.view === v);
-            return (
-              <button
-                key={v}
-                onClick={() => switchView(v)}
-                className={
-                  "rounded-md border px-3 py-1.5 text-xs " +
-                  (view === v ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground") +
-                  (!has ? " opacity-60" : "")
-                }
-              >
-                {VIEW_LABEL[v]}
-              </button>
-            );
-          })}
-        </div>
-        <div className="inline-block overflow-hidden rounded-2xl border bg-card shadow-card">
-          <canvas ref={canvasElRef} width={SIZE} height={SIZE} />
-        </div>
-        <div className="mt-3 flex gap-2">
-          <Button variant="outline" size="sm" onClick={addText}>
-            <Type className="mr-1 h-4 w-4" /> Text
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
-            <ImagePlus className="mr-1 h-4 w-4" /> Bild
-          </Button>
-          <Button variant="outline" size="sm" onClick={deleteSelected}>
-            <Trash2 className="mr-1 h-4 w-4" /> Löschen
-          </Button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) addImage(f);
-              e.target.value = "";
-            }}
-          />
-        </div>
+    <div>
+      <div className="mb-6">
+        <Link to={`/produkt/${p.slug}`} className="text-sm text-muted-foreground hover:text-primary">← zurück zum produkt</Link>
+        <h1 className="mt-2 text-3xl font-black lowercase sm:text-4xl">
+          <span className="text-primary">creator</span>
+          <span className="text-muted-foreground"> · {p.name}</span>
+        </h1>
       </div>
 
-      <div>
-        <Link to={`/produkt/${p.slug}`} className="text-sm text-muted-foreground hover:text-foreground">← Zurück zum Produkt</Link>
-        <h1 className="mt-2 text-2xl font-bold">{p.name} gestalten</h1>
-        <p className="mt-1 text-2xl font-bold tabular-nums text-primary">{unit.toFixed(2)} €</p>
-        <p className="text-xs text-muted-foreground">
-          Basis {Number(p.base_price).toFixed(2)} € + {elementCount} Design-Element(e) × {Number(p.design_element_price).toFixed(2)} €
-        </p>
+      <div className="grid gap-6 lg:grid-cols-12">
+        {/* Tool rail */}
+        <div className="lg:col-span-2">
+          <div className="flex flex-col gap-2 rounded-2xl border bg-card p-2 shadow-sm">
+            <Button variant="ghost" className="h-11 w-full justify-start gap-2.5 rounded-xl font-medium" onClick={addText}>
+              <Type className="h-4 w-4 shrink-0" /> Text
+            </Button>
+            <Button variant="ghost" className="h-11 w-full justify-start gap-2.5 rounded-xl font-medium" onClick={() => fileRef.current?.click()}>
+              <ImagePlus className="h-4 w-4 shrink-0" /> Bild
+            </Button>
+            <Button
+              variant="ghost"
+              className="h-11 w-full justify-start gap-2.5 rounded-xl font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              onClick={deleteSelected}
+            >
+              <Trash2 className="h-4 w-4 shrink-0" /> Löschen
+            </Button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) addImage(f);
+                e.target.value = "";
+              }}
+            />
+          </div>
+        </div>
 
-        <div className="mt-6">
-          <p className="mb-2 text-sm font-medium">Farbe: {variant?.colors?.name}</p>
-          <div className="flex flex-wrap gap-2">
-            {variants.map((v: any, i: number) => (
-              <button
-                key={v.id}
-                onClick={() => {
-                  saveView(view);
-                  setVariantIdx(i);
-                  setSizeId(null);
-                }}
-                title={v.colors?.name}
-                className={"h-8 w-8 rounded-full border-2 " + (i === variantIdx ? "border-primary" : "border-transparent")}
-                style={{ backgroundColor: v.colors?.hex }}
+        {/* Canvas + views */}
+        <div className="lg:col-span-6">
+          <div className="flex items-center justify-center rounded-2xl bg-muted/30 p-4 sm:p-6">
+            <div className="overflow-hidden rounded-xl bg-white shadow-sm">
+              <canvas ref={canvasElRef} width={SIZE} height={SIZE} />
+            </div>
+          </div>
+
+          <div className="mt-5 rounded-2xl border bg-card p-3 shadow-sm">
+            <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">Ansichten</p>
+            <div className="flex flex-wrap gap-2">
+              {VIEWS.map((v) => {
+                const img = variant?.variant_images?.find((i: any) => i.view === v);
+                const active = view === v;
+                return (
+                  <button
+                    key={v}
+                    onClick={() => switchView(v)}
+                    className={
+                      "relative h-20 w-20 overflow-hidden rounded-lg border-2 " +
+                      (active ? "border-primary" : "border-transparent hover:border-border")
+                    }
+                  >
+                    {img ? (
+                      <img src={publicUrl(img.storage_path)} alt={VIEW_LABEL[v]} className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="flex h-full w-full items-center justify-center bg-muted text-[10px] text-muted-foreground">kein bild</span>
+                    )}
+                    <span className="absolute inset-x-0 bottom-0 bg-black/70 py-0.5 text-center text-[10px] font-medium text-white">
+                      {VIEW_LABEL[v]}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Config */}
+        <div className="lg:col-span-4">
+          <div className="space-y-5 rounded-2xl border bg-card p-5 shadow-sm">
+            <div>
+              <h2 className="text-lg font-bold">{p.name}</h2>
+              <p className="mt-1 text-2xl font-bold tabular-nums text-primary">{unit.toFixed(2)} €</p>
+              <p className="text-xs text-muted-foreground">
+                Basis {Number(p.base_price).toFixed(2)} € + {elementCount} Element(e) × {Number(p.design_element_price).toFixed(2)} €
+              </p>
+            </div>
+
+            <div>
+              <p className="mb-2 text-sm font-medium">Farbe: {variant?.colors?.name}</p>
+              <div className="flex flex-wrap gap-2">
+                {variants.map((v: any, i: number) => (
+                  <button
+                    key={v.id}
+                    onClick={() => { saveView(view); setVariantIdx(i); setSizeId(null); }}
+                    title={v.colors?.name}
+                    className={"h-8 w-8 rounded-full border-2 " + (i === variantIdx ? "border-primary" : "border-transparent")}
+                    style={{ backgroundColor: v.colors?.hex }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-2 text-sm font-medium">Größe</p>
+              <div className="flex flex-wrap gap-2">
+                {sizes.map((s: any) => {
+                  const ok = availForSize(s.id);
+                  return (
+                    <button
+                      key={s.id}
+                      disabled={!ok}
+                      onClick={() => setSizeId(s.id)}
+                      className={
+                        "min-w-[3rem] rounded-md border px-3 py-2 text-sm " +
+                        (sizeId === s.id ? "border-primary bg-primary text-primary-foreground" : "") +
+                        (!ok ? " cursor-not-allowed text-muted-foreground line-through opacity-40" : "")
+                      }
+                    >
+                      {s.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-2 text-sm font-medium">Menge</p>
+              <input
+                type="number"
+                min={1}
+                value={qty}
+                onChange={(e) => setQty(Math.max(1, Number(e.target.value)))}
+                className="h-10 w-24 rounded-md border border-input bg-background px-3 text-sm"
               />
-            ))}
+            </div>
+
+            <Button className="w-full" size="lg" disabled={!sizeId} onClick={handleAddToCart}>
+              <ShoppingCart className="mr-2 h-4 w-4" /> In den Warenkorb
+            </Button>
+            {!sizeId && <p className="text-center text-xs text-muted-foreground">Bitte Größe wählen.</p>}
           </div>
         </div>
-
-        <div className="mt-5">
-          <p className="mb-2 text-sm font-medium">Größe</p>
-          <div className="flex flex-wrap gap-2">
-            {sizes.map((s: any) => {
-              const ok = availForSize(s.id);
-              return (
-                <button
-                  key={s.id}
-                  disabled={!ok}
-                  onClick={() => setSizeId(s.id)}
-                  className={
-                    "min-w-[3rem] rounded-md border px-3 py-2 text-sm " +
-                    (sizeId === s.id ? "border-primary bg-primary text-primary-foreground" : "") +
-                    (!ok ? " cursor-not-allowed text-muted-foreground line-through opacity-40" : "")
-                  }
-                >
-                  {s.name}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="mt-5">
-          <p className="mb-2 text-sm font-medium">Menge</p>
-          <input
-            type="number"
-            min={1}
-            value={qty}
-            onChange={(e) => setQty(Math.max(1, Number(e.target.value)))}
-            className="h-10 w-24 rounded-md border border-input bg-background px-3 text-sm"
-          />
-        </div>
-
-        <Button className="mt-8 px-8" disabled={!sizeId} onClick={handleAddToCart}>
-          <ShoppingCart className="mr-2 h-4 w-4" /> In den Warenkorb
-        </Button>
-        {!sizeId && <p className="mt-2 text-xs text-muted-foreground">Bitte Größe wählen.</p>}
       </div>
     </div>
   );
