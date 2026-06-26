@@ -41,8 +41,7 @@ export default function Designer() {
 
   const [variantIdx, setVariantIdx] = useState(0);
   const [view, setView] = useState<string>("front");
-  const [sizeId, setSizeId] = useState<string | null>(null);
-  const [qty, setQty] = useState(1);
+  const [sizeQty, setSizeQty] = useState<Record<string, number>>({}); // size_id -> quantity
   const [elementCount, setElementCount] = useState(0);
   const [imgLoading, setImgLoading] = useState(false);
   const [step, setStep] = useState(1);
@@ -224,11 +223,15 @@ export default function Designer() {
     }
   }
 
+  const totalPieces = Object.values(sizeQty).reduce((s, q) => s + (q || 0), 0);
+
   async function handleAddToCart() {
-    if (!p || !sizeId) return;
+    if (!p) return;
+    const entries = Object.entries(sizeQty).filter(([, q]) => q > 0);
+    if (entries.length === 0) return;
     saveView(view);
 
-    // Render each view that has design objects to a PNG
+    // Render each view that has design objects to a PNG (once, reused for all sizes)
     const c = canvasRef.current!;
     const renders: Record<string, string> = {};
     const originalView = view;
@@ -244,22 +247,28 @@ export default function Designer() {
     }
     await loadView(originalView, variant);
 
-    addToCart({
-      productId: p.id,
-      productName: p.name,
-      slug: p.slug,
-      variantId: variant.id,
-      colorName: variant.colors?.name,
-      sizeId,
-      sizeName: sizes.find((s: any) => s.id === sizeId)?.name ?? null,
-      qty,
-      basePrice: Number(p.base_price),
-      designElementPrice: Number(p.design_element_price),
-      designElementCount: elementCount,
-      designRenders: renders,
-      designData: JSON.stringify(viewJson.current),
-      thumbnail: renders[originalView] ?? renders[Object.keys(renders)[0]],
-    });
+    const designData = JSON.stringify(viewJson.current);
+    const thumbnail = renders[originalView] ?? renders[Object.keys(renders)[0]];
+
+    // one cart line per chosen size
+    for (const [sid, q] of entries) {
+      addToCart({
+        productId: p.id,
+        productName: p.name,
+        slug: p.slug,
+        variantId: variant.id,
+        colorName: variant.colors?.name,
+        sizeId: sid,
+        sizeName: sizes.find((s: any) => s.id === sid)?.name ?? null,
+        qty: q,
+        basePrice: Number(p.base_price),
+        designElementPrice: Number(p.design_element_price),
+        designElementCount: elementCount,
+        designRenders: renders,
+        designData,
+        thumbnail,
+      });
+    }
     navigate("/warenkorb");
   }
 
@@ -385,7 +394,7 @@ export default function Designer() {
                     {variants.map((v: any, i: number) => (
                       <button
                         key={v.id}
-                        onClick={() => { saveView(view); setVariantIdx(i); setSizeId(null); }}
+                        onClick={() => { saveView(view); setVariantIdx(i); setSizeQty({}); }}
                         title={v.colors?.name}
                         className={"h-8 w-8 rounded-full border-2 " + (i === variantIdx ? "border-primary ring-2 ring-primary/30" : "border-border")}
                         style={{ backgroundColor: v.colors?.hex }}
@@ -403,41 +412,56 @@ export default function Designer() {
                   <ArrowLeft className="h-4 w-4" /> zurück zu design & farbe
                 </button>
                 <div>
-                  <p className="mb-2 text-sm font-medium">Größe</p>
-                  <div className="flex flex-wrap gap-2">
+                  <p className="mb-3 text-sm font-medium">Menge je Größe</p>
+                  <div className="divide-y rounded-xl border">
                     {sizes.map((s: any) => {
                       const ok = availForSize(s.id);
+                      const q = sizeQty[s.id] ?? 0;
+                      const setQ = (n: number) =>
+                        setSizeQty((m) => ({ ...m, [s.id]: Math.max(0, Math.min(ok?.stock ?? 999, n)) }));
                       return (
-                        <button
-                          key={s.id}
-                          disabled={!ok}
-                          onClick={() => setSizeId(s.id)}
-                          className={
-                            "min-w-[3rem] rounded-md border px-3 py-2 text-sm " +
-                            (sizeId === s.id ? "border-primary bg-primary text-primary-foreground" : "") +
-                            (!ok ? " cursor-not-allowed text-muted-foreground line-through opacity-40" : "")
-                          }
-                        >
-                          {s.name}
-                        </button>
+                        <div key={s.id} className={"flex items-center justify-between gap-3 px-3 py-2.5 " + (!ok ? "opacity-40" : "")}>
+                          <span className="text-sm font-medium">
+                            {s.name}
+                            {!ok && <span className="ml-2 text-xs text-muted-foreground">ausverkauft</span>}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              disabled={!ok || q <= 0}
+                              onClick={() => setQ(q - 1)}
+                              className="flex h-7 w-7 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent disabled:opacity-30"
+                            >
+                              −
+                            </button>
+                            <input
+                              type="number"
+                              min={0}
+                              disabled={!ok}
+                              value={q}
+                              onChange={(e) => setQ(Number(e.target.value))}
+                              className="h-8 w-12 rounded-md border border-input bg-background text-center text-sm"
+                            />
+                            <button
+                              disabled={!ok}
+                              onClick={() => setQ(q + 1)}
+                              className="flex h-7 w-7 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent disabled:opacity-30"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
                       );
                     })}
                   </div>
                 </div>
-                <div>
-                  <p className="mb-2 text-sm font-medium">Menge</p>
-                  <input
-                    type="number"
-                    min={1}
-                    value={qty}
-                    onChange={(e) => setQty(Math.max(1, Number(e.target.value)))}
-                    className="h-10 w-24 rounded-md border border-input bg-background px-3 text-sm"
-                  />
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{totalPieces} Stück gesamt</span>
+                  <span className="font-bold tabular-nums">{(unit * totalPieces).toFixed(2)} €</span>
                 </div>
-                <Button className="w-full" size="lg" disabled={!sizeId} onClick={handleAddToCart}>
+                <Button className="w-full" size="lg" disabled={totalPieces === 0} onClick={handleAddToCart}>
                   <ShoppingCart className="mr-2 h-4 w-4" /> In den Warenkorb
                 </Button>
-                {!sizeId && <p className="text-center text-xs text-muted-foreground">Bitte Größe wählen.</p>}
+                {totalPieces === 0 && <p className="text-center text-xs text-muted-foreground">Mindestens 1 Stück wählen.</p>}
               </>
             )}
           </div>
