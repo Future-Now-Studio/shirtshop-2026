@@ -68,8 +68,8 @@ export default function Checkout() {
   const set = (k: keyof Customer, v: string) => setCustomer((c) => ({ ...c, [k]: v }));
 
   return (
-    <div className="mx-auto max-w-lg">
-      <h1 className="mb-6 text-2xl font-semibold">Kasse</h1>
+    <div className="mx-auto max-w-lg rounded-2xl border bg-card p-8 shadow-card">
+      <h1 className="mb-6 text-3xl font-extrabold">Kasse</h1>
 
       {!clientSecret ? (
         <form onSubmit={startPayment} className="space-y-4">

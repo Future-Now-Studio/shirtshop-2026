@@ -49,8 +49,8 @@ export default function Cart() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="mb-6 text-2xl font-semibold">Warenkorb</h1>
-      <ul className="divide-y rounded-lg border">
+      <h1 className="mb-6 text-3xl font-extrabold">Warenkorb</h1>
+      <ul className="divide-y rounded-2xl border bg-card shadow-card">
         {items.map((i) => (
           <li key={i.key} className="flex items-center gap-4 p-4">
             <div className="h-16 w-16 shrink-0 overflow-hidden rounded-md border bg-muted/30">
@@ -83,23 +83,25 @@ export default function Cart() {
         ))}
       </ul>
 
-      <div className="mt-6 ml-auto max-w-xs space-y-1.5 text-sm">
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">Zwischensumme</span>
-          <span className="tabular-nums">{totals?.subtotal.toFixed(2) ?? "…"} €</span>
-        </div>
-        {totals && totals.pct > 0 && (
-          <div className="flex justify-between text-green-700">
-            <span>Mengenrabatt ({totals.pct}%)</span>
-            <span className="tabular-nums">−{totals.discount.toFixed(2)} €</span>
+      <div className="mt-6 ml-auto max-w-sm rounded-2xl border bg-card p-6 shadow-card">
+        <div className="space-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Zwischensumme</span>
+            <span className="tabular-nums">{totals?.subtotal.toFixed(2) ?? "…"} €</span>
           </div>
-        )}
-        <div className="flex justify-between border-t pt-1.5 text-base font-semibold">
-          <span>Gesamt</span>
-          <span className="tabular-nums">{totals?.total.toFixed(2) ?? "…"} €</span>
+          {totals && totals.pct > 0 && (
+            <div className="flex justify-between font-medium text-secondary-foreground">
+              <span>Mengenrabatt ({totals.pct}%)</span>
+              <span className="tabular-nums">−{totals.discount.toFixed(2)} €</span>
+            </div>
+          )}
+          <div className="flex justify-between border-t pt-2 text-lg font-bold">
+            <span>Gesamt</span>
+            <span className="tabular-nums text-primary">{totals?.total.toFixed(2) ?? "…"} €</span>
+          </div>
         </div>
-        <Link to="/kasse" className="block pt-3">
-          <Button className="w-full">Zur Kasse</Button>
+        <Link to="/kasse" className="mt-4 block">
+          <Button className="w-full" size="lg">Zur Kasse</Button>
         </Link>
       </div>
     </div>

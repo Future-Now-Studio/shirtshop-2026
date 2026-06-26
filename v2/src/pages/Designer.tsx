@@ -272,7 +272,7 @@ export default function Designer() {
             );
           })}
         </div>
-        <div className="inline-block rounded-xl border">
+        <div className="inline-block overflow-hidden rounded-2xl border bg-card shadow-card">
           <canvas ref={canvasElRef} width={SIZE} height={SIZE} />
         </div>
         <div className="mt-3 flex gap-2">
@@ -301,8 +301,8 @@ export default function Designer() {
 
       <div>
         <Link to={`/produkt/${p.slug}`} className="text-sm text-muted-foreground hover:text-foreground">← Zurück zum Produkt</Link>
-        <h1 className="mt-2 text-2xl font-semibold">{p.name} gestalten</h1>
-        <p className="mt-1 text-xl tabular-nums">{unit.toFixed(2)} €</p>
+        <h1 className="mt-2 text-2xl font-bold">{p.name} gestalten</h1>
+        <p className="mt-1 text-2xl font-bold tabular-nums text-primary">{unit.toFixed(2)} €</p>
         <p className="text-xs text-muted-foreground">
           Basis {Number(p.base_price).toFixed(2)} € + {elementCount} Design-Element(e) × {Number(p.design_element_price).toFixed(2)} €
         </p>
