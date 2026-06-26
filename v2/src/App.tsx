@@ -7,6 +7,7 @@ import Checkout from "@/pages/Checkout";
 import OrderSuccess from "@/pages/OrderSuccess";
 import Footer from "@/components/layout/Footer";
 import { Unternehmen, Leistungen, Filialen, Grossbestellung, Impressum, AGB, Datenschutz } from "@/pages/marketing";
+import Kontakt from "@/pages/Kontakt";
 import { useCart } from "@/stores/cart";
 import { ShoppingBag } from "lucide-react";
 import logo from "@/assets/group-25.svg";
@@ -63,6 +64,7 @@ export default function App() {
           <Route path="/impressum" element={<Impressum />} />
           <Route path="/agb" element={<AGB />} />
           <Route path="/datenschutz" element={<Datenschutz />} />
+          <Route path="/kontakt" element={<Kontakt />} />
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<Overview />} />
             <Route path="products" element={<Products />} />

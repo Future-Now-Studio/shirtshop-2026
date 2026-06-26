@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import logo from "@/assets/group-25.svg";
+import Newsletter from "./Newsletter";
 
 const COLS = [
   {
@@ -15,6 +16,7 @@ const COLS = [
     links: [
       { to: "/unternehmen", label: "Über uns" },
       { to: "/filialen", label: "Filialen" },
+      { to: "/kontakt", label: "Kontakt" },
     ],
   },
   {
@@ -30,6 +32,13 @@ const COLS = [
 export default function Footer() {
   return (
     <footer className="mt-20 border-t border-border/60 bg-muted/30">
+      <div className="container flex flex-col items-start gap-4 border-b border-border/60 py-10 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-lg font-bold">Newsletter</p>
+          <p className="text-sm text-muted-foreground">Neue Designs, Aktionen & Rabatte — direkt ins Postfach.</p>
+        </div>
+        <Newsletter />
+      </div>
       <div className="container grid gap-10 py-14 sm:grid-cols-2 md:grid-cols-4">
         <div>
           <img src={logo} alt="Private Shirt" className="h-9 w-auto" />
