@@ -54,7 +54,7 @@ export default function Hero() {
           <div className="container grid grid-cols-1 divide-y divide-border/60 py-4 md:grid-cols-3 md:divide-x md:divide-y-0">
             {TRUST.map(({ icon: Icon, stat, label }) => (
               <div key={label} className="group flex items-center justify-center gap-4 py-3 md:py-2">
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl gradient-bg text-primary-foreground shadow-soft transition-transform group-hover:scale-110">
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground transition-transform group-hover:scale-110">
                   <Icon className="h-6 w-6" />
                 </span>
                 <div className="leading-tight">

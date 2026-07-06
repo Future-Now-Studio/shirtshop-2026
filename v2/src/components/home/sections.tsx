@@ -67,31 +67,36 @@ export function ShopBento() {
       <div className="grid gap-5 md:grid-cols-3 md:grid-rows-2">
         <Link
           to="/produkte"
-          className="hover-lift group relative flex flex-col justify-end overflow-hidden rounded-3xl gradient-bg p-8 text-primary-foreground shadow-glow md:col-span-2 md:row-span-2 md:min-h-[320px]"
+          className="hover-lift group relative flex flex-col justify-end overflow-hidden rounded-3xl p-8 text-white shadow-card md:col-span-2 md:row-span-2 md:min-h-[320px]"
         >
-          <Layers className="mb-4 h-10 w-10" />
-          <h3 className="text-3xl font-extrabold">Shop, shop, hooray.</h3>
-          <p className="mt-2 max-w-sm text-primary-foreground/90">Entdecke unsere neuesten Kollektionen und gestalte sie nach deinen Wünschen.</p>
-          <span className="mt-4 inline-flex items-center gap-1 font-semibold">Jetzt shoppen <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></span>
+          <img src={aboutImage} alt="" className="absolute inset-0 h-full w-full object-cover" />
+          <div className="absolute inset-0 bg-neutral-900/55" />
+          <div className="relative">
+            <Layers className="mb-4 h-10 w-10" />
+            <h3 className="text-3xl font-extrabold lowercase">shop, shop, hooray.</h3>
+            <p className="mt-2 max-w-sm text-white/85">entdecke unsere neuesten kollektionen und gestalte sie nach deinen wünschen.</p>
+            <span className="mt-4 inline-flex items-center gap-1 font-semibold">jetzt shoppen <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></span>
+          </div>
         </Link>
 
         <Link
           to="/grossbestellung"
-          className="hover-lift group flex flex-col justify-end rounded-3xl border border-border/60 bg-gradient-to-br from-secondary/20 to-secondary/5 p-7 shadow-card"
+          className="hover-lift group flex flex-col justify-end rounded-3xl border-2 border-secondary/40 bg-card p-7 shadow-card"
         >
-          <h3 className="text-xl font-bold">Du brauchst Masse?</h3>
-          <p className="mt-1 text-sm text-muted-foreground">Großbestellungen mit Mengenrabatt.</p>
-          <span className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-primary">Mehr <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></span>
+          <span className="mb-3 h-2 w-10 rounded-full bg-secondary" />
+          <h3 className="text-xl font-bold lowercase">du brauchst masse?</h3>
+          <p className="mt-1 text-sm text-muted-foreground">großbestellungen mit mengenrabatt.</p>
+          <span className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-primary">mehr <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></span>
         </Link>
 
         <Link
           to="/leistungen"
-          className="hover-lift group flex flex-col justify-end rounded-3xl border border-border/60 bg-gradient-to-br from-primary/10 to-primary/5 p-7 shadow-card"
+          className="hover-lift group flex flex-col justify-end rounded-3xl border-2 border-primary/30 bg-card p-7 shadow-card"
         >
           <Palette className="mb-2 h-7 w-7 text-primary" />
-          <h3 className="text-xl font-bold">Das können wir.</h3>
-          <p className="mt-1 text-sm text-muted-foreground">Unsere professionellen Druckverfahren.</p>
-          <span className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-primary">Mehr erfahren <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></span>
+          <h3 className="text-xl font-bold lowercase">das können wir.</h3>
+          <p className="mt-1 text-sm text-muted-foreground">unsere professionellen druckverfahren.</p>
+          <span className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-primary">mehr erfahren <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></span>
         </Link>
       </div>
     </section>
@@ -202,7 +207,7 @@ export function FaqSection() {
 
 export function ContactBanner() {
   return (
-    <section className="mt-20 overflow-hidden rounded-3xl gradient-bg px-8 py-14 text-center text-primary-foreground shadow-glow sm:px-14">
+    <section className="mt-20 overflow-hidden rounded-3xl bg-primary px-8 py-14 text-center text-primary-foreground sm:px-14">
       <h2 className="text-3xl font-extrabold lowercase sm:text-4xl">bereit für dein eigenes design?</h2>
       <p className="mx-auto mt-3 max-w-xl text-primary-foreground/90">
         Gestalte jetzt dein Textil im Browser — oder frag ein individuelles Angebot für deine

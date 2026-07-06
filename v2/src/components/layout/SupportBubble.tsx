@@ -22,7 +22,7 @@ export default function SupportBubble() {
       <button
         onClick={() => setOpen((v) => !v)}
         aria-label="Support"
-        className="flex h-14 w-14 items-center justify-center rounded-full gradient-bg text-primary-foreground shadow-glow transition-transform hover:scale-105"
+        className="flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105"
       >
         {open ? <X className="h-6 w-6" /> : <MessageCircle className="h-6 w-6" />}
       </button>
