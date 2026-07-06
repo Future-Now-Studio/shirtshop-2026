@@ -44,8 +44,7 @@ export default function ProductDetail() {
 
   const [variantIdx, setVariantIdx] = useState(0);
   const [view, setView] = useState<string>("front");
-  const [sizeId, setSizeId] = useState<string | null>(null);
-  const [added, setAdded] = useState(false);
+  const [sizeQty, setSizeQty] = useState<Record<string, number>>({});
   const addToCart = useCart((s) => s.add);
   const navigate = useNavigate();
 
@@ -59,26 +58,29 @@ export default function ProductDetail() {
     variant?.variant_images?.[0];
   const availForSize = (sid: string) =>
     variant?.variant_size_availability?.find((a: any) => a.size_id === sid && a.available && a.stock > 0);
+  const totalPieces = Object.values(sizeQty).reduce((s, q) => s + (q || 0), 0);
 
   function handleAdd() {
-    if (!sizeId) return;
+    const entries = Object.entries(sizeQty).filter(([, q]) => q > 0);
+    if (entries.length === 0) return;
     const front = variant?.variant_images?.find((i: any) => i.view === "front") || variant?.variant_images?.[0];
-    addToCart({
-      productId: p.id,
-      productName: p.name,
-      slug: p.slug,
-      variantId: variant.id,
-      colorName: variant.colors?.name,
-      sizeId,
-      sizeName: sizes.find((s: any) => s.id === sizeId)?.name ?? null,
-      qty: 1,
-      basePrice: Number(p.base_price),
-      designElementPrice: Number(p.design_element_price),
-      designElementCount: 0,
-      thumbnail: front ? publicUrl(front.storage_path) : undefined,
-    });
-    setAdded(true);
-    setTimeout(() => navigate("/warenkorb"), 600);
+    for (const [sid, q] of entries) {
+      addToCart({
+        productId: p.id,
+        productName: p.name,
+        slug: p.slug,
+        variantId: variant.id,
+        colorName: variant.colors?.name,
+        sizeId: sid,
+        sizeName: sizes.find((s: any) => s.id === sid)?.name ?? null,
+        qty: q,
+        basePrice: Number(p.base_price),
+        designElementPrice: Number(p.design_element_price),
+        designElementCount: 0,
+        thumbnail: front ? publicUrl(front.storage_path) : undefined,
+      });
+    }
+    navigate("/warenkorb");
   }
 
   return (
@@ -127,13 +129,10 @@ export default function ProductDetail() {
             {variants.map((v: any, i: number) => (
               <button
                 key={v.id}
-                onClick={() => {
-                  setVariantIdx(i);
-                  setSizeId(null);
-                }}
+                onClick={() => { setVariantIdx(i); setSizeQty({}); }}
                 title={v.colors?.name}
                 className={
-                  "h-9 w-9 rounded-full border-2 " + (i === variantIdx ? "border-primary" : "border-transparent")
+                  "h-9 w-9 rounded-full border-2 " + (i === variantIdx ? "border-primary ring-2 ring-primary/30" : "border-border")
                 }
                 style={{ backgroundColor: v.colors?.hex }}
               />
@@ -141,40 +140,45 @@ export default function ProductDetail() {
           </div>
         </div>
 
-        {/* Sizes */}
+        {/* Sizes × quantity */}
         <div className="mt-6">
-          <p className="mb-2 text-sm font-medium">Größe</p>
-          <div className="flex flex-wrap gap-2">
+          <p className="mb-2 text-sm font-medium">Menge je Größe</p>
+          <div className="divide-y rounded-xl border">
             {sizes.map((s: any) => {
               const ok = availForSize(s.id);
+              const q = sizeQty[s.id] ?? 0;
+              const setQ = (n: number) => setSizeQty((m) => ({ ...m, [s.id]: Math.max(0, Math.min(ok?.stock ?? 999, n)) }));
               return (
-                <button
-                  key={s.id}
-                  disabled={!ok}
-                  onClick={() => setSizeId(s.id)}
-                  className={
-                    "min-w-[3rem] rounded-md border px-3 py-2 text-sm " +
-                    (sizeId === s.id ? "border-primary bg-primary text-primary-foreground" : "") +
-                    (!ok ? " cursor-not-allowed text-muted-foreground line-through opacity-40" : "")
-                  }
-                >
-                  {s.name}
-                </button>
+                <div key={s.id} className={"flex items-center justify-between gap-3 px-3 py-2.5 " + (!ok ? "opacity-40" : "")}>
+                  <span className="text-sm font-medium">
+                    {s.name}{!ok && <span className="ml-2 text-xs text-muted-foreground">ausverkauft</span>}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button disabled={!ok || q <= 0} onClick={() => setQ(q - 1)} className="flex h-7 w-7 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent disabled:opacity-30">−</button>
+                    <input type="number" min={0} disabled={!ok} value={q} onChange={(e) => setQ(Number(e.target.value))} className="h-8 w-12 rounded-md border border-input bg-background text-center text-sm" />
+                    <button disabled={!ok} onClick={() => setQ(q + 1)} className="flex h-7 w-7 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent disabled:opacity-30">+</button>
+                  </div>
+                </div>
               );
             })}
-            {sizes.length === 0 && <span className="text-sm text-muted-foreground">Keine Größen hinterlegt.</span>}
+            {sizes.length === 0 && <p className="px-3 py-4 text-sm text-muted-foreground">Keine Größen hinterlegt.</p>}
           </div>
         </div>
 
-        <div className="mt-8 flex gap-3">
-          <Button disabled={!sizeId || added} className="px-8" onClick={handleAdd}>
-            {added ? <><Check className="mr-2 h-4 w-4" /> Hinzugefügt</> : "In den Warenkorb"}
+        <div className="mt-4 flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">{totalPieces} Stück gesamt</span>
+          <span className="font-bold tabular-nums">{(Number(p.base_price) * totalPieces).toFixed(2)} €</span>
+        </div>
+
+        <div className="mt-4 flex gap-3">
+          <Button disabled={totalPieces === 0} className="px-8" onClick={handleAdd}>
+            In den Warenkorb
           </Button>
           <Link to={`/gestalten/${p.slug}`}>
             <Button variant="outline">Selbst gestalten</Button>
           </Link>
         </div>
-        {!sizeId && <p className="mt-2 text-xs text-muted-foreground">Bitte Größe wählen.</p>}
+        {totalPieces === 0 && <p className="mt-2 text-xs text-muted-foreground">Mindestens 1 Stück wählen.</p>}
       </div>
     </div>
   );
