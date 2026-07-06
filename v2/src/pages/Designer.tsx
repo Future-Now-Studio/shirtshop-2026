@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import * as fabric from "fabric";
-import { Type, ImagePlus, Trash2, ShoppingCart, Loader2, ArrowRight, ArrowLeft } from "lucide-react";
+import { Type, ImagePlus, Trash2, ShoppingCart, Loader2, ArrowRight, ArrowLeft, AlertTriangle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { publicUrl } from "@/lib/storage";
 import { uploadDesignFile, uploadDesignJson } from "@/lib/design-upload";
@@ -46,7 +46,25 @@ export default function Designer() {
   const [elementCount, setElementCount] = useState(0);
   const [imgLoading, setImgLoading] = useState(false);
   const [step, setStep] = useState(1);
+  const [outOfZone, setOutOfZone] = useState(false);
   const imgCache = useRef<Map<string, fabric.FabricImage>>(new Map());
+  const zonesRef = useRef<{ left: number; top: number; width: number; height: number }[]>([]);
+
+  // A design object is "in zone" when its centre lies within any print zone.
+  const checkZones = useCallback(() => {
+    const c = canvasRef.current;
+    if (!c || zonesRef.current.length === 0) { setOutOfZone(false); return; }
+    const objs = c.getObjects().filter((o: any) => !o.__zone);
+    const bad = objs.some((o: any) => {
+      const r = o.getBoundingRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      return !zonesRef.current.some((z) => cx >= z.left && cx <= z.left + z.width && cy >= z.top && cy <= z.top + z.height);
+    });
+    setOutOfZone(bad);
+  }, []);
+  const checkZonesRef = useRef(checkZones);
+  checkZonesRef.current = checkZones;
 
   const variants = (p?.variants ?? []).slice().sort((a: any, b: any) => a.sort_order - b.sort_order);
   const variant: any = variants[variantIdx];
@@ -80,9 +98,12 @@ export default function Designer() {
       preserveObjectStacking: true,
     });
     canvasRef.current = c;
-    const onChange = () => recountRef.current();
+    const onChange = () => { recountRef.current(); checkZonesRef.current(); };
     c.on("object:added", onChange);
     c.on("object:removed", onChange);
+    c.on("object:modified", () => checkZonesRef.current());
+    c.on("object:moving", () => checkZonesRef.current());
+    c.on("object:scaling", () => checkZonesRef.current());
     loadView(view, variant);
     return () => {
       c.dispose();
@@ -131,6 +152,9 @@ export default function Designer() {
 
       // zone guides
       const zones = (p?.print_zones ?? []).filter((z: any) => z.view === targetView);
+      zonesRef.current = zones.map((z: any) => ({
+        left: z.x * SIZE, top: z.y * SIZE, width: z.width * SIZE, height: z.height * SIZE,
+      }));
       for (const z of zones) {
         const rect = new fabric.Rect({
           left: z.x * SIZE,
@@ -158,6 +182,7 @@ export default function Designer() {
       }
       c.renderAll();
       recount();
+      checkZonesRef.current();
     },
     [p, recount]
   );
@@ -371,6 +396,11 @@ export default function Designer() {
               {imgLoading && (
                 <div className="absolute inset-0 flex items-center justify-center bg-white/60 backdrop-blur-sm">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+              )}
+              {outOfZone && !imgLoading && (
+                <div className="absolute inset-x-3 top-3 flex items-center gap-2 rounded-lg bg-destructive px-3 py-2 text-xs font-medium text-destructive-foreground shadow-lg">
+                  <AlertTriangle className="h-4 w-4 shrink-0" /> Motiv außerhalb der Druckzone
                 </div>
               )}
             </div>

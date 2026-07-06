@@ -11,6 +11,7 @@ const NAV = [
   { to: "/admin/colors", label: "Farben" },
   { to: "/admin/sizes", label: "Größen" },
   { to: "/admin/discounts", label: "Rabatte" },
+  { to: "/admin/messages", label: "Nachrichten" },
 ];
 
 export default function AdminLayout() {

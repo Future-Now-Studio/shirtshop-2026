@@ -1,4 +1,4 @@
-import { Routes, Route, Link } from "react-router-dom";
+import { Routes, Route, Link, useLocation } from "react-router-dom";
 import Home from "@/pages/Home";
 import ProductDetail from "@/pages/ProductDetail";
 import Designer from "@/pages/Designer";
@@ -11,6 +11,8 @@ import Kontakt from "@/pages/Kontakt";
 import Produkte from "@/pages/Produkte";
 import SelbstGestalten from "@/pages/SelbstGestalten";
 import NotFound from "@/pages/NotFound";
+import SupportBubble from "@/components/layout/SupportBubble";
+import { useEffect } from "react";
 import { useCart } from "@/stores/cart";
 import { ShoppingBag } from "lucide-react";
 import logo from "@/assets/group-25.svg";
@@ -22,6 +24,7 @@ import Products from "@/pages/admin/Products";
 import ProductEditor from "@/pages/admin/ProductEditor";
 import Discounts from "@/pages/admin/Discounts";
 import Orders from "@/pages/admin/Orders";
+import Messages from "@/pages/admin/Messages";
 
 function CartLink() {
   const count = useCart((s) => s.items.reduce((n, i) => n + i.qty, 0));
@@ -37,7 +40,28 @@ function CartLink() {
   );
 }
 
+const TITLES: Record<string, string> = {
+  "/": "Private Shirt | Sei du selbst. Sei einzigartig.",
+  "/produkte": "Produkte | Private Shirt",
+  "/selbst-gestalten": "Selbst gestalten | Private Shirt",
+  "/leistungen": "Leistungen | Private Shirt",
+  "/unternehmen": "Über uns | Private Shirt",
+  "/filialen": "Filialen | Private Shirt",
+  "/grossbestellung": "Großbestellung | Private Shirt",
+  "/kontakt": "Kontakt | Private Shirt",
+  "/warenkorb": "Warenkorb | Private Shirt",
+  "/kasse": "Kasse | Private Shirt",
+  "/impressum": "Impressum | Private Shirt",
+  "/agb": "AGB | Private Shirt",
+  "/datenschutz": "Datenschutz | Private Shirt",
+};
+
 export default function App() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    document.title = TITLES[pathname] ?? (pathname.startsWith("/admin") ? "Admin | Private Shirt" : "Private Shirt");
+  }, [pathname]);
+
   return (
     <div className="min-h-screen">
       <header className="glass-nav sticky top-0 z-40">
@@ -83,11 +107,13 @@ export default function App() {
             <Route path="sizes" element={<Sizes />} />
             <Route path="orders" element={<Orders />} />
             <Route path="discounts" element={<Discounts />} />
+            <Route path="messages" element={<Messages />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
       <Footer />
+      <SupportBubble />
     </div>
   );
 }
