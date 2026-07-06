@@ -10,6 +10,7 @@ import { Unternehmen, Leistungen, Filialen, Grossbestellung, Impressum, AGB, Dat
 import Kontakt from "@/pages/Kontakt";
 import Produkte from "@/pages/Produkte";
 import SelbstGestalten from "@/pages/SelbstGestalten";
+import NotFound from "@/pages/NotFound";
 import { useCart } from "@/stores/cart";
 import { ShoppingBag } from "lucide-react";
 import logo from "@/assets/group-25.svg";
@@ -83,6 +84,7 @@ export default function App() {
             <Route path="orders" element={<Orders />} />
             <Route path="discounts" element={<Discounts />} />
           </Route>
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
       <Footer />

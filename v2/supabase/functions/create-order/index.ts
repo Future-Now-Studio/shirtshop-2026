@@ -15,6 +15,37 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 );
 
+// Sends an order-received email to the shop owner via Resend (if configured).
+async function sendOrderEmail(order: any, lines: any[], total: number, itemCount: number) {
+  const apiKey = Deno.env.get("RESEND_API_KEY");
+  if (!apiKey) return; // email not configured — skip silently
+
+  const { data: settings } = await supabase.from("settings").select("order_email").eq("id", 1).single();
+  const to = Deno.env.get("ORDER_EMAIL_TO") || settings?.order_email;
+  if (!to) return;
+
+  const rows = lines
+    .map((l: any) => `<tr><td>${l.item.qty}×</td><td>${l.item.productId}</td><td>${(l.unit * l.item.qty).toFixed(2)} €</td></tr>`)
+    .join("");
+  const html = `
+    <h2>Neue Bestellung</h2>
+    <p><b>Kunde:</b> ${order.customer_name ?? "—"} (${order.customer_email ?? "—"})</p>
+    <p><b>Positionen:</b> ${itemCount} Stück · <b>Gesamt:</b> ${total.toFixed(2)} €</p>
+    <table cellpadding="6" border="1" style="border-collapse:collapse">${rows}</table>
+    <p>Bestell-ID: ${order.id}. Design-Dateien im Admin unter Bestellungen.</p>`;
+
+  await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      from: Deno.env.get("ORDER_EMAIL_FROM") || "Private Shirt <onboarding@resend.dev>",
+      to: [to],
+      subject: `Neue Bestellung – ${total.toFixed(2)} €`,
+      html,
+    }),
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
@@ -65,7 +96,9 @@ Deno.serve(async (req) => {
 
     // Insert items. Design media already lives in the order-designs bucket under
     // item.designId; we store the id + manifest so the admin can list every file.
+    let itemCount = 0;
     for (const { item, unit } of lines) {
+      itemCount += item.qty;
       await supabase.from("order_items").insert({
         order_id: order.id,
         product_id: item.productId,
@@ -76,9 +109,32 @@ Deno.serve(async (req) => {
         design_data: item.designId ? { designId: item.designId, manifest: item.designManifest ?? [] } : null,
         design_render_paths: [],
       });
+
+      // Decrement stock for this variant+size (best effort).
+      if (item.sizeId) {
+        const { data: av } = await supabase
+          .from("variant_size_availability")
+          .select("stock")
+          .eq("variant_id", item.variantId)
+          .eq("size_id", item.sizeId)
+          .single();
+        if (av) {
+          const next = Math.max(0, (av.stock ?? 0) - item.qty);
+          await supabase
+            .from("variant_size_availability")
+            .update({ stock: next, available: next > 0 })
+            .eq("variant_id", item.variantId)
+            .eq("size_id", item.sizeId);
+        }
+      }
     }
 
-    return json({ orderId: order.id });
+    // notify shop owner by email (best effort — never blocks the order)
+    try {
+      await sendOrderEmail(order, lines, total, itemCount);
+    } catch (_) { /* ignore email errors */ }
+
+    return json({ orderId: order.id, total: total.toFixed(2), itemCount });
   } catch (e) {
     return json({ error: (e as Error).message }, 500);
   }

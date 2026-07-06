@@ -157,7 +157,9 @@ function PayForm({ customer, items }: { customer: Customer; items: ReturnType<ty
       setBusy(false);
       if (error || data?.error) { setError(error?.message ?? data.error); return; }
       clear();
-      navigate(`/bestellung/${data.orderId}`);
+      navigate(`/bestellung/${data.orderId}`, {
+        state: { total: data.total, itemCount: data.itemCount, email: customer.email },
+      });
     } else {
       setBusy(false);
       setError("Zahlung nicht abgeschlossen.");
