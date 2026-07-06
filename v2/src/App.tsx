@@ -13,6 +13,7 @@ import SelbstGestalten from "@/pages/SelbstGestalten";
 import NotFound from "@/pages/NotFound";
 import SupportBubble from "@/components/layout/SupportBubble";
 import Header from "@/components/layout/Header";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import { useEffect } from "react";
 import AdminLayout from "@/pages/admin/AdminLayout";
 import Overview from "@/pages/admin/Overview";
@@ -50,6 +51,7 @@ export default function App() {
     <div className="min-h-screen">
       <Header />
       <main className="container py-10">
+        <ErrorBoundary>
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/produkte" element={<Produkte />} />
@@ -79,6 +81,7 @@ export default function App() {
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
+        </ErrorBoundary>
       </main>
       <Footer />
       <SupportBubble />
