@@ -45,6 +45,16 @@ function expected(name) { const n = name.toLowerCase(); for (const [k, h] of MAP
 function hexToRgb(h) { return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]; }
 function dist(a, b) { return (a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2; }
 
+// Some galleries put the colour NAME in the filename (e.g. PW154_Bottle-Green-ca.-Pantone-560C).
+function nameFromFile(f) {
+  const base = f.replace(/\.[a-z0-9]+$/i, "");
+  const m = base.match(/^[A-Za-z]+\d+_(.+)$/);
+  if (!m) return null;
+  let s = m[1].replace(/-?ca\.?-?pantone.*$/i, "").replace(/-\d+[a-z]?$/i, "").replace(/[-_]+/g, " ").trim();
+  return s ? s.toLowerCase() : null;
+}
+function norm(s) { return String(s).toLowerCase().replace(/[^a-z0-9]/g, ""); }
+
 function mapView(x){x=(x||"").toUpperCase();if(x==="F")return"front";if(x==="B")return"back";if(x==="SR"||x==="R")return"right";if(x==="SL"||x==="L"||x==="S")return"left";return null;}
 function parseFile(f){if(!f)return{};let m=f.match(/^P([FBSLR])M\d*_/i);if(m)return{view:mapView(m[1]),code:(f.match(/_C(\w+?)(?:[-_.]|$)/)||[])[1]||null};m=f.match(/^\w+?_\w+?_(\w+?)_([A-Za-z]{1,2})[-_.]/);if(m)return{code:m[1],view:mapView(m[2])};return{};}
 const fileOf = (u) => u.split("/").pop();
@@ -79,22 +89,28 @@ for (const wp of products) {
   if (dbp.error) continue;
   const productId = dbp.data.id;
 
-  // gallery grouped by code
-  const byCode = {}; const generic = {};
-  for (const img of wp.images||[]) { const {code,view}=parseFile(fileOf(img.src)); if(!view)continue; if(code)((byCode[code]??={})[view]??=img.src); if(view!=="front"&&(code==="000"||!generic[view]))generic[view]=img.src; }
+  // gallery grouped by code + a name→url index for galleries that name their files
+  const byCode = {}; const generic = {}; const namedFront = {};
+  for (const img of wp.images||[]) {
+    const file = fileOf(img.src);
+    const {code,view}=parseFile(file);
+    const nm = nameFromFile(file);
+    if (nm && !namedFront[norm(nm)]) namedFront[norm(nm)] = img.src;
+    if(!view)continue; if(code)((byCode[code]??={})[view]??=img.src); if(view!=="front"&&(code==="000"||!generic[view]))generic[view]=img.src;
+  }
 
   // sample front garment colour per code (that has a front)
   const codeColor = {};
   for (const [code, views] of Object.entries(byCode)) { if (!views.front) continue; const c = await sampleGarment(views.front); if (c) codeColor[code] = c; }
   const codes = Object.keys(codeColor);
-  if (codes.length === 0) { console.log(`- ${wp.name}: keine Galerie-Fronts`); continue; }
+  const haveNamed = Object.keys(namedFront).length > 0;
+  if (codes.length === 0 && !haveNamed) { console.log(`- ${wp.name}: keine Galerie-Fronts`); continue; }
 
   // variations (names) — greedy nearest-colour match to an unused code
   const variations = await wc(`/products/${wp.id}/variations?per_page=100`);
   const names = variations.map(v => v.attributes?.find(a=>/farbe|color/i.test(a.name))?.option?.trim()).filter(Boolean);
   const used = new Set();
   const codeForName = {};
-  // order names by how "distinctive" (saturation) their expected colour is — match strong colours first
   for (const name of names) {
     const exp = expected(name);
     let best = null, bestD = Infinity;
@@ -102,18 +118,24 @@ for (const wp of products) {
     if (best) { codeForName[name] = best; used.add(best); }
   }
 
-  // apply to DB variants
+  // apply to DB variants (prefer an exact name-in-filename match, then colour-code match)
   const variants = await admin.from("variants").select("id, colors(name)").eq("product_id", productId);
-  let imgs = 0;
+  let imgs = 0, named = 0;
   for (const v of variants.data) {
-    const code = codeForName[v.colors?.name?.trim()];
+    const cname = v.colors?.name?.trim();
+    const direct = cname ? namedFront[norm(cname)] : null;
+    if (direct) {
+      if (await upload(productId, v.id, "front", direct)) { imgs++; named++; }
+      continue;
+    }
+    const code = codeForName[cname];
     const views = code ? byCode[code] : null;
     if (!views) continue;
     if (views.front && await upload(productId, v.id, "front", views.front)) imgs++;
     for (const view of EXTRA) { const u = views[view] || generic[view]; if (u && await upload(productId, v.id, view, u)) imgs++; }
   }
   total += imgs;
-  console.log(`✓ ${wp.name}: ${imgs} Bilder (${codes.length} Farben gematcht)`);
+  console.log(`✓ ${wp.name}: ${imgs} Bilder (${named} per Name, ${codes.length} Codes)`);
 }
 
 console.log(`\nFertig: ${total} Bilder farb-gematcht neu zugeordnet.`);
