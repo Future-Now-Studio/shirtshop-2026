@@ -73,7 +73,7 @@ export default function ProductGrid() {
                 ) : (p.variants ?? []).length > 0 ? (
                   <div className="flex h-full w-full">
                     {(p.variants ?? []).slice(0, 6).map((v: any) => (
-                      <div key={v.id} className="h-full flex-1" style={{ backgroundColor: v.colors?.hex }} title={v.colors?.name} />
+                      <div key={v.id} className="h-full flex-1" style={{ backgroundColor: v.hex ?? v.colors?.hex }} title={v.colors?.name} />
                     ))}
                   </div>
                 ) : (

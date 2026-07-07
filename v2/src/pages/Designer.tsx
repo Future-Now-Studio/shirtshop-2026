@@ -470,7 +470,7 @@ export default function Designer() {
                         onClick={() => { saveView(view); setVariantIdx(i); setSizeQty({}); }}
                         title={v.colors?.name}
                         className={"h-8 w-8 rounded-full border-2 " + (i === variantIdx ? "border-primary ring-2 ring-primary/30" : "border-border")}
-                        style={{ backgroundColor: v.colors?.hex }}
+                        style={{ backgroundColor: v.hex ?? v.colors?.hex }}
                       />
                     ))}
                   </div>

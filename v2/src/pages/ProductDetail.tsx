@@ -134,7 +134,7 @@ export default function ProductDetail() {
                 className={
                   "h-9 w-9 rounded-full border-2 " + (i === variantIdx ? "border-primary ring-2 ring-primary/30" : "border-border")
                 }
-                style={{ backgroundColor: v.colors?.hex }}
+                style={{ backgroundColor: v.hex ?? v.colors?.hex }}
               />
             ))}
           </div>

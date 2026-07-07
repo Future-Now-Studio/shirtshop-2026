@@ -43,7 +43,7 @@ export function ProductHighlights() {
                 ) : (
                   <div className="flex h-full">
                     {(p.variants ?? []).slice(0, 4).map((v: any) => (
-                      <div key={v.id} className="h-full flex-1" style={{ backgroundColor: v.colors?.hex }} />
+                      <div key={v.id} className="h-full flex-1" style={{ backgroundColor: v.hex ?? v.colors?.hex }} />
                     ))}
                   </div>
                 )}
