@@ -41,8 +41,10 @@ async function computeTotal(items: { productId: string; variantId: string; qty: 
   }
   const tier = (discounts ?? []).filter((d) => d.min_qty <= eligibleQty).sort((a, b) => b.min_qty - a.min_qty)[0];
   const pct = tier?.discount_percent ?? 0;
-  const total = subtotal - (eligibleSubtotal * pct) / 100;
-  return Math.round(total * 100); // cents
+  const goodsTotal = subtotal - (eligibleSubtotal * pct) / 100;
+  // Shipping — keep in sync with src/lib/pricing.ts
+  const shipping = goodsTotal >= 50 ? 0 : 4.9;
+  return Math.round((goodsTotal + shipping) * 100); // cents, VAT already included
 }
 
 Deno.serve(async (req) => {

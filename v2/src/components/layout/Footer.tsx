@@ -88,6 +88,7 @@ export default function Footer() {
             <Link to="/datenschutz" className="hover:text-primary">datenschutz</Link>
             <Link to="/impressum" className="hover:text-primary">impressum</Link>
             <Link to="/agb" className="hover:text-primary">agb</Link>
+            <Link to="/widerruf" className="hover:text-primary">widerruf</Link>
           </div>
           <p>webshop erstellt von <span className="font-medium text-foreground">future-now studio</span></p>
         </div>

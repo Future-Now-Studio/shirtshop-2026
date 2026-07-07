@@ -303,3 +303,80 @@ export function Datenschutz() {
     </div>
   );
 }
+
+/* ---------- Widerrufsrecht ---------- */
+export function Widerruf() {
+  return (
+    <div>
+      <PageHero pre="rechtliches" head="widerrufs" gold="recht." />
+      <div className="max-w-3xl space-y-4 text-sm leading-relaxed text-muted-foreground">
+        <h2 className="pt-2 text-lg font-bold text-foreground">Widerrufsbelehrung</h2>
+        <p>Verbraucher haben ein vierzehntägiges Widerrufsrecht.</p>
+
+        <h3 className="pt-2 font-semibold text-foreground">Widerrufsrecht</h3>
+        <p>
+          Sie haben das Recht, binnen vierzehn Tagen ohne Angabe von Gründen diesen Vertrag zu widerrufen.
+          Die Widerrufsfrist beträgt vierzehn Tage ab dem Tag, an dem Sie oder ein von Ihnen benannter
+          Dritter, der nicht der Beförderer ist, die Waren in Besitz genommen haben bzw. hat.
+        </p>
+        <p>
+          Um Ihr Widerrufsrecht auszuüben, müssen Sie uns
+        </p>
+        <p className="rounded-lg bg-muted/40 p-4 text-foreground">
+          Private Shirt GmbH<br />Ballindamm 40, 20095 Hamburg<br />
+          Tel.: 040 – 328 73 804<br />
+          E-Mail: <a href="mailto:info@private-shirt.de" className="text-primary hover:underline">info@private-shirt.de</a>
+        </p>
+        <p>
+          mittels einer eindeutigen Erklärung (z. B. ein mit der Post versandter Brief oder eine E-Mail) über
+          Ihren Entschluss, diesen Vertrag zu widerrufen, informieren. Sie können dafür das beigefügte
+          Muster-Widerrufsformular verwenden, das jedoch nicht vorgeschrieben ist. Zur Wahrung der
+          Widerrufsfrist reicht es aus, dass Sie die Mitteilung über die Ausübung des Widerrufsrechts vor
+          Ablauf der Widerrufsfrist absenden.
+        </p>
+
+        <h3 className="pt-2 font-semibold text-foreground">Folgen des Widerrufs</h3>
+        <p>
+          Wenn Sie diesen Vertrag widerrufen, haben wir Ihnen alle Zahlungen, die wir von Ihnen erhalten haben,
+          einschließlich der Lieferkosten (mit Ausnahme der zusätzlichen Kosten, die sich daraus ergeben, dass
+          Sie eine andere Art der Lieferung als die von uns angebotene, günstigste Standardlieferung gewählt
+          haben), unverzüglich und spätestens binnen vierzehn Tagen ab dem Tag zurückzuzahlen, an dem die
+          Mitteilung über Ihren Widerruf dieses Vertrags bei uns eingegangen ist. Für diese Rückzahlung
+          verwenden wir dasselbe Zahlungsmittel, das Sie bei der ursprünglichen Transaktion eingesetzt haben,
+          es sei denn, mit Ihnen wurde ausdrücklich etwas anderes vereinbart; in keinem Fall werden Ihnen wegen
+          dieser Rückzahlung Entgelte berechnet.
+        </p>
+        <p>
+          Wir können die Rückzahlung verweigern, bis wir die Waren wieder zurückerhalten haben oder bis Sie den
+          Nachweis erbracht haben, dass Sie die Waren zurückgesandt haben, je nachdem, welches der frühere
+          Zeitpunkt ist. Sie haben die Waren unverzüglich und in jedem Fall spätestens binnen vierzehn Tagen ab
+          dem Tag, an dem Sie uns über den Widerruf dieses Vertrags unterrichten, an uns zurückzusenden. Sie
+          tragen die unmittelbaren Kosten der Rücksendung der Waren.
+        </p>
+
+        <h3 className="pt-2 font-semibold text-foreground">Ausschluss des Widerrufsrechts</h3>
+        <p>
+          Das Widerrufsrecht besteht nicht bei Verträgen zur Lieferung von Waren, die nicht vorgefertigt sind
+          und für deren Herstellung eine individuelle Auswahl oder Bestimmung durch den Verbraucher maßgeblich
+          ist oder die eindeutig auf die persönlichen Bedürfnisse des Verbrauchers zugeschnitten sind
+          (individuell bedruckte oder gestaltete Textilien).
+        </p>
+
+        <h2 className="pt-4 text-lg font-bold text-foreground">Muster-Widerrufsformular</h2>
+        <p className="italic">
+          (Wenn Sie den Vertrag widerrufen wollen, füllen Sie bitte dieses Formular aus und senden es zurück.)
+        </p>
+        <div className="space-y-2 rounded-lg border border-dashed p-4">
+          <p>An Private Shirt GmbH, Ballindamm 40, 20095 Hamburg, E-Mail: info@private-shirt.de:</p>
+          <p>Hiermit widerrufe(n) ich/wir (*) den von mir/uns (*) abgeschlossenen Vertrag über den Kauf der folgenden Waren (*):</p>
+          <p>_______________________________________________</p>
+          <p>Bestellt am (*) / erhalten am (*): ____________________</p>
+          <p>Name des/der Verbraucher(s): ____________________</p>
+          <p>Anschrift des/der Verbraucher(s): ____________________</p>
+          <p>Datum, Unterschrift (nur bei Mitteilung auf Papier): ____________________</p>
+          <p className="text-xs">(*) Unzutreffendes streichen.</p>
+        </div>
+      </div>
+    </div>
+  );
+}

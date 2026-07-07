@@ -1,12 +1,34 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate, Link } from "react-router-dom";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { supabase } from "@/lib/supabase";
 import { stripePromise } from "@/lib/stripe";
 import { useCart } from "@/stores/cart";
+import { fetchDiscountData, computeTotals } from "@/pages/Cart";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+
+function OrderSummary({ items }: { items: ReturnType<typeof useCart.getState>["items"] }) {
+  const productIds = [...new Set(items.map((i) => i.productId))];
+  const { data } = useQuery({
+    queryKey: ["checkout-discounts", productIds.join(",")],
+    queryFn: () => fetchDiscountData(productIds),
+  });
+  const t = data ? computeTotals(items, data.discounts, data.excluded) : null;
+  return (
+    <div className="mb-6 space-y-1.5 rounded-xl border bg-muted/30 p-4 text-sm">
+      <div className="flex justify-between"><span className="text-muted-foreground">Zwischensumme</span><span className="tabular-nums">{t?.subtotal.toFixed(2) ?? "…"} €</span></div>
+      {t && t.pct > 0 && (
+        <div className="flex justify-between text-secondary-foreground"><span>Mengenrabatt ({t.pct}%)</span><span className="tabular-nums">−{t.discount.toFixed(2)} €</span></div>
+      )}
+      <div className="flex justify-between"><span className="text-muted-foreground">Versand</span><span className="tabular-nums">{t ? (t.shipping === 0 ? "gratis" : `${t.shipping.toFixed(2)} €`) : "…"}</span></div>
+      <div className="flex justify-between border-t pt-1.5 font-bold"><span>Gesamt</span><span className="tabular-nums text-primary">{t?.grandTotal.toFixed(2) ?? "…"} €</span></div>
+      {t && <p className="text-right text-xs text-muted-foreground">inkl. {t.vat.toFixed(2)} € MwSt (19%)</p>}
+    </div>
+  );
+}
 
 interface Customer {
   name: string;
@@ -70,6 +92,8 @@ export default function Checkout() {
   return (
     <div className="mx-auto max-w-lg rounded-2xl border bg-card p-8 shadow-card">
       <h1 className="mb-6 text-3xl font-extrabold">Kasse</h1>
+
+      <OrderSummary items={items} />
 
       {!clientSecret ? (
         <form onSubmit={startPayment} className="space-y-4">

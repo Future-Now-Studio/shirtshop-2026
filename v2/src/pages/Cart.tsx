@@ -3,9 +3,10 @@ import { Link } from "react-router-dom";
 import { Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useCart, unitPrice, type CartItem } from "@/stores/cart";
+import { shippingFor, vatIncludedIn, FREE_SHIPPING_THRESHOLD } from "@/lib/pricing";
 import { Button } from "@/components/ui/button";
 
-async function fetchDiscountData(productIds: string[]) {
+export async function fetchDiscountData(productIds: string[]) {
   const [discounts, products] = await Promise.all([
     supabase.from("volume_discounts").select("min_qty, discount_percent").order("min_qty"),
     productIds.length
@@ -24,7 +25,11 @@ export function computeTotals(items: CartItem[], discounts: { min_qty: number; d
   const tier = [...discounts].filter((d) => d.min_qty <= eligibleQty).sort((a, b) => b.min_qty - a.min_qty)[0];
   const pct = tier?.discount_percent ?? 0;
   const discount = (eligibleSubtotal * pct) / 100;
-  return { subtotal, eligibleQty, pct, discount, total: subtotal - discount };
+  const goodsTotal = subtotal - discount;
+  const shipping = shippingFor(goodsTotal);
+  const grandTotal = goodsTotal + shipping;
+  const vat = vatIncludedIn(grandTotal);
+  return { subtotal, eligibleQty, pct, discount, goodsTotal, shipping, grandTotal, vat, total: grandTotal };
 }
 
 export default function Cart() {
@@ -95,10 +100,22 @@ export default function Cart() {
               <span className="tabular-nums">−{totals.discount.toFixed(2)} €</span>
             </div>
           )}
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Versand</span>
+            <span className="tabular-nums">{totals ? (totals.shipping === 0 ? "gratis" : `${totals.shipping.toFixed(2)} €`) : "…"}</span>
+          </div>
+          {totals && totals.shipping > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Noch {(FREE_SHIPPING_THRESHOLD - totals.goodsTotal).toFixed(2)} € bis zum Gratisversand.
+            </p>
+          )}
           <div className="flex justify-between border-t pt-2 text-lg font-bold">
             <span>Gesamt</span>
-            <span className="tabular-nums text-primary">{totals?.total.toFixed(2) ?? "…"} €</span>
+            <span className="tabular-nums text-primary">{totals?.grandTotal.toFixed(2) ?? "…"} €</span>
           </div>
+          {totals && (
+            <p className="text-right text-xs text-muted-foreground">inkl. {totals.vat.toFixed(2)} € MwSt (19%)</p>
+          )}
         </div>
         <Link to="/kasse" className="mt-4 block">
           <Button className="w-full" size="lg">Zur Kasse</Button>

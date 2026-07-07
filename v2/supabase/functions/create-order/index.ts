@@ -77,7 +77,10 @@ Deno.serve(async (req) => {
       return { item: i, unit };
     });
     const tier = (discounts ?? []).filter((d) => d.min_qty <= eligibleQty).sort((a, b) => b.min_qty - a.min_qty)[0];
-    const total = subtotal - (eligibleSubtotal * (tier?.discount_percent ?? 0)) / 100;
+    const goodsTotal = subtotal - (eligibleSubtotal * (tier?.discount_percent ?? 0)) / 100;
+    // Shipping — keep in sync with src/lib/pricing.ts
+    const shipping = goodsTotal >= 50 ? 0 : 4.9;
+    const total = goodsTotal + shipping; // VAT already included in gross prices
 
     // Create the order.
     const { data: order, error: orderErr } = await supabase

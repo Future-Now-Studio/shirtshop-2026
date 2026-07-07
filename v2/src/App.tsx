@@ -6,12 +6,13 @@ import Cart from "@/pages/Cart";
 import Checkout from "@/pages/Checkout";
 import OrderSuccess from "@/pages/OrderSuccess";
 import Footer from "@/components/layout/Footer";
-import { Unternehmen, Leistungen, Filialen, Grossbestellung, Impressum, AGB, Datenschutz } from "@/pages/marketing";
+import { Unternehmen, Leistungen, Filialen, Grossbestellung, Impressum, AGB, Datenschutz, Widerruf } from "@/pages/marketing";
 import Kontakt from "@/pages/Kontakt";
 import Produkte from "@/pages/Produkte";
 import SelbstGestalten from "@/pages/SelbstGestalten";
 import NotFound from "@/pages/NotFound";
 import SupportBubble from "@/components/layout/SupportBubble";
+import CookieConsent from "@/components/CookieConsent";
 import Header from "@/components/layout/Header";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { useEffect } from "react";
@@ -28,6 +29,7 @@ import Messages from "@/pages/admin/Messages";
 const TITLES: Record<string, string> = {
   "/": "Private Shirt | Sei du selbst. Sei einzigartig.",
   "/produkte": "Produkte | Private Shirt",
+  "/widerruf": "Widerrufsrecht | Private Shirt",
   "/selbst-gestalten": "Selbst gestalten | Private Shirt",
   "/leistungen": "Leistungen | Private Shirt",
   "/unternehmen": "Über uns | Private Shirt",
@@ -68,6 +70,7 @@ export default function App() {
           <Route path="/impressum" element={<Impressum />} />
           <Route path="/agb" element={<AGB />} />
           <Route path="/datenschutz" element={<Datenschutz />} />
+          <Route path="/widerruf" element={<Widerruf />} />
           <Route path="/kontakt" element={<Kontakt />} />
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<Overview />} />
@@ -85,6 +88,7 @@ export default function App() {
       </main>
       <Footer />
       <SupportBubble />
+      <CookieConsent />
     </div>
   );
 }
