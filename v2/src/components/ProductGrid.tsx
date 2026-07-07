@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 async function fetchProducts() {
   const { data, error } = await supabase
     .from("products")
-    .select("id, slug, name, description, base_price, category, variants(id, colors(name, hex), variant_images(view, storage_path))")
+    .select("id, slug, name, description, base_price, category, variants(id, hex, colors(name, hex), variant_images(view, storage_path))")
     .eq("status", "published")
     .order("created_at");
   if (error) throw error;

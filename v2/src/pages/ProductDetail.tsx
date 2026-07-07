@@ -15,7 +15,7 @@ async function fetchProduct(slug: string) {
     .from("products")
     .select(
       `id, slug, name, description, category, base_price, design_element_price,
-       variants(id, sort_order, colors(id, name, hex), variant_images(view, storage_path),
+       variants(id, hex, sort_order, colors(id, name, hex), variant_images(view, storage_path),
                 variant_size_availability(size_id, available, stock)),
        product_sizes(sizes(id, name, sort_order))`
     )

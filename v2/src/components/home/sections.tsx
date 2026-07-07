@@ -9,7 +9,7 @@ import aboutImage from "@/assets/lifestyle-woman.jpg";
 async function fetchHighlights() {
   const { data, error } = await supabase
     .from("products")
-    .select("id, slug, name, base_price, variants(id, colors(hex), variant_images(view, storage_path))")
+    .select("id, slug, name, base_price, variants(id, hex, colors(hex), variant_images(view, storage_path))")
     .eq("status", "published")
     .order("created_at", { ascending: false })
     .limit(8);
