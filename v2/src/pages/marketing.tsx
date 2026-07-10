@@ -1,7 +1,10 @@
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, MapPin, Mail, Phone, ArrowRight, Printer, Truck, Shirt, Sparkles, Scissors } from "lucide-react";
+import { Check, MapPin, Mail, Phone, ArrowRight, Printer, Truck, Shirt, Sparkles, Scissors, Percent, Zap, Users, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { supabase } from "@/lib/supabase";
 import agbRaw from "@/data/agb.txt?raw";
 import datenschutzRaw from "@/data/datenschutz.txt?raw";
 import hamburgImage from "@/assets/hamburg-city.jpg";
@@ -372,32 +375,239 @@ export function Filialen() {
 }
 
 /* ---------- Großbestellung ---------- */
-const BULK = [
-  "mengenrabatte schon ab kleinen auflagen",
-  "günstigere stückpreise bei größeren mengen",
-  "schnelle lieferung auf anfrage",
-  "dein persönlicher ansprechpartner für alle fragen",
+const BULK_BENEFITS = [
+  { icon: Package, value: "ab 25 stück", title: "mengenrabatte", desc: "schon ab kleinen auflagen attraktive konditionen." },
+  { icon: Percent, value: "bis 50 % sparen", title: "günstiger pro stück", desc: "je größer die menge, desto niedriger der stückpreis." },
+  { icon: Zap, value: "express möglich", title: "schnelle lieferung", desc: "auf anfrage auch besonders kurzfristig." },
+  { icon: Users, value: "persönlich", title: "feste ansprechpartner", desc: "beratung von der auswahl bis zur veredelung." },
 ];
+
+const TEXTIL_ARTEN = ["T-Shirts (Unisex)", "T-Shirts (Damen)", "T-Shirts (gemischt)", "Poloshirts", "Langarmshirts", "Tops / Tanks", "Sweatshirts", "Kapuzensweater", "Hemden / Blusen", "Jacken", "Schürzen", "Basecaps / Mützen", "Tassen", "Mousepads", "Sonstige (siehe Bemerkungen)"];
+const TEXTIL_QUALITAETEN = ["Leichte Qualität (Giveaways, Einmalshirts)", "Mittlere Qualität (sehr gute Waschbeständigkeit)", "Schwere Qualität (Arbeitsbekleidung)", "Bio-Baumwolle (zertifiziert)", "Fair gehandelte Textilien"];
+const DRUCKVERFAHREN = ["Beratung erwünscht", "Digitaler Direktdruck (DTG)", "Flexdruck", "Flockdruck", "Plastisoltransfer", "Siebdruck", "Stick", "Sublimationsdruck"];
+const FILIALEN = ["Europa Passage", "Mercado Altona"];
+const ANREDEN = ["Herr", "Frau", "Firma", "Organisation", "Verein"];
+
+const selectCls = "h-10 w-full rounded-md border border-input bg-background px-3 text-sm";
+
+function BulkForm() {
+  const [f, setF] = useState({
+    filiale: "", textilArt: "", qualitaet: "", druckverfahren: "", stueckzahl: "",
+    anrede: "", vorname: "", nachname: "", email: "", telefon: "", firma: "", bemerkungen: "",
+  });
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const set = (k: keyof typeof f, v: string) => setF((s) => ({ ...s, [k]: v }));
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      let motivPath: string | null = null;
+      if (file) {
+        const path = `bulk/${crypto.randomUUID()}/${file.name}`;
+        const { error: upErr } = await supabase.storage.from("order-designs").upload(path, file, { upsert: false });
+        if (upErr) throw upErr;
+        motivPath = path;
+      }
+      const message = [
+        "GROSSBESTELLUNG-ANFRAGE",
+        `Filiale: ${f.filiale || "—"}`,
+        `Textil-Art: ${f.textilArt || "—"}`,
+        `Qualität: ${f.qualitaet || "—"}`,
+        `Druckverfahren: ${f.druckverfahren || "—"}`,
+        `Gewünschte Stückzahl: ${f.stueckzahl || "—"}`,
+        `Anrede: ${f.anrede || "—"}`,
+        `Firma/Organisation: ${f.firma || "—"}`,
+        `Telefon: ${f.telefon || "—"}`,
+        motivPath ? `Motiv-Datei: ${motivPath}` : "Motiv-Datei: keine",
+        "",
+        `Bemerkungen: ${f.bemerkungen || "—"}`,
+      ].join("\n");
+      const { error: insErr } = await supabase.from("contact_messages").insert({
+        name: `${f.vorname} ${f.nachname}`.trim(),
+        email: f.email,
+        message,
+      });
+      if (insErr) throw insErr;
+      setDone(true);
+    } catch (err) {
+      setError((err as Error).message ?? "Fehler beim Senden.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (done)
+    return (
+      <div className="rounded-3xl border border-border/60 bg-card p-10 text-center shadow-card">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary"><Check className="h-7 w-7" /></div>
+        <h3 className="text-2xl font-bold lowercase">anfrage erhalten!</h3>
+        <p className="mx-auto mt-2 max-w-md text-muted-foreground">
+          danke, {f.vorname || "hallo"}! wir erstellen dir ein individuelles angebot und melden uns
+          schnellstmöglich unter {f.email}.
+        </p>
+      </div>
+    );
+
+  return (
+    <form onSubmit={submit} className="space-y-8 rounded-3xl border border-border/60 bg-card p-6 shadow-card sm:p-10">
+      {/* Textilien */}
+      <fieldset className="space-y-4">
+        <legend className="mb-2 text-sm font-semibold uppercase tracking-wide text-primary">textilien</legend>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label>Filiale *</Label>
+            <select required className={selectCls} value={f.filiale} onChange={(e) => set("filiale", e.target.value)}>
+              <option value="">Filiale wählen</option>
+              {FILIALEN.map((o) => <option key={o}>{o}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Textil-Art</Label>
+            <select className={selectCls} value={f.textilArt} onChange={(e) => set("textilArt", e.target.value)}>
+              <option value="">Textil-Art wählen</option>
+              {TEXTIL_ARTEN.map((o) => <option key={o}>{o}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Textil-Qualität *</Label>
+            <select required className={selectCls} value={f.qualitaet} onChange={(e) => set("qualitaet", e.target.value)}>
+              <option value="">Qualität wählen</option>
+              {TEXTIL_QUALITAETEN.map((o) => <option key={o}>{o}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Gewünschte Stückzahl *</Label>
+            <Input required type="text" inputMode="numeric" placeholder="z. B. 200" value={f.stueckzahl} onChange={(e) => set("stueckzahl", e.target.value)} />
+          </div>
+        </div>
+      </fieldset>
+
+      {/* Druckdaten */}
+      <fieldset className="space-y-4">
+        <legend className="mb-2 text-sm font-semibold uppercase tracking-wide text-primary">druckdaten</legend>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label>Druckverfahren (wenn bekannt)</Label>
+            <select className={selectCls} value={f.druckverfahren} onChange={(e) => set("druckverfahren", e.target.value)}>
+              <option value="">Druckverfahren wählen</option>
+              {DRUCKVERFAHREN.map((o) => <option key={o}>{o}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Druckmotiv (optional)</Label>
+            <input
+              type="file"
+              accept=".jpg,.jpeg,.png,.eps,.ai,.pdf,.svg"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-2 file:text-sm file:font-medium file:text-primary"
+            />
+            <p className="text-xs text-muted-foreground">.jpg, .png, .eps, .ai, .pdf — max. 10 MB</p>
+          </div>
+        </div>
+      </fieldset>
+
+      {/* Kontaktperson */}
+      <fieldset className="space-y-4">
+        <legend className="mb-2 text-sm font-semibold uppercase tracking-wide text-primary">kontaktperson</legend>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label>Anrede *</Label>
+            <select required className={selectCls} value={f.anrede} onChange={(e) => set("anrede", e.target.value)}>
+              <option value="">Anrede wählen</option>
+              {ANREDEN.map((o) => <option key={o}>{o}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Firma / Organisation</Label>
+            <Input value={f.firma} onChange={(e) => set("firma", e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Vorname *</Label>
+            <Input required value={f.vorname} onChange={(e) => set("vorname", e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Nachname *</Label>
+            <Input required value={f.nachname} onChange={(e) => set("nachname", e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>E-Mail *</Label>
+            <Input required type="email" value={f.email} onChange={(e) => set("email", e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Telefon</Label>
+            <Input type="tel" value={f.telefon} onChange={(e) => set("telefon", e.target.value)} />
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Bemerkungen / weitere Informationen</Label>
+          <textarea rows={4} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={f.bemerkungen} onChange={(e) => set("bemerkungen", e.target.value)} />
+        </div>
+      </fieldset>
+
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      <Button type="submit" size="lg" className="w-full sm:w-auto" disabled={busy}>
+        {busy ? "wird gesendet…" : "anfrage abschicken"}
+      </Button>
+    </form>
+  );
+}
 
 export function Grossbestellung() {
   return (
     <div>
-      <PageHero pre="großbestellung" head="viele teile?" gold="kein problem." lead="für verein, firma oder event — mit steigender stückzahl sinkt der stückpreis automatisch." />
-      <div className="grid items-center gap-10 md:grid-cols-2">
+      {/* Hero */}
+      <div className="grid items-center gap-12 md:grid-cols-2">
         <div>
-          <ul className="space-y-4">
-            {BULK.map((b) => (
-              <li key={b} className="flex items-start gap-3">
-                <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"><Check className="h-4 w-4" /></span>
-                <span className="text-muted-foreground">{b}</span>
-              </li>
-            ))}
-          </ul>
-          <div className="mt-8">
-            <Link to="/kontakt"><Button size="lg">angebot anfragen <ArrowRight className="ml-2 h-4 w-4" /></Button></Link>
+          <p className="mb-3 text-sm font-semibold uppercase tracking-wide text-primary">großbestellung</p>
+          <h1 className="text-5xl font-black lowercase leading-[0.95] sm:text-6xl">
+            <span className="text-primary">du brauchst masse? </span>
+            <span className="italic text-secondary">können wir.</span>
+          </h1>
+          <div className="mt-5 space-y-3 text-muted-foreground">
+            <p>
+              du benötigst 200 t-shirts für dein firmenevent? wir unterstützen dich bei der auswahl — denn kein
+              shirt ist wie das andere. von caps, mützen, schürzen und regenschirmen über t-shirts, poloshirts
+              und jacken bis zu blusen: aus unserem umfangreichen sortiment findest du das richtige werbemittel.
+            </p>
+            <p>
+              bei bedruckung, bestickung oder anderer gestaltung stehen wir dir mit über 10 jahren erfahrung zur
+              seite. ab 30 teilen bieten wir attraktive konditionen bei top-qualität.
+            </p>
           </div>
+          <a href="#anfrage" className="mt-7 inline-block">
+            <Button size="lg">jetzt anfragen <ArrowRight className="ml-2 h-4 w-4" /></Button>
+          </a>
         </div>
-        <img src={bulkImage} alt="Großbestellung" className="aspect-[4/3] w-full rounded-3xl object-cover shadow-card" />
+        <img src={bulkImage} alt="Großbestellung" className="aspect-[4/3] w-full rounded-[2rem] object-cover shadow-card" />
+      </div>
+
+      {/* Benefits */}
+      <div className="mt-20">
+        <h2 className="mb-8 text-center text-3xl font-black lowercase sm:text-4xl">deine vorteile bei <span className="italic text-secondary">großbestellungen</span></h2>
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          {BULK_BENEFITS.map((b) => (
+            <div key={b.title} className="hover-lift rounded-2xl border border-border/60 bg-card p-6 shadow-card">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary"><b.icon className="h-6 w-6" /></div>
+              <p className="text-lg font-black text-primary">{b.value}</p>
+              <h3 className="mt-1 font-bold lowercase">{b.title}</h3>
+              <p className="mt-1 text-sm text-muted-foreground">{b.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Inquiry form */}
+      <div id="anfrage" className="mt-20 scroll-mt-24">
+        <div className="mb-8 text-center">
+          <h2 className="text-3xl font-black lowercase sm:text-4xl">jetzt anfragen & <span className="italic text-secondary">angebot erhalten</span></h2>
+          <p className="mx-auto mt-2 max-w-xl text-muted-foreground">fülle das formular aus — wir erstellen dir ein individuelles, kostenfreies angebot.</p>
+        </div>
+        <BulkForm />
       </div>
     </div>
   );
