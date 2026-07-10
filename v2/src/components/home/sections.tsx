@@ -1,9 +1,11 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Plus, MapPin, Phone, Mail, Sparkles, Layers, Palette } from "lucide-react";
+import { ArrowRight, Plus, MapPin, Phone, Mail, Sparkles, Layers, Palette, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
+import { STORES } from "@/pages/marketing";
 import aboutImage from "@/assets/lifestyle-woman.jpg";
+import hamburgImage from "@/assets/hamburg-city.jpg";
 
 /* ---------- Highlights slider ---------- */
 async function fetchHighlights() {
@@ -104,30 +106,35 @@ export function ShopBento() {
 }
 
 /* ---------- Locations ---------- */
-export const STORES = [
-  { name: "Europa Passage", address: "Ballindamm 40, 20095 Hamburg", phone: "040 328 738 04", email: "europa-passage@private-shirt.de" },
-  { name: "Mercado Altona", address: "Ottenser Hauptstraße 10, 22765 Hamburg", phone: "040 399 077 78", email: "altona@private-shirt.de" },
-];
-
 export function LocationsTeaser() {
   return (
     <section className="mt-20">
       <div className="mb-8 text-center">
-        <h2 className="text-3xl font-extrabold lowercase">besuch uns in hamburg</h2>
-        <p className="mt-2 text-muted-foreground">persönliche beratung in unseren beiden filialen.</p>
+        <p className="text-sm font-semibold uppercase tracking-wide text-primary">filialen</p>
+        <h2 className="mt-1 text-3xl font-extrabold lowercase">besuch uns in hamburg</h2>
+        <p className="mt-2 text-muted-foreground">persönliche beratung in unseren beiden filialen mitten in der stadt.</p>
       </div>
       <div className="grid gap-6 md:grid-cols-2">
         {STORES.map((s) => (
-          <div key={s.name} className="rounded-2xl border border-border/60 bg-card p-6 shadow-card">
-            <h3 className="text-xl font-bold text-primary">{s.name}</h3>
-            <div className="mt-4 space-y-2 text-sm text-muted-foreground">
-              <p className="flex items-center gap-2"><MapPin className="h-4 w-4 text-primary" /> {s.address}</p>
-              <p className="flex items-center gap-2"><Phone className="h-4 w-4 text-primary" /> {s.phone}</p>
-              <a href={`mailto:${s.email}`} className="flex items-center gap-2 hover:text-primary"><Mail className="h-4 w-4 text-primary" /> {s.email}</a>
+          <div key={s.name} className="hover-lift overflow-hidden rounded-3xl border border-border/60 bg-card shadow-card">
+            <div className="relative h-48 overflow-hidden">
+              <img src={s.image} alt={s.name} className="h-full w-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+              <h3 className="absolute bottom-3 left-5 text-2xl font-bold capitalize text-white drop-shadow">{s.name}</h3>
             </div>
-            <Link to="/filialen" className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-primary">
-              Anfahrt & Details <ArrowRight className="h-4 w-4" />
-            </Link>
+            <div className="grid gap-4 p-6 sm:grid-cols-2">
+              <div className="space-y-2.5 text-sm text-muted-foreground">
+                <p className="flex items-start gap-2"><MapPin className="mt-0.5 h-4 w-4 shrink-0 text-primary" /> {s.address}</p>
+                <p className="flex items-center gap-2"><Phone className="h-4 w-4 shrink-0 text-primary" /> {s.phone}</p>
+                <a href={`mailto:${s.email}`} className="flex items-center gap-2 break-all hover:text-primary"><Mail className="h-4 w-4 shrink-0 text-primary" /> {s.email}</a>
+                <Link to="/filialen" className="inline-flex items-center gap-1 pt-1 text-sm font-semibold text-primary">
+                  Anfahrt & Details <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
+              <div className="overflow-hidden rounded-xl border border-border/60">
+                <iframe src={s.map} title={`Karte ${s.name}`} className="h-40 w-full border-0 sm:h-full" loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+              </div>
+            </div>
           </div>
         ))}
       </div>
@@ -162,20 +169,55 @@ const FAQ = [
   },
 ];
 
+const ABOUT_STATS = [
+  { value: "2010", label: "gegründet" },
+  { value: "2", label: "filialen in hh" },
+  { value: "1 Mio+", label: "prints" },
+];
+
 export function AboutTeaser() {
   return (
-    <section className="mt-20 grid items-center gap-10 overflow-hidden rounded-3xl border border-border/60 bg-card shadow-card md:grid-cols-2">
-      <img src={aboutImage} alt="Private Shirt Hamburg" className="h-full max-h-80 w-full object-cover" />
-      <div className="p-8 sm:p-12">
+    <section className="mt-24 grid items-center gap-12 md:grid-cols-2">
+      {/* Image with floating cards */}
+      <div className="relative">
+        <div className="hover-lift overflow-hidden rounded-[2rem] shadow-card">
+          <img src={hamburgImage} alt="Hamburg — Heimat von Private Shirt" className="aspect-[4/5] w-full object-cover sm:aspect-square" />
+        </div>
+        {/* seit 2010 badge, overlapping bottom-left */}
+        <div className="absolute -bottom-5 -left-3 rounded-2xl border border-border/60 bg-card/95 p-5 shadow-xl backdrop-blur sm:-left-6">
+          <p className="text-xl font-black text-primary">seit 2010</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">professionelle textilveredelung<br />aus hamburg</p>
+        </div>
+        {/* google rating chip, overlapping top-right */}
+        <div className="absolute -right-3 -top-4 flex items-center gap-1.5 rounded-full border border-border/60 bg-card/95 px-4 py-2 shadow-xl backdrop-blur sm:-right-5">
+          <Star className="h-4 w-4 fill-secondary text-secondary" />
+          <span className="text-sm font-bold">4,7</span>
+          <span className="text-xs text-muted-foreground">google</span>
+        </div>
+      </div>
+
+      {/* Copy */}
+      <div>
         <p className="text-sm font-semibold uppercase tracking-wide text-primary">aus hamburg</p>
-        <h2 className="mt-2 text-3xl font-extrabold lowercase">professionelle textilveredelung</h2>
-        <p className="mt-4 text-muted-foreground">
-          Seit über zehn Jahren stehen wir für Qualität und Service — von der Kleinstauflage bis zur
-          Großserie. Markentextilien, erstklassige Druckverfahren und freundliche Fachberatung.
+        <h2 className="mt-3 text-4xl font-black lowercase leading-[0.95] sm:text-5xl">
+          <span className="text-primary">wir sind private shirt: </span>
+          <span className="italic text-secondary">geboren in hamburg.</span>
+        </h2>
+        <p className="mt-5 max-w-lg text-muted-foreground">
+          guter stoff für deine ideen. seit über zehn jahren veredeln wir markentextilien — von der
+          kleinstauflage bis zur großserie, mit erstklassigen druckverfahren und ehrlicher fachberatung.
         </p>
-        <Link to="/unternehmen" className="mt-6 inline-block">
-          <Button variant="outline">
-            Mehr über uns <ArrowRight className="ml-2 h-4 w-4" />
+        <dl className="mt-8 flex gap-8">
+          {ABOUT_STATS.map((s) => (
+            <div key={s.label}>
+              <dt className="text-3xl font-black text-primary">{s.value}</dt>
+              <dd className="mt-1 text-xs lowercase text-muted-foreground">{s.label}</dd>
+            </div>
+          ))}
+        </dl>
+        <Link to="/unternehmen" className="mt-8 inline-block">
+          <Button size="lg">
+            jetzt kennenlernen <ArrowRight className="ml-2 h-4 w-4" />
           </Button>
         </Link>
       </div>

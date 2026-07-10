@@ -172,7 +172,7 @@ export function Leistungen() {
 }
 
 /* ---------- Filialen ---------- */
-const STORES = [
+export const STORES = [
   {
     name: "europa passage",
     address: "Ballindamm 40, 20095 Hamburg",
