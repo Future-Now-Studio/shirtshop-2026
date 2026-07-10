@@ -50,7 +50,7 @@ export default function App() {
   }, [pathname]);
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen overflow-x-hidden">
       <Header />
       <main className="container py-10">
         <ErrorBoundary>
