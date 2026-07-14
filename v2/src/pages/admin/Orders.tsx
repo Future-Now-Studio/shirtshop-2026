@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, ChevronLeft, Download } from "lucide-react";
+import { ChevronRight, ChevronLeft, Download, FileText, Package, Undo2 } from "lucide-react";
+import JSZip from "jszip";
 import { supabase } from "@/lib/supabase";
 
 function FileRow({ title, files, manifest }: { title: string; files: any[]; manifest?: any[] }) {
@@ -32,19 +33,70 @@ function FileRow({ title, files, manifest }: { title: string; files: any[]; mani
   );
 }
 
-const STATUSES = ["pending", "paid", "fulfilled", "cancelled"] as const;
+const STATUSES = ["pending", "paid", "in_production", "shipped", "completed", "cancelled", "refunded"] as const;
 const STATUS_LABEL: Record<string, string> = {
-  pending: "offen", paid: "bezahlt", fulfilled: "versendet", cancelled: "storniert",
+  pending: "offen", paid: "bezahlt", in_production: "in produktion", shipped: "versendet",
+  completed: "abgeschlossen", cancelled: "storniert", refunded: "erstattet",
 };
 const STATUS_CLS: Record<string, string> = {
   pending: "bg-secondary text-secondary-foreground",
   paid: "bg-green-100 text-green-800",
-  fulfilled: "bg-blue-100 text-blue-800",
+  in_production: "bg-amber-100 text-amber-800",
+  shipped: "bg-blue-100 text-blue-800",
+  completed: "bg-emerald-100 text-emerald-800",
   cancelled: "bg-muted text-muted-foreground",
+  refunded: "bg-rose-100 text-rose-800",
 };
 
 function fmtDate(s: string) {
   return new Date(s).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" });
+}
+
+/** F1: fulfillment — tracking number + shipped mail. */
+function FulfillmentCard({ order, onChange }: { order: any; onChange: () => void }) {
+  const [tracking, setTracking] = useState(order.tracking_number ?? "");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function markShipped() {
+    setBusy(true); setMsg(null);
+    const { error } = await supabase.from("orders").update({
+      status: "shipped", tracking_number: tracking || null, shipped_at: new Date().toISOString(),
+    }).eq("id", order.id);
+    if (error) { setMsg("Fehler: " + error.message); setBusy(false); return; }
+    // send shipping mail (best effort — needs send-ship-email function deployed)
+    try {
+      await supabase.functions.invoke("send-ship-email", { body: { orderId: order.id } });
+      setMsg("Als versendet markiert · Mail ausgelöst.");
+    } catch { setMsg("Als versendet markiert (Mail-Funktion nicht erreichbar)."); }
+    setBusy(false); onChange();
+  }
+
+  async function saveTracking() {
+    setBusy(true); setMsg(null);
+    const { error } = await supabase.from("orders").update({ tracking_number: tracking || null }).eq("id", order.id);
+    setMsg(error ? "Fehler: " + error.message : "Sendungsnummer gespeichert.");
+    setBusy(false); onChange();
+  }
+
+  return (
+    <div className="mt-6 rounded-xl border p-4 text-sm">
+      <p className="mb-3 font-semibold">Versand</p>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="flex-1 space-y-1">
+          <label className="text-xs text-muted-foreground">Sendungsnummer</label>
+          <input value={tracking} onChange={(e) => setTracking(e.target.value)} placeholder="z. B. DHL 00340…"
+            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" />
+        </div>
+        <button onClick={saveTracking} disabled={busy} className="h-10 rounded-md border px-3 text-sm hover:bg-accent">speichern</button>
+        <button onClick={markShipped} disabled={busy} className="h-10 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-60">
+          als versendet markieren + mail
+        </button>
+      </div>
+      {order.shipped_at && <p className="mt-2 text-xs text-muted-foreground">Versendet am {fmtDate(order.shipped_at)}</p>}
+      {msg && <p className="mt-2 text-xs text-muted-foreground">{msg}</p>}
+    </div>
+  );
 }
 
 async function fetchOrders() {
@@ -80,6 +132,86 @@ async function fetchOrder(id: string) {
     }
   }
   return data;
+}
+
+/** F2 + F3 + F4: production ZIP, invoice PDF, refund. */
+function OrderActions({ order, onChange }: { order: any; onChange: () => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function downloadZip() {
+    setBusy("zip"); setMsg(null);
+    try {
+      const zip = new JSZip();
+      let n = 0;
+      for (const it of order.order_items ?? []) {
+        const label = `${it.products?.name ?? "artikel"}_${it.variants?.colors?.name ?? ""}_${it.sizes?.name ?? ""}_${it.qty}x`.replace(/[^\w-]+/g, "-");
+        for (const f of it.files ?? []) {
+          const res = await fetch(f.url);
+          if (!res.ok) continue;
+          zip.file(`${label}/${f.name}`, await res.blob());
+          n++;
+        }
+      }
+      if (n === 0) { setMsg("Keine Design-Dateien in dieser Bestellung."); setBusy(null); return; }
+      const specs = (order.order_items ?? []).map((it: any) =>
+        `${it.qty}× ${it.products?.name} — ${it.variants?.colors?.name} / ${it.sizes?.name}`).join("\n");
+      zip.file("PRODUKTION.txt", `Bestellung ${order.id}\nKunde: ${order.customer_name}\n\n${specs}\n`);
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `bestellung-${order.id.slice(0, 8)}-designs.zip`; a.click();
+      URL.revokeObjectURL(url);
+      setMsg(`${n} Dateien als ZIP geladen.`);
+    } catch (e) { setMsg("ZIP-Fehler: " + (e as Error).message); }
+    setBusy(null);
+  }
+
+  async function invoice() {
+    setBusy("pdf"); setMsg(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-invoice", { body: { orderId: order.id } });
+      if (error || data?.error) throw new Error(error?.message ?? data.error);
+      if (data?.pdfBase64) {
+        const a = document.createElement("a");
+        a.href = `data:application/pdf;base64,${data.pdfBase64}`;
+        a.download = `rechnung-${order.id.slice(0, 8)}.pdf`; a.click();
+        setMsg("Rechnung erstellt.");
+      } else setMsg("Keine PDF erhalten.");
+    } catch (e) { setMsg("PDF-Funktion nicht erreichbar (deployen): " + (e as Error).message); }
+    setBusy(null);
+  }
+
+  async function refund() {
+    if (!confirm("Diese Bestellung wirklich vollständig über Stripe erstatten? Bestand wird zurückgebucht.")) return;
+    setBusy("refund"); setMsg(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("refund-order", { body: { orderId: order.id } });
+      if (error || data?.error) throw new Error(error?.message ?? data.error);
+      setMsg("Erstattet.");
+      onChange();
+    } catch (e) { setMsg("Refund-Funktion nicht erreichbar (deployen): " + (e as Error).message); }
+    setBusy(null);
+  }
+
+  const refunded = order.status === "refunded";
+  return (
+    <div className="mt-4 rounded-xl border p-4">
+      <p className="mb-3 text-sm font-semibold">Aktionen</p>
+      <div className="flex flex-wrap gap-2">
+        <button onClick={downloadZip} disabled={!!busy} className="inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm hover:bg-accent disabled:opacity-60">
+          <Package className="h-4 w-4" /> {busy === "zip" ? "packe…" : "Design-Dateien (ZIP)"}
+        </button>
+        <button onClick={invoice} disabled={!!busy} className="inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm hover:bg-accent disabled:opacity-60">
+          <FileText className="h-4 w-4" /> {busy === "pdf" ? "erstelle…" : "Rechnung (PDF)"}
+        </button>
+        <button onClick={refund} disabled={!!busy || refunded} className="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-60">
+          <Undo2 className="h-4 w-4" /> {refunded ? "erstattet" : busy === "refund" ? "erstatte…" : "Rückerstattung"}
+        </button>
+      </div>
+      {msg && <p className="mt-2 text-xs text-muted-foreground">{msg}</p>}
+    </div>
+  );
 }
 
 export default function Orders() {
@@ -137,6 +269,10 @@ export default function Orders() {
             <p className="mt-1 text-lg font-bold text-primary">{Number(order.total).toFixed(2)} €</p>
           </div>
         </div>
+
+        <FulfillmentCard order={order} onChange={() => { qc.invalidateQueries({ queryKey: ["admin-orders"] }); qc.invalidateQueries({ queryKey: ["admin-order", openId] }); }} />
+
+        <OrderActions order={order} onChange={() => { qc.invalidateQueries({ queryKey: ["admin-orders"] }); qc.invalidateQueries({ queryKey: ["admin-order", openId] }); }} />
 
         <p className="mb-2 mt-6 font-semibold">Positionen</p>
         <ul className="divide-y rounded-xl border">
