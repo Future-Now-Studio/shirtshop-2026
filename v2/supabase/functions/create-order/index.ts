@@ -5,6 +5,7 @@
 import Stripe from "https://esm.sh/stripe@17.7.0?target=denonext";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
+import { validateCoupon } from "../_shared/coupon.ts";
 
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") ?? "", {
   apiVersion: "2024-12-18.acacia",
@@ -49,7 +50,7 @@ async function sendOrderEmail(order: any, lines: any[], total: number, itemCount
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
-    const { items, customer, paymentIntentId } = await req.json();
+    const { items, customer, paymentIntentId, couponCode } = await req.json();
     if (!Array.isArray(items) || items.length === 0) return json({ error: "No items" }, 400);
     if (!paymentIntentId) return json({ error: "Missing paymentIntentId" }, 400);
 
@@ -77,7 +78,9 @@ Deno.serve(async (req) => {
       return { item: i, unit };
     });
     const tier = (discounts ?? []).filter((d) => d.min_qty <= eligibleQty).sort((a, b) => b.min_qty - a.min_qty)[0];
-    const goodsTotal = subtotal - (eligibleSubtotal * (tier?.discount_percent ?? 0)) / 100;
+    let goodsTotal = subtotal - (eligibleSubtotal * (tier?.discount_percent ?? 0)) / 100;
+    const { discount: couponDiscount, coupon } = await validateCoupon(supabase, couponCode, goodsTotal);
+    goodsTotal -= couponDiscount;
     // Shipping — keep in sync with src/lib/pricing.ts
     const shipping = goodsTotal >= 50 ? 0 : 4.9;
     const total = goodsTotal + shipping; // VAT already included in gross prices
@@ -91,11 +94,18 @@ Deno.serve(async (req) => {
         customer_email: customer?.email ?? null,
         customer_address: customer?.address ?? null,
         total: total.toFixed(2),
+        discount_amount: couponDiscount.toFixed(2),
+        coupon_code: coupon?.code ?? null,
         stripe_payment_intent_id: paymentIntentId,
       })
       .select()
       .single();
     if (orderErr) throw orderErr;
+
+    // Count coupon usage (best effort).
+    if (coupon) {
+      await supabase.from("coupons").update({ used_count: (coupon.used_count ?? 0) + 1 }).eq("id", coupon.id);
+    }
 
     // Insert items. Design media already lives in the order-designs bucket under
     // item.designId; we store the id + manifest so the admin can list every file.

@@ -413,24 +413,20 @@ function BulkForm() {
         if (upErr) throw upErr;
         motivPath = path;
       }
-      const message = [
-        "GROSSBESTELLUNG-ANFRAGE",
-        `Filiale: ${f.filiale || "—"}`,
-        `Textil-Art: ${f.textilArt || "—"}`,
-        `Qualität: ${f.qualitaet || "—"}`,
-        `Druckverfahren: ${f.druckverfahren || "—"}`,
-        `Gewünschte Stückzahl: ${f.stueckzahl || "—"}`,
-        `Anrede: ${f.anrede || "—"}`,
-        `Firma/Organisation: ${f.firma || "—"}`,
-        `Telefon: ${f.telefon || "—"}`,
-        motivPath ? `Motiv-Datei: ${motivPath}` : "Motiv-Datei: keine",
-        "",
-        `Bemerkungen: ${f.bemerkungen || "—"}`,
-      ].join("\n");
-      const { error: insErr } = await supabase.from("contact_messages").insert({
-        name: `${f.vorname} ${f.nachname}`.trim(),
+      const { error: insErr } = await supabase.from("bulk_inquiries").insert({
+        filiale: f.filiale || null,
+        textil_art: f.textilArt || null,
+        qualitaet: f.qualitaet || null,
+        druckverfahren: f.druckverfahren || null,
+        stueckzahl: f.stueckzahl || null,
+        anrede: f.anrede || null,
+        vorname: f.vorname || null,
+        nachname: f.nachname || null,
         email: f.email,
-        message,
+        telefon: f.telefon || null,
+        firma: f.firma || null,
+        bemerkungen: f.bemerkungen || null,
+        motiv_path: motivPath,
       });
       if (insErr) throw insErr;
       setDone(true);

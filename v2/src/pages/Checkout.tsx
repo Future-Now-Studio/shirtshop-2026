@@ -59,6 +59,8 @@ export default function Checkout() {
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [coupon, setCoupon] = useState("");
+  const [couponInfo, setCouponInfo] = useState<string | null>(null);
 
   if (items.length === 0)
     return (
@@ -80,11 +82,14 @@ export default function Checkout() {
     setBusy(true);
     setError(null);
     const { data, error } = await supabase.functions.invoke("create-payment-intent", {
-      body: { items: cartPayload(items) },
+      body: { items: cartPayload(items), couponCode: coupon.trim() || undefined },
     });
     setBusy(false);
     if (error || data?.error) setError(error?.message ?? data.error);
-    else setClientSecret(data.clientSecret);
+    else {
+      if (coupon.trim()) setCouponInfo(data.discount > 0 ? `Gutschein angewendet: −${Number(data.discount).toFixed(2)} €` : (data.couponReason ?? "Gutschein ungültig"));
+      setClientSecret(data.clientSecret);
+    }
   }
 
   const set = (k: keyof Customer, v: string) => setCustomer((c) => ({ ...c, [k]: v }));
@@ -119,6 +124,11 @@ export default function Checkout() {
               <Input required value={customer.city} onChange={(e) => set("city", e.target.value)} />
             </div>
           </div>
+          <div className="space-y-1.5">
+            <Label>Gutscheincode (optional)</Label>
+            <Input value={coupon} onChange={(e) => setCoupon(e.target.value)} placeholder="z. B. SOMMER10" />
+            {couponInfo && <p className="text-xs text-muted-foreground">{couponInfo}</p>}
+          </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <Button type="submit" className="w-full" disabled={busy}>
             {busy ? "Weiter…" : "Weiter zur Zahlung"}
@@ -126,14 +136,14 @@ export default function Checkout() {
         </form>
       ) : (
         <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: "stripe" } }}>
-          <PayForm customer={customer} items={items} />
+          <PayForm customer={customer} items={items} couponCode={coupon.trim() || undefined} />
         </Elements>
       )}
     </div>
   );
 }
 
-function PayForm({ customer, items }: { customer: Customer; items: ReturnType<typeof useCart.getState>["items"] }) {
+function PayForm({ customer, items, couponCode }: { customer: Customer; items: ReturnType<typeof useCart.getState>["items"]; couponCode?: string }) {
   const stripe = useStripe();
   const elements = useElements();
   const navigate = useNavigate();
@@ -176,6 +186,7 @@ function PayForm({ customer, items }: { customer: Customer; items: ReturnType<ty
             address: { line1: customer.address, postal_code: customer.postalCode, city: customer.city, country: customer.country },
           },
           items: cartPayload(items),
+          couponCode,
         },
       });
       setBusy(false);

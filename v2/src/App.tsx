@@ -25,6 +25,10 @@ import ProductEditor from "@/pages/admin/ProductEditor";
 import Discounts from "@/pages/admin/Discounts";
 import Orders from "@/pages/admin/Orders";
 import Messages from "@/pages/admin/Messages";
+import Inventory from "@/pages/admin/Inventory";
+import Inquiries from "@/pages/admin/Inquiries";
+import Settings from "@/pages/admin/Settings";
+import Coupons from "@/pages/admin/Coupons";
 
 const TITLES: Record<string, string> = {
   "/": "Private Shirt | Sei du selbst. Sei einzigartig.",
@@ -79,6 +83,10 @@ export default function App() {
             <Route path="colors" element={<Colors />} />
             <Route path="sizes" element={<Sizes />} />
             <Route path="orders" element={<Orders />} />
+            <Route path="inventory" element={<Inventory />} />
+            <Route path="inquiries" element={<Inquiries />} />
+            <Route path="coupons" element={<Coupons />} />
+            <Route path="settings" element={<Settings />} />
             <Route path="discounts" element={<Discounts />} />
             <Route path="messages" element={<Messages />} />
           </Route>

@@ -8,10 +8,14 @@ const NAV = [
   { to: "/admin", label: "Übersicht", end: true },
   { to: "/admin/orders", label: "Bestellungen" },
   { to: "/admin/products", label: "Produkte" },
+  { to: "/admin/inventory", label: "Bestand" },
   { to: "/admin/colors", label: "Farben" },
   { to: "/admin/sizes", label: "Größen" },
   { to: "/admin/discounts", label: "Rabatte" },
+  { to: "/admin/coupons", label: "Gutscheine" },
+  { to: "/admin/inquiries", label: "Anfragen" },
   { to: "/admin/messages", label: "Nachrichten" },
+  { to: "/admin/settings", label: "Einstellungen" },
 ];
 
 export default function AdminLayout() {
