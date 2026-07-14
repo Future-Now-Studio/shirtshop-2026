@@ -1,4 +1,4 @@
-import ProductGrid from "@/components/ProductGrid";
+import ProductBrowser from "@/components/ProductBrowser";
 
 export default function Produkte() {
   return (
@@ -9,8 +9,8 @@ export default function Produkte() {
       <p className="mt-5 max-w-2xl text-lg text-muted-foreground">
         markentextilien zum selbstgestalten — wähle produkt, farbe und größe und leg los.
       </p>
-      <div className="mt-12">
-        <ProductGrid />
+      <div className="mt-10">
+        <ProductBrowser />
       </div>
     </div>
   );

@@ -9,6 +9,7 @@ import Footer from "@/components/layout/Footer";
 import { Unternehmen, Leistungen, Filialen, Grossbestellung, Impressum, AGB, Datenschutz, Widerruf } from "@/pages/marketing";
 import Kontakt from "@/pages/Kontakt";
 import Produkte from "@/pages/Produkte";
+import Wunschliste from "@/pages/Wunschliste";
 import SelbstGestalten from "@/pages/SelbstGestalten";
 import NotFound from "@/pages/NotFound";
 import SupportBubble from "@/components/layout/SupportBubble";
@@ -29,6 +30,7 @@ import Inventory from "@/pages/admin/Inventory";
 import Inquiries from "@/pages/admin/Inquiries";
 import Settings from "@/pages/admin/Settings";
 import Coupons from "@/pages/admin/Coupons";
+import AdminReviews from "@/pages/admin/Reviews";
 
 const TITLES: Record<string, string> = {
   "/": "Private Shirt | Sei du selbst. Sei einzigartig.",
@@ -61,6 +63,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/produkte" element={<Produkte />} />
+          <Route path="/wunschliste" element={<Wunschliste />} />
           <Route path="/selbst-gestalten" element={<SelbstGestalten />} />
           <Route path="/produkt/:slug" element={<ProductDetail />} />
           <Route path="/gestalten/:slug" element={<Designer />} />
@@ -87,6 +90,7 @@ export default function App() {
             <Route path="inquiries" element={<Inquiries />} />
             <Route path="coupons" element={<Coupons />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="reviews" element={<AdminReviews />} />
             <Route path="discounts" element={<Discounts />} />
             <Route path="messages" element={<Messages />} />
           </Route>

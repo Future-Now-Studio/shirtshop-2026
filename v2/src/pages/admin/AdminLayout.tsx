@@ -14,6 +14,7 @@ const NAV = [
   { to: "/admin/discounts", label: "Rabatte" },
   { to: "/admin/coupons", label: "Gutscheine" },
   { to: "/admin/inquiries", label: "Anfragen" },
+  { to: "/admin/reviews", label: "Bewertungen" },
   { to: "/admin/messages", label: "Nachrichten" },
   { to: "/admin/settings", label: "Einstellungen" },
 ];

@@ -6,6 +6,8 @@ import { supabase } from "@/lib/supabase";
 import { publicUrl } from "@/lib/storage";
 import { Button } from "@/components/ui/button";
 import { useCart } from "@/stores/cart";
+import HeartButton from "@/components/HeartButton";
+import { SizeChartButton, Reviews, SimilarProducts } from "@/components/ProductExtras";
 
 const VIEWS = ["front", "back", "left", "right"] as const;
 const VIEW_LABEL: Record<string, string> = { front: "Vorne", back: "Hinten", left: "Links", right: "Rechts" };
@@ -84,10 +86,12 @@ export default function ProductDetail() {
   }
 
   return (
+    <div>
     <div className="grid gap-10 md:grid-cols-2">
       {/* Gallery */}
       <div>
-        <div className="flex aspect-square items-center justify-center overflow-hidden rounded-xl border bg-white">
+        <div className="relative flex aspect-square items-center justify-center overflow-hidden rounded-xl border bg-white">
+          <div className="absolute right-3 top-3 z-10"><HeartButton id={p.id} /></div>
           {image ? (
             <img src={publicUrl(image.storage_path)} alt={p.name} className="h-full w-full object-contain p-4" />
           ) : (
@@ -142,7 +146,10 @@ export default function ProductDetail() {
 
         {/* Sizes × quantity */}
         <div className="mt-6">
-          <p className="mb-2 text-sm font-medium">Menge je Größe</p>
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-sm font-medium">Menge je Größe</p>
+            <SizeChartButton />
+          </div>
           <div className="divide-y rounded-xl border">
             {sizes.map((s: any) => {
               const ok = availForSize(s.id);
@@ -180,6 +187,10 @@ export default function ProductDetail() {
         </div>
         {totalPieces === 0 && <p className="mt-2 text-xs text-muted-foreground">Mindestens 1 Stück wählen.</p>}
       </div>
+    </div>
+
+      <Reviews productId={p.id} />
+      <SimilarProducts category={p.category} excludeId={p.id} />
     </div>
   );
 }

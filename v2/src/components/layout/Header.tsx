@@ -1,8 +1,21 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { ShoppingBag, Menu, X } from "lucide-react";
+import { ShoppingBag, Menu, X, Heart } from "lucide-react";
 import { useCart } from "@/stores/cart";
+import { useWishlist } from "@/stores/wishlist";
 import logo from "@/assets/group-25.svg";
+
+function WishlistLink() {
+  const count = useWishlist((s) => s.ids.length);
+  return (
+    <Link to="/wunschliste" className="relative flex items-center text-muted-foreground transition-colors hover:text-primary" aria-label="Merkliste">
+      <Heart className="h-5 w-5" />
+      {count > 0 && (
+        <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[0.65rem] font-bold text-primary-foreground">{count}</span>
+      )}
+    </Link>
+  );
+}
 
 const LINKS = [
   { to: "/selbst-gestalten", label: "selbst gestalten" },
@@ -44,12 +57,14 @@ export default function Header() {
           {LINKS.map((l) => (
             <Link key={l.to} to={l.to} className="text-muted-foreground transition-colors hover:text-primary">{l.label}</Link>
           ))}
+          <WishlistLink />
           <CartLink />
           <Link to="/admin" className="text-muted-foreground transition-colors hover:text-primary">admin</Link>
         </nav>
 
         {/* mobile controls */}
         <div className="flex items-center gap-4 lg:hidden">
+          <WishlistLink />
           <CartLink />
           <button onClick={() => setOpen((v) => !v)} aria-label="Menü" className="text-foreground">
             {open ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
