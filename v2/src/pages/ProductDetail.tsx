@@ -121,7 +121,7 @@ export default function ProductDetail() {
 
       {/* Info */}
       <div>
-        <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">← Alle Produkte</Link>
+        <Link to="/produkte" className="text-sm text-muted-foreground hover:text-foreground">← Alle Produkte</Link>
         <h1 className="mt-2 text-3xl font-semibold">{p.name}</h1>
         <p className="mt-1 text-2xl tabular-nums">{Number(p.base_price).toFixed(2)} €</p>
         {p.description && <p className="mt-4 text-muted-foreground">{p.description}</p>}

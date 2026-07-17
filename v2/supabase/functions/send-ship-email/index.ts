@@ -3,12 +3,15 @@
 // ORDER_EMAIL_FROM). Best effort — returns ok even if email is not configured.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
+import { requireAdmin } from "../_shared/admin.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
+    if (!(await requireAdmin(req))) return json({ error: "Unauthorized" }, 401);
     const { orderId } = await req.json();
     if (!orderId) return json({ error: "Missing orderId" }, 400);
 
@@ -22,10 +25,10 @@ Deno.serve(async (req) => {
 
     const html = `
       <h2>Deine Bestellung ist unterwegs! 📦</h2>
-      <p>Hallo ${order.customer_name ?? ""},</p>
+      <p>Hallo ${esc(order.customer_name)},</p>
       <p>gute Neuigkeiten — deine Bestellung wurde soeben versendet.</p>
-      ${order.tracking_number ? `<p><b>Sendungsnummer:</b> ${order.tracking_number}</p>` : ""}
-      <p>Bestell-ID: ${order.id}</p>
+      ${order.tracking_number ? `<p><b>Sendungsnummer:</b> ${esc(order.tracking_number)}</p>` : ""}
+      <p>Bestell-ID: ${esc(order.id)}</p>
       <p>Danke für deinen Einkauf bei Private Shirt!</p>`;
 
     const r = await fetch("https://api.resend.com/emails", {

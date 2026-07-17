@@ -3,6 +3,7 @@
 import { PDFDocument, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1?target=denonext";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
+import { requireAdmin } from "../_shared/admin.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const eur = (n: number) => `${n.toFixed(2)} EUR`;
@@ -10,6 +11,7 @@ const eur = (n: number) => `${n.toFixed(2)} EUR`;
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
+    if (!(await requireAdmin(req))) return json({ error: "Unauthorized" }, 401);
     const { orderId } = await req.json();
     if (!orderId) return json({ error: "Missing orderId" }, 400);
 
@@ -69,8 +71,13 @@ Deno.serve(async (req) => {
     text("Vielen Dank für deinen Einkauf bei Private Shirt!", P, y, 10, bold);
 
     const bytes = await doc.save();
-    const b64 = btoa(String.fromCharCode(...bytes));
-    return json({ pdfBase64: b64 });
+    // chunked conversion — String.fromCharCode(...bytes) overflows the arg
+    // limit on PDFs larger than ~64 KB
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    }
+    return json({ pdfBase64: btoa(bin) });
   } catch (e) {
     return json({ error: (e as Error).message }, 500);
   }

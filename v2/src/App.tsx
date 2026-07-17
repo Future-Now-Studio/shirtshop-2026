@@ -35,6 +35,7 @@ import AdminReviews from "@/pages/admin/Reviews";
 const TITLES: Record<string, string> = {
   "/": "Private Shirt | Sei du selbst. Sei einzigartig.",
   "/produkte": "Produkte | Private Shirt",
+  "/wunschliste": "Merkliste | Private Shirt",
   "/widerruf": "Widerrufsrecht | Private Shirt",
   "/selbst-gestalten": "Selbst gestalten | Private Shirt",
   "/leistungen": "Leistungen | Private Shirt",

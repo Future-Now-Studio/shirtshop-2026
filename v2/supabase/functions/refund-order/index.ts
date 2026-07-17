@@ -3,6 +3,7 @@
 import Stripe from "https://esm.sh/stripe@17.7.0?target=denonext";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
+import { requireAdmin } from "../_shared/admin.ts";
 
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") ?? "", {
   apiVersion: "2024-12-18.acacia",
@@ -13,6 +14,7 @@ const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPAB
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
+    if (!(await requireAdmin(req))) return json({ error: "Unauthorized" }, 401);
     const { orderId } = await req.json();
     if (!orderId) return json({ error: "Missing orderId" }, 400);
 

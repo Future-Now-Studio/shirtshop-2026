@@ -16,6 +16,8 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 );
 
+const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+
 // Sends an order-received email to the shop owner via Resend (if configured).
 async function sendOrderEmail(order: any, lines: any[], total: number, itemCount: number) {
   const apiKey = Deno.env.get("RESEND_API_KEY");
@@ -26,11 +28,11 @@ async function sendOrderEmail(order: any, lines: any[], total: number, itemCount
   if (!to) return;
 
   const rows = lines
-    .map((l: any) => `<tr><td>${l.item.qty}×</td><td>${l.item.productId}</td><td>${(l.unit * l.item.qty).toFixed(2)} €</td></tr>`)
+    .map((l: any) => `<tr><td>${l.item.qty}×</td><td>${esc(l.item.productId)}</td><td>${(l.unit * l.item.qty).toFixed(2)} €</td></tr>`)
     .join("");
   const html = `
     <h2>Neue Bestellung</h2>
-    <p><b>Kunde:</b> ${order.customer_name ?? "—"} (${order.customer_email ?? "—"})</p>
+    <p><b>Kunde:</b> ${esc(order.customer_name) || "—"} (${esc(order.customer_email) || "—"})</p>
     <p><b>Positionen:</b> ${itemCount} Stück · <b>Gesamt:</b> ${total.toFixed(2)} €</p>
     <table cellpadding="6" border="1" style="border-collapse:collapse">${rows}</table>
     <p>Bestell-ID: ${order.id}. Design-Dateien im Admin unter Bestellungen.</p>`;
@@ -53,6 +55,15 @@ Deno.serve(async (req) => {
     const { items, customer, paymentIntentId, couponCode } = await req.json();
     if (!Array.isArray(items) || items.length === 0) return json({ error: "No items" }, 400);
     if (!paymentIntentId) return json({ error: "Missing paymentIntentId" }, 400);
+
+    // Idempotency: if this payment already produced an order (client retry,
+    // double click), return it instead of creating a duplicate.
+    const { data: existing } = await supabase
+      .from("orders").select("id, total, order_items(qty)").eq("stripe_payment_intent_id", paymentIntentId).maybeSingle();
+    if (existing) {
+      const count = (existing.order_items ?? []).reduce((s: number, i: any) => s + i.qty, 0);
+      return json({ orderId: existing.id, total: existing.total, itemCount: count });
+    }
 
     // Verify payment really succeeded.
     const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
@@ -81,8 +92,9 @@ Deno.serve(async (req) => {
     let goodsTotal = subtotal - (eligibleSubtotal * (tier?.discount_percent ?? 0)) / 100;
     const { discount: couponDiscount, coupon } = await validateCoupon(supabase, couponCode, goodsTotal);
     goodsTotal -= couponDiscount;
-    // Shipping — keep in sync with src/lib/pricing.ts
-    const shipping = goodsTotal >= 50 ? 0 : 4.9;
+    // Shipping from admin-editable settings (fallback to defaults).
+    const { data: cfg } = await supabase.from("settings").select("shipping_flat, free_shipping_threshold").eq("id", 1).maybeSingle();
+    const shipping = goodsTotal >= Number(cfg?.free_shipping_threshold ?? 50) ? 0 : Number(cfg?.shipping_flat ?? 4.9);
     const total = goodsTotal + shipping; // VAT already included in gross prices
 
     // Create the order.

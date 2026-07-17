@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { ShoppingBag, Menu, X, Heart } from "lucide-react";
 import { useCart } from "@/stores/cart";
 import { useWishlist } from "@/stores/wishlist";
+import { useAuth } from "@/lib/auth";
 import logo from "@/assets/group-25.svg";
 
 function WishlistLink() {
@@ -44,6 +45,7 @@ function CartLink() {
 export default function Header() {
   const [open, setOpen] = useState(false);
   const { pathname } = useLocation();
+  const { session } = useAuth();
 
   return (
     <header className="glass-nav sticky top-0 z-40">
@@ -59,7 +61,7 @@ export default function Header() {
           ))}
           <WishlistLink />
           <CartLink />
-          <Link to="/admin" className="text-muted-foreground transition-colors hover:text-primary">admin</Link>
+          {session && <Link to="/admin" className="text-muted-foreground transition-colors hover:text-primary">admin</Link>}
         </nav>
 
         {/* mobile controls */}
@@ -86,7 +88,7 @@ export default function Header() {
                 {l.label}
               </Link>
             ))}
-            <Link to="/admin" onClick={() => setOpen(false)} className="rounded-lg px-2 py-3 text-muted-foreground hover:bg-accent">admin</Link>
+            {session && <Link to="/admin" onClick={() => setOpen(false)} className="rounded-lg px-2 py-3 text-muted-foreground hover:bg-accent">admin</Link>}
           </div>
         </nav>
       )}

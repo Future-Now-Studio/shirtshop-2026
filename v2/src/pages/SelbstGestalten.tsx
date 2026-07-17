@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { MousePointerClick, Upload, ShoppingCart, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import ProductGrid from "@/components/ProductGrid";
+import ProductBrowser from "@/components/ProductBrowser";
 
 const STEPS = [
   { icon: MousePointerClick, title: "Produkt wählen", text: "Such dir ein Textil aus, wähle Farbe und Größe." },
@@ -39,7 +39,7 @@ export default function SelbstGestalten() {
             <Button variant="outline">Alle Produkte <ArrowRight className="ml-2 h-4 w-4" /></Button>
           </Link>
         </div>
-        <ProductGrid />
+        <ProductBrowser />
       </div>
     </div>
   );

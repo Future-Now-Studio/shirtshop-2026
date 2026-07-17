@@ -1,4 +1,4 @@
-import ProductGrid from "@/components/ProductGrid";
+import ProductBrowser from "@/components/ProductBrowser";
 import Hero from "@/components/home/Hero";
 import { AboutTeaser, FaqSection, ContactBanner, ProductHighlights, ShopBento, LocationsTeaser } from "@/components/home/sections";
 
@@ -16,7 +16,7 @@ export default function Home() {
           <h2 className="text-3xl font-extrabold lowercase">unsere produkte</h2>
           <p className="mt-1 text-muted-foreground">wähle ein produkt und gestalte es nach deinen wünschen.</p>
         </div>
-        <ProductGrid />
+        <ProductBrowser />
       </section>
 
       <AboutTeaser />

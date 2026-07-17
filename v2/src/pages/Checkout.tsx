@@ -6,26 +6,32 @@ import { supabase } from "@/lib/supabase";
 import { stripePromise } from "@/lib/stripe";
 import { useCart } from "@/stores/cart";
 import { fetchDiscountData, computeTotals } from "@/pages/Cart";
+import { vatIncludedIn } from "@/lib/pricing";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-function OrderSummary({ items }: { items: ReturnType<typeof useCart.getState>["items"] }) {
+function OrderSummary({ items, coupon }: { items: ReturnType<typeof useCart.getState>["items"]; coupon?: { discount: number; amount: number } | null }) {
   const productIds = [...new Set(items.map((i) => i.productId))];
   const { data } = useQuery({
     queryKey: ["checkout-discounts", productIds.join(",")],
     queryFn: () => fetchDiscountData(productIds),
   });
   const t = data ? computeTotals(items, data.discounts, data.excluded) : null;
+  // With a validated coupon the server-computed amount is authoritative.
+  const grand = coupon && coupon.discount > 0 ? coupon.amount / 100 : t?.grandTotal;
   return (
     <div className="mb-6 space-y-1.5 rounded-xl border bg-muted/30 p-4 text-sm">
       <div className="flex justify-between"><span className="text-muted-foreground">Zwischensumme</span><span className="tabular-nums">{t?.subtotal.toFixed(2) ?? "…"} €</span></div>
       {t && t.pct > 0 && (
         <div className="flex justify-between text-secondary-foreground"><span>Mengenrabatt ({t.pct}%)</span><span className="tabular-nums">−{t.discount.toFixed(2)} €</span></div>
       )}
+      {coupon && coupon.discount > 0 && (
+        <div className="flex justify-between text-secondary-foreground"><span>Gutschein</span><span className="tabular-nums">−{coupon.discount.toFixed(2)} €</span></div>
+      )}
       <div className="flex justify-between"><span className="text-muted-foreground">Versand</span><span className="tabular-nums">{t ? (t.shipping === 0 ? "gratis" : `${t.shipping.toFixed(2)} €`) : "…"}</span></div>
-      <div className="flex justify-between border-t pt-1.5 font-bold"><span>Gesamt</span><span className="tabular-nums text-primary">{t?.grandTotal.toFixed(2) ?? "…"} €</span></div>
-      {t && <p className="text-right text-xs text-muted-foreground">inkl. {t.vat.toFixed(2)} € MwSt (19%)</p>}
+      <div className="flex justify-between border-t pt-1.5 font-bold"><span>Gesamt</span><span className="tabular-nums text-primary">{grand != null ? grand.toFixed(2) : "…"} €</span></div>
+      {grand != null && <p className="text-right text-xs text-muted-foreground">inkl. {vatIncludedIn(grand).toFixed(2)} € MwSt (19%)</p>}
     </div>
   );
 }
@@ -61,6 +67,7 @@ export default function Checkout() {
   const [busy, setBusy] = useState(false);
   const [coupon, setCoupon] = useState("");
   const [couponInfo, setCouponInfo] = useState<string | null>(null);
+  const [serverCoupon, setServerCoupon] = useState<{ discount: number; amount: number } | null>(null);
 
   if (items.length === 0)
     return (
@@ -88,6 +95,7 @@ export default function Checkout() {
     if (error || data?.error) setError(error?.message ?? data.error);
     else {
       if (coupon.trim()) setCouponInfo(data.discount > 0 ? `Gutschein angewendet: −${Number(data.discount).toFixed(2)} €` : (data.couponReason ?? "Gutschein ungültig"));
+      setServerCoupon({ discount: Number(data.discount ?? 0), amount: Number(data.amount) });
       setClientSecret(data.clientSecret);
     }
   }
@@ -98,7 +106,7 @@ export default function Checkout() {
     <div className="mx-auto max-w-lg rounded-2xl border bg-card p-8 shadow-card">
       <h1 className="mb-6 text-3xl font-extrabold">Kasse</h1>
 
-      <OrderSummary items={items} />
+      <OrderSummary items={items} coupon={serverCoupon} />
 
       {!clientSecret ? (
         <form onSubmit={startPayment} className="space-y-4">

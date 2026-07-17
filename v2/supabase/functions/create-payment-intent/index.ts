@@ -16,6 +16,38 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 );
 
+// Live stock check before payment — rejects lines exceeding available stock so
+// nobody can pay for pieces we cannot fulfil.
+async function assertStock(items: { variantId: string; sizeId?: string | null; qty: number }[]) {
+  const withSize = items.filter((i) => i.sizeId);
+  if (!withSize.length) return;
+  const { data } = await supabase
+    .from("variant_size_availability")
+    .select("variant_id, size_id, stock, available, sizes(name)")
+    .in("variant_id", [...new Set(withSize.map((i) => i.variantId))]);
+  // aggregate requested qty per variant+size (multiple lines may share one)
+  const wanted = new Map<string, number>();
+  for (const i of withSize) {
+    const k = `${i.variantId}:${i.sizeId}`;
+    wanted.set(k, (wanted.get(k) ?? 0) + i.qty);
+  }
+  for (const [k, qty] of wanted) {
+    const [variantId, sizeId] = k.split(":");
+    const row = (data ?? []).find((r) => r.variant_id === variantId && r.size_id === sizeId);
+    const stock = row && row.available ? (row.stock ?? 0) : 0;
+    if (qty > stock) {
+      const sizeName = (row as any)?.sizes?.name ?? "";
+      throw new Error(`Nicht genug Bestand${sizeName ? ` (Größe ${sizeName})` : ""}: nur noch ${stock} verfügbar.`);
+    }
+  }
+}
+
+// Shipping config from settings (admin-editable), with safe fallbacks.
+async function shippingConfig() {
+  const { data } = await supabase.from("settings").select("shipping_flat, free_shipping_threshold").eq("id", 1).maybeSingle();
+  return { flat: Number(data?.shipping_flat ?? 4.9), free: Number(data?.free_shipping_threshold ?? 50) };
+}
+
 // Recompute the authoritative total from DB prices + volume discounts + coupon.
 async function computeTotal(items: { productId: string; variantId: string; qty: number; designElementCount: number }[], couponCode?: string) {
   const productIds = [...new Set(items.map((i) => i.productId))];
@@ -45,8 +77,8 @@ async function computeTotal(items: { productId: string; variantId: string; qty: 
   let goodsTotal = subtotal - (eligibleSubtotal * pct) / 100;
   const { discount, reason } = await validateCoupon(supabase, couponCode, goodsTotal);
   goodsTotal -= discount;
-  // Shipping — keep in sync with src/lib/pricing.ts + settings
-  const shipping = goodsTotal >= 50 ? 0 : 4.9;
+  const cfg = await shippingConfig();
+  const shipping = goodsTotal >= cfg.free ? 0 : cfg.flat;
   const amount = Math.round((goodsTotal + shipping) * 100); // cents, VAT already included
   return { amount, discount, couponReason: reason };
 }
@@ -57,6 +89,7 @@ Deno.serve(async (req) => {
     const { items, couponCode } = await req.json();
     if (!Array.isArray(items) || items.length === 0) return json({ error: "No items" }, 400);
 
+    await assertStock(items);
     const { amount, discount, couponReason } = await computeTotal(items, couponCode);
     if (amount <= 0) return json({ error: "Invalid amount" }, 400);
 

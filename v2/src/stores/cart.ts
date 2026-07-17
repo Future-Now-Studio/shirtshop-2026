@@ -34,19 +34,34 @@ interface CartState {
   clear: () => void;
 }
 
+// Lines with the same variant+size+design are one logical position.
+const sig = (i: Pick<CartItem, "variantId" | "sizeId" | "designId" | "designElementCount">) =>
+  `${i.variantId}|${i.sizeId}|${i.designId ?? ""}|${i.designElementCount}`;
+
+/** Collapse duplicate lines (same signature) into one, summing quantities. */
+function mergeLines(items: CartItem[]): CartItem[] {
+  const out: CartItem[] = [];
+  for (const i of items) {
+    const hit = out.find((o) => sig(o) === sig(i));
+    if (hit) hit.qty += i.qty;
+    else out.push({ ...i });
+  }
+  return out;
+}
+
 export const useCart = create<CartState>()(
   persist(
     (set) => ({
       items: [],
       add: (item) =>
-        set((s) => ({
-          items: [...s.items, { ...item, key: `${item.variantId}-${item.sizeId}-${s.items.length}-${item.designElementCount}` }],
-        })),
+        set((s) => ({ items: mergeLines([...s.items, { ...item, key: crypto.randomUUID() }]) })),
       remove: (key) => set((s) => ({ items: s.items.filter((i) => i.key !== key) })),
       setQty: (key, qty) =>
         set((s) => ({ items: s.items.map((i) => (i.key === key ? { ...i, qty: Math.max(1, qty) } : i)) })),
       setSize: (key, sizeId, sizeName) =>
-        set((s) => ({ items: s.items.map((i) => (i.key === key ? { ...i, sizeId, sizeName } : i)) })),
+        set((s) => ({
+          items: mergeLines(s.items.map((i) => (i.key === key ? { ...i, sizeId, sizeName } : i))),
+        })),
       clear: () => set({ items: [] }),
     }),
     { name: "shirtshop-v2-cart" }
