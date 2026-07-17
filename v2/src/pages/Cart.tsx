@@ -32,12 +32,40 @@ export function computeTotals(items: CartItem[], discounts: { min_qty: number; d
   return { subtotal, eligibleQty, pct, discount, goodsTotal, shipping, grandTotal, vat, total: grandTotal };
 }
 
+/** Sizes selectable per variant, with availability + stock. */
+async function fetchSizeOptions(variantIds: string[]) {
+  if (!variantIds.length) return {} as Record<string, SizeOpt[]>;
+  const { data, error } = await supabase
+    .from("variant_size_availability")
+    .select("variant_id, size_id, available, stock, sizes(name, sort_order)")
+    .in("variant_id", variantIds);
+  if (error) throw error;
+  const map: Record<string, SizeOpt[]> = {};
+  for (const r of data ?? []) {
+    (map[r.variant_id] ??= []).push({
+      sizeId: r.size_id,
+      name: (r as any).sizes?.name ?? "—",
+      sort: (r as any).sizes?.sort_order ?? 0,
+      available: r.available && (r.stock ?? 0) > 0,
+      stock: r.stock ?? 0,
+    });
+  }
+  for (const k of Object.keys(map)) map[k].sort((a, b) => a.sort - b.sort);
+  return map;
+}
+type SizeOpt = { sizeId: string; name: string; sort: number; available: boolean; stock: number };
+
 export default function Cart() {
-  const { items, remove, setQty } = useCart();
+  const { items, remove, setQty, setSize } = useCart();
   const productIds = [...new Set(items.map((i) => i.productId))];
+  const variantIds = [...new Set(items.map((i) => i.variantId))];
   const { data } = useQuery({
     queryKey: ["cart-discounts", productIds.join(",")],
     queryFn: () => fetchDiscountData(productIds),
+  });
+  const { data: sizeOpts } = useQuery({
+    queryKey: ["cart-sizes", variantIds.join(",")],
+    queryFn: () => fetchSizeOptions(variantIds),
   });
 
   if (items.length === 0)
@@ -57,7 +85,7 @@ export default function Cart() {
       <h1 className="mb-6 text-3xl font-extrabold">Warenkorb</h1>
       <ul className="divide-y rounded-2xl border bg-card shadow-card">
         {items.map((i) => (
-          <li key={i.key} className="flex items-center gap-4 p-4">
+          <li key={i.key} className="flex flex-wrap items-center gap-3 p-4">
             <div className="h-16 w-16 shrink-0 overflow-hidden rounded-md border bg-muted/30">
               {i.thumbnail ? (
                 <img src={i.thumbnail} alt="" className="h-full w-full object-cover" />
@@ -65,25 +93,64 @@ export default function Cart() {
                 <div className="flex h-full items-center justify-center text-[10px] text-muted-foreground">kein Bild</div>
               )}
             </div>
-            <div className="flex-1">
-              <p className="font-medium">{i.productName}</p>
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-medium">{i.productName}</p>
               <p className="text-xs text-muted-foreground">
-                {i.colorName} · {i.sizeName ?? "—"}
+                {i.colorName}
                 {i.designElementCount > 0 && ` · ${i.designElementCount} Design-Element(e)`}
               </p>
               <p className="text-xs tabular-nums text-muted-foreground">{unitPrice(i).toFixed(2)} € / Stück</p>
             </div>
-            <input
-              type="number"
-              min={1}
-              value={i.qty}
-              onChange={(e) => setQty(i.key, Number(e.target.value))}
-              className="h-9 w-16 rounded-md border border-input bg-background px-2 text-sm"
-            />
-            <span className="w-20 text-right text-sm tabular-nums">{(unitPrice(i) * i.qty).toFixed(2)} €</span>
-            <Button variant="ghost" size="icon" onClick={() => remove(i.key)}>
+
+            {/* Controls: eigene Zeile auf Mobile */}
+            <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-nowrap">
+            {/* Größe */}
+            {(() => {
+              const opts = sizeOpts?.[i.variantId] ?? [];
+              if (opts.length === 0)
+                return <span className="w-16 text-center text-xs text-muted-foreground">{i.sizeName ?? "—"}</span>;
+              return (
+                <select
+                  value={i.sizeId ?? ""}
+                  onChange={(e) => {
+                    const o = opts.find((x) => x.sizeId === e.target.value);
+                    if (o) setSize(i.key, o.sizeId, o.name);
+                  }}
+                  className="h-9 w-20 shrink-0 rounded-md border border-input bg-background px-2 text-sm"
+                  aria-label="Größe"
+                >
+                  {opts.map((o) => (
+                    <option key={o.sizeId} value={o.sizeId} disabled={!o.available}>
+                      {o.name}{!o.available ? " (aus)" : ""}
+                    </option>
+                  ))}
+                </select>
+              );
+            })()}
+
+            {/* Menge */}
+            {(() => {
+              const opt = (sizeOpts?.[i.variantId] ?? []).find((o) => o.sizeId === i.sizeId);
+              const max = opt?.stock ?? 999;
+              const set = (n: number) => setQty(i.key, Math.max(1, Math.min(max, n)));
+              return (
+                <div className="flex shrink-0 items-center gap-1">
+                  <button onClick={() => set(i.qty - 1)} disabled={i.qty <= 1}
+                    className="flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent disabled:opacity-30">−</button>
+                  <input type="number" min={1} max={max} value={i.qty}
+                    onChange={(e) => set(Number(e.target.value))}
+                    className="h-9 w-12 rounded-md border border-input bg-background text-center text-sm" />
+                  <button onClick={() => set(i.qty + 1)} disabled={i.qty >= max}
+                    className="flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent disabled:opacity-30">+</button>
+                </div>
+              );
+            })()}
+
+            <span className="w-16 shrink-0 text-right text-sm tabular-nums">{(unitPrice(i) * i.qty).toFixed(2)} €</span>
+            <Button variant="ghost" size="icon" className="shrink-0" onClick={() => remove(i.key)}>
               <Trash2 className="h-4 w-4" />
             </Button>
+            </div>
           </li>
         ))}
       </ul>

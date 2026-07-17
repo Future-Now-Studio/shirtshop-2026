@@ -30,6 +30,7 @@ interface CartState {
   add: (item: Omit<CartItem, "key">) => void;
   remove: (key: string) => void;
   setQty: (key: string, qty: number) => void;
+  setSize: (key: string, sizeId: string, sizeName: string) => void;
   clear: () => void;
 }
 
@@ -44,6 +45,8 @@ export const useCart = create<CartState>()(
       remove: (key) => set((s) => ({ items: s.items.filter((i) => i.key !== key) })),
       setQty: (key, qty) =>
         set((s) => ({ items: s.items.map((i) => (i.key === key ? { ...i, qty: Math.max(1, qty) } : i)) })),
+      setSize: (key, sizeId, sizeName) =>
+        set((s) => ({ items: s.items.map((i) => (i.key === key ? { ...i, sizeId, sizeName } : i)) })),
       clear: () => set({ items: [] }),
     }),
     { name: "shirtshop-v2-cart" }
