@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "/Users/timo/shirtshop-2026/v2", "run", "dev", "--", "--port", "8080"],
+      "port": 8080
+    }
+  ]
+}
