@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import * as fabric from "fabric";
-import { Type, ImagePlus, Trash2, ShoppingCart, Loader2, ArrowRight, ArrowLeft, AlertTriangle } from "lucide-react";
+import { Type, ImagePlus, Trash2, ShoppingCart, Loader2, ArrowRight, ArrowLeft, AlertTriangle, Download } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { publicUrl } from "@/lib/storage";
 import { uploadDesignFile, uploadDesignJson } from "@/lib/design-upload";
@@ -47,6 +47,7 @@ export default function Designer() {
   const [imgLoading, setImgLoading] = useState(false);
   const [step, setStep] = useState(1);
   const [outOfZone, setOutOfZone] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const imgCache = useRef<Map<string, fabric.FabricImage>>(new Map());
   const zonesRef = useRef<{ left: number; top: number; width: number; height: number }[]>([]);
 
@@ -340,6 +341,47 @@ export default function Designer() {
     navigate("/warenkorb");
   }
 
+  async function handleDownload() {
+    if (!p || !canvasRef.current) return;
+    setDownloading(true);
+    const originalView = view;
+    saveView(view);
+
+    const downloads: { view: string; dataUrl: string }[] = [];
+
+    // For every view that has design objects: generate composite image
+    for (const v of VIEWS) {
+      const objs = (viewJson.current[v]?.objects ?? []).filter((o: any) => !o.__zone);
+      if (objs.length === 0) continue;
+      
+      await loadView(v, variant);
+      const c = canvasRef.current;
+      if (!c) continue;
+
+      try {
+        const composite = c.toDataURL({ format: "png", multiplier: 2 });
+        downloads.push({ view: v, dataUrl: composite });
+      } catch { /* skip */ }
+    }
+
+    if (downloads.length === 0) {
+      setDownloading(false);
+      await loadView(originalView, variant);
+      return;
+    }
+
+    // Download all images
+    for (const d of downloads) {
+      const a = document.createElement("a");
+      a.href = d.dataUrl;
+      a.download = `${p.name}-${variant.colors?.name}-${VIEW_LABEL[d.view]}.png`;
+      a.click();
+    }
+
+    await loadView(originalView, variant);
+    setDownloading(false);
+  }
+
   const availForSize = (sid: string) =>
     variant?.variant_size_availability?.find((a: any) => a.size_id === sid && a.available && a.stock > 0);
   const unit = p ? Number(p.base_price) + elementCount * Number(p.design_element_price) : 0;
@@ -373,6 +415,14 @@ export default function Designer() {
               onClick={deleteSelected}
             >
               <Trash2 className="h-4 w-4 shrink-0" /> Löschen
+            </Button>
+            <Button
+              variant="ghost"
+              className="h-11 w-full justify-start gap-2.5 rounded-xl font-medium"
+              onClick={handleDownload}
+              disabled={downloading || elementCount === 0}
+            >
+              <Download className="h-4 w-4 shrink-0" /> {downloading ? "Lade..." : "Download"}
             </Button>
             <input
               ref={fileRef}
