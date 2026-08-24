@@ -28,9 +28,10 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Initialize Stripe with secret key from .env
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
-  apiVersion: '2024-12-18.acacia',
-});
+// Only instantiate when a key is present – otherwise the server still starts (Stripe endpoints return 500)
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-12-18.acacia' })
+  : null;
 
 // Middleware
 app.use(cors({

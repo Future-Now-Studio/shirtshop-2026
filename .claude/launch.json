@@ -2,10 +2,22 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "dev",
+      "name": "frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "/Users/timo/shirtshop-2026/v2", "run", "dev", "--", "--port", "8080"],
+      "runtimeArgs": ["run", "dev"],
       "port": 8080
+    },
+    {
+      "name": "backend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "server"],
+      "port": 3001
+    },
+    {
+      "name": "b2b",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "ballina"],
+      "port": 5173
     }
   ]
 }
