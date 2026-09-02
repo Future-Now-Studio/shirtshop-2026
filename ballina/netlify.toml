@@ -1,0 +1,17 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[dev]
+  framework = "vite"
+  targetPort = 5173
+
+# WooCommerce catalogue proxy (/api/wc/*) is served by the V2 function
+# netlify/functions/wc-proxy.mjs via its own config.path — no redirect needed.
+
+# SPA fallback for client-side routing (must stay last).
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

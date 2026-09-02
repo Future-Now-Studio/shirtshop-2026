@@ -1,89 +1,127 @@
 import { Link } from 'react-router-dom'
-import { ArrowRight, Building2, Shield, Users } from 'lucide-react'
+import { ArrowRight, RefreshCw, ShieldCheck, Truck, Package, Clock, BadgePercent } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { BrandMark } from '@/components/BrandMark'
+import textileWall from '@/assets/textile-wall.jpg'
+
+const TRUST = [
+  { icon: Clock, text: 'Nachbestellen in Minuten' },
+  { icon: BadgePercent, text: 'Ihre Firmenkonditionen' },
+  { icon: Truck, text: 'Sendungsverfolgung inklusive' },
+]
+
+const FEATURES = [
+  {
+    icon: RefreshCw,
+    title: 'Nachbestellen in Sekunden',
+    text: 'Frühere Aufträge mit einem Klick identisch wiederholen – gleiche Artikel, Größen und Mengen.',
+  },
+  {
+    icon: Package,
+    title: 'Ihr Sortiment im Blick',
+    text: 'Ihr hinterlegter Katalog zu Firmenkonditionen. Zusammenstellen, anpassen, absenden.',
+  },
+  {
+    icon: ShieldCheck,
+    title: 'Auf Rechnung',
+    text: 'Bestellen zu vereinbarten B2B-Konditionen. Keine Zahlung im Prozess nötig.',
+  },
+]
 
 export default function Landing() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-      {/* Header */}
-      <header className="border-b bg-white/80 backdrop-blur-sm">
-        <div className="container mx-auto flex h-16 items-center justify-between px-4">
-          <div className="flex items-center gap-2">
-            <Building2 className="h-8 w-8 text-slate-900" />
-            <span className="text-xl font-bold text-slate-900">Ballina</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <Link to="/login">
-              <Button variant="ghost">Anmelden</Button>
-            </Link>
-            <Link to="/register">
-              <Button>Registrieren</Button>
-            </Link>
-          </div>
+    <div className="min-h-screen bg-background">
+      {/* Top bar */}
+      <header className="sticky top-0 z-20 border-b border-border bg-background/85 backdrop-blur">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
+          <BrandMark />
+          <Link to="/login">
+            <Button variant="brand" size="lg">
+              Anmelden
+            </Button>
+          </Link>
         </div>
       </header>
 
-      {/* Hero Section */}
-      <main className="container mx-auto px-4 py-20">
-        <div className="mx-auto max-w-3xl text-center">
-          <h1 className="mb-6 text-5xl font-bold tracking-tight text-slate-900 sm:text-6xl">
-            B2B Textildruck für Ihr Unternehmen
+      {/* Hero — light split layout */}
+      <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-14 sm:px-6 lg:grid-cols-2 lg:gap-14 lg:py-20">
+        <div>
+          <span className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/50 px-3 py-1 text-xs font-medium text-muted-foreground">
+            <span className="size-1.5 rounded-full bg-brand" />
+            Geschäftskunden-Portal
+          </span>
+          <h1 className="mt-5 text-4xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-5xl">
+            Textilbeschaffung für Ihr Unternehmen –{' '}
+            <span className="text-brand">ohne Umwege</span>.
           </h1>
-          <p className="mb-8 text-xl text-slate-600">
-            Professionelle Großbestellungen mit einfacher Verwaltung. 
-            Verfolgen Sie Ihre Bestellungen und bestellen Sie mit wenigen Klicks nach.
+          <p className="mt-5 max-w-lg text-lg text-muted-foreground">
+            Bewährte Artikel zentral verwalten und mit wenigen Klicks nachbestellen. Transparent,
+            schnell, zu Ihren Konditionen.
           </p>
-          <div className="flex flex-col gap-4 sm:flex-row sm:justify-center">
-            <Link to="/register">
-              <Button size="lg" className="gap-2">
-                Jetzt registrieren
-                <ArrowRight className="h-4 w-4" />
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <Link to="/login">
+              <Button variant="brand" size="xl" className="w-full sm:w-auto">
+                Zum Portal anmelden
+                <ArrowRight className="size-4.5" />
               </Button>
             </Link>
             <Link to="/login">
-              <Button size="lg" variant="outline">
-                Anmelden
+              <Button variant="outline" size="xl" className="w-full sm:w-auto">
+                Nachbestellung starten
               </Button>
             </Link>
           </div>
+
+          {/* Trust row */}
+          <div className="mt-10 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {TRUST.map(({ icon: Icon, text }) => (
+              <div key={text} className="flex items-center gap-2.5">
+                <Icon className="size-5 shrink-0 text-brand" />
+                <span className="text-sm font-medium text-foreground">{text}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* Features */}
-        <div className="mt-20 grid gap-8 md:grid-cols-3">
-          <div className="rounded-xl border bg-white p-6 shadow-sm">
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-slate-100">
-              <Users className="h-6 w-6 text-slate-900" />
-            </div>
-            <h3 className="mb-2 text-lg font-semibold">Kundenportal</h3>
-            <p className="text-slate-600">
-              Verwalten Sie Ihre Bestellungen und Anfragen an einem zentralen Ort
-            </p>
-          </div>
-          <div className="rounded-xl border bg-white p-6 shadow-sm">
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-slate-100">
-              <Shield className="h-6 w-6 text-slate-900" />
-            </div>
-            <h3 className="mb-2 text-lg font-semibold">Sicher</h3>
-            <p className="text-slate-600">
-              Ihre Daten sind geschützt mit moderner Authentifizierung
-            </p>
-          </div>
-          <div className="rounded-xl border bg-white p-6 shadow-sm">
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-slate-100">
-              <Building2 className="h-6 w-6 text-slate-900" />
-            </div>
-            <h3 className="mb-2 text-lg font-semibold">Einfach</h3>
-            <p className="text-slate-600">
-              Großbestellungen mit wenigen Klicks - ohne komplizierte Prozesse
-            </p>
+        {/* Bright image */}
+        <div className="relative">
+          <div className="overflow-hidden rounded-2xl border border-border shadow-sm">
+            <img
+              src={textileWall}
+              alt="Farbsortiment gefalteter Textilien im Regal"
+              className="aspect-[4/3] size-full object-cover"
+            />
           </div>
         </div>
-      </main>
+      </section>
 
-      {/* Footer */}
-      <footer className="mt-20 border-t bg-white py-8">
-        <div className="container mx-auto px-4 text-center text-sm text-slate-600">
-          <p>© 2026 Ballina. B2B Textildrucklösungen.</p>
+      {/* Features */}
+      <section className="border-t border-border bg-muted/30">
+        <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {FEATURES.map(({ icon: Icon, title, text }) => (
+              <div key={title} className="rounded-xl border border-border bg-card p-6 shadow-sm">
+                <div className="grid size-11 place-items-center rounded-lg bg-brand-muted text-brand">
+                  <Icon className="size-5.5" />
+                </div>
+                <h3 className="mt-4 font-semibold tracking-tight">{title}</h3>
+                <p className="mt-1.5 text-sm text-muted-foreground">{text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <footer className="border-t border-border">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 py-8 text-sm text-muted-foreground sm:flex-row sm:px-6">
+          <BrandMark />
+          <nav className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            <Link to="/impressum" className="hover:text-foreground">Impressum</Link>
+            <Link to="/datenschutz" className="hover:text-foreground">Datenschutz</Link>
+            <Link to="/agb" className="hover:text-foreground">AGB</Link>
+            <Link to="/widerruf" className="hover:text-foreground">Widerruf</Link>
+          </nav>
+          <p>© 2026 Ballina</p>
         </div>
       </footer>
     </div>
