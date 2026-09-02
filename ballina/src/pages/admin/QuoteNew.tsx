@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react'
-import { adminCreateQuote, adminGetInquiries } from '@/lib/adminApi'
+import { adminCreateQuote, adminGetInquiries, adminSetInquiryStatus } from '@/lib/adminApi'
 import { formatEUR } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -55,8 +55,8 @@ export default function QuoteNew() {
   }
 
   const create = useMutation({
-    mutationFn: () =>
-      adminCreateQuote({
+    mutationFn: async () => {
+      const quote = await adminCreateQuote({
         companyId,
         title,
         validUntil: validUntil ? new Date(validUntil).toISOString() : new Date(Date.now() + 30 * 864e5).toISOString(),
@@ -64,9 +64,16 @@ export default function QuoteNew() {
         items: rows
           .filter((r) => r.productName && r.quantity > 0)
           .map((r) => ({ productId: 'custom', imageUrl: '', ...r })),
-      }),
+      })
+      // If this quote answers an inquiry, close that loop so it leaves the
+      // "Neu" list and the dashboard counter reflects reality.
+      const anfrage = params.get('anfrage')
+      if (anfrage) await adminSetInquiryStatus(anfrage, 'angebot_gesendet')
+      return quote
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] })
+      queryClient.invalidateQueries({ queryKey: ['admin', 'inquiries'] })
       queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] })
       navigate('/admin/angebote')
     },

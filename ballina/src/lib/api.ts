@@ -68,7 +68,7 @@ export async function getCompany(): Promise<Company> {
   const { data: { user } } = await supabase.auth.getUser()
   const { data: profile } = await supabase
     .from('b2b_profiles')
-    .select('name, email')
+    .select('name, email, phone')
     .eq('user_id', user?.id)
     .single()
   // RLS returns only the caller's own company row.
@@ -85,6 +85,7 @@ export async function getCompany(): Promise<Company> {
     company: comp.name,
     contactPerson: profile?.name ?? '',
     email: profile?.email ?? user?.email ?? '',
+    phone: profile?.phone ?? undefined,
     customerNumber: comp.customer_number ?? undefined,
     vatId: comp.vat_id ?? undefined,
     billingAddress: billing,
@@ -203,18 +204,43 @@ function patchMockOrder(id: string, fn: (o: Order) => Order): Order {
 }
 
 export async function cancelOrder(id: string): Promise<Order> {
-  await delay(300)
-  const now = new Date().toISOString()
-  return patchMockOrder(id, (o) => ({
-    ...o,
-    status: 'storniert',
-    statusHistory: [...(o.statusHistory ?? []), { status: 'storniert', at: now, note: 'Vom Kunden storniert.' }],
-  }))
+  if (USE_MOCK || !supabase) {
+    await delay(300)
+    const now = new Date().toISOString()
+    return patchMockOrder(id, (o) => ({
+      ...o,
+      status: 'storniert',
+      statusHistory: [...(o.statusHistory ?? []), { status: 'storniert', at: now, note: 'Vom Kunden storniert.' }],
+    }))
+  }
+  // The trg_order_status trigger records the status change in b2b_order_events.
+  const { data, error } = await supabase
+    .from('b2b_orders')
+    .update({ status: 'storniert' as OrderStatus })
+    .eq('id', id)
+    .select('*, b2b_order_items(*), b2b_order_events(*)')
+    .single()
+  if (error) throw error
+  const order = mapOrderRow(data)
+  await logCustomerAudit('bestellung.storniert', `#${order.orderNumber}`, 'Vom Kunden storniert')
+  return order
 }
 
 export async function reclaimOrder(id: string, reason: string): Promise<Order> {
-  await delay(300)
-  return patchMockOrder(id, (o) => ({ ...o, reclamation: reason }))
+  if (USE_MOCK || !supabase) {
+    await delay(300)
+    return patchMockOrder(id, (o) => ({ ...o, reclamation: reason }))
+  }
+  const { data, error } = await supabase
+    .from('b2b_orders')
+    .update({ reclamation: reason })
+    .eq('id', id)
+    .select('*, b2b_order_items(*), b2b_order_events(*)')
+    .single()
+  if (error) throw error
+  const order = mapOrderRow(data)
+  await logCustomerAudit('bestellung.reklamation', `#${order.orderNumber}`, reason)
+  return order
 }
 
 // ---------------------------------------------------------------------------
@@ -320,6 +346,7 @@ export async function acceptQuote(id: string): Promise<Order> {
     .update({ status: 'angenommen' as QuoteStatus, order_id: order.id })
     .eq('id', id)
   if (updErr) throw updErr
+  await logCustomerAudit('angebot.angenommen', quote.quoteNumber, `Angebot angenommen → #${order.orderNumber}`)
   return order
 }
 
@@ -332,11 +359,14 @@ export async function declineQuote(id: string): Promise<void> {
     )
     return
   }
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('b2b_quotes')
     .update({ status: 'abgelehnt' as QuoteStatus })
     .eq('id', id)
+    .select('quote_number')
+    .single()
   if (error) throw error
+  await logCustomerAudit('angebot.abgelehnt', data?.quote_number ?? '—', 'Vom Kunden abgelehnt')
 }
 
 // ---------------------------------------------------------------------------
@@ -409,4 +439,27 @@ async function currentProfile(): Promise<{ companyId: string } | null> {
     .eq('user_id', user.id)
     .single()
   return data ? { companyId: data.company_id } : null
+}
+
+/**
+ * Record a customer-initiated action in the shared audit log so the back-office
+ * sees the full history (RLS: audit_own_insert scopes it to the caller's
+ * company). Best-effort — a logging hiccup must never fail the action itself.
+ */
+async function logCustomerAudit(action: string, entity: string, detail: string): Promise<void> {
+  if (USE_MOCK || !supabase) return
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    const profile = await currentProfile()
+    if (!profile) return
+    await supabase.from('b2b_audit_log').insert({
+      company_id: profile.companyId,
+      actor: user?.id ?? null,
+      action,
+      entity,
+      meta: { detail, source: 'kunde' },
+    })
+  } catch {
+    /* logging is best-effort */
+  }
 }

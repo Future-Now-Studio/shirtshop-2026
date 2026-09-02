@@ -63,6 +63,7 @@ function mapCompany(r: any): Company {
     company: r.name,
     contactPerson: prof?.name ?? '',
     email: prof?.email ?? '',
+    phone: prof?.phone ?? undefined,
     customerNumber: r.customer_number ?? undefined,
     vatId: r.vat_id ?? undefined,
     billingAddress: billing,
@@ -150,7 +151,7 @@ export async function adminGetCustomers(): Promise<Company[]> {
   if (REAL) {
     const { data, error } = await supabase!
       .from('b2b_companies')
-      .select('*, b2b_profiles(name,email)')
+      .select('*, b2b_profiles(name,email,phone)')
       .order('name')
     if (error) throw error
     return (data ?? []).map(mapCompany)
@@ -163,7 +164,7 @@ export async function adminGetCustomer(id: string): Promise<Company | null> {
   if (REAL) {
     const { data, error } = await supabase!
       .from('b2b_companies')
-      .select('*, b2b_profiles(name,email)')
+      .select('*, b2b_profiles(name,email,phone)')
       .eq('id', id)
       .single()
     if (error) throw error
@@ -180,11 +181,23 @@ export async function adminUpdateCustomer(id: string, patch: Partial<Company>): 
     if (patch.annualBudget !== undefined) row.annual_budget = patch.annualBudget ?? null
     if (patch.paymentTerms !== undefined) row.payment_terms = patch.paymentTerms
     if (patch.company !== undefined) row.name = patch.company
+    if (Object.keys(row).length) {
+      const { error: compErr } = await supabase!.from('b2b_companies').update(row).eq('id', id)
+      if (compErr) throw compErr
+    }
+    // Contact name + phone live on the profile (one account per company), so
+    // persist those on b2b_profiles rather than the company row.
+    const prof: Record<string, unknown> = {}
+    if (patch.contactPerson !== undefined) prof.name = patch.contactPerson
+    if (patch.phone !== undefined) prof.phone = patch.phone || null
+    if (Object.keys(prof).length) {
+      const { error: profErr } = await supabase!.from('b2b_profiles').update(prof).eq('company_id', id)
+      if (profErr) throw profErr
+    }
     const { data, error } = await supabase!
       .from('b2b_companies')
-      .update(row)
+      .select('*, b2b_profiles(name,email,phone)')
       .eq('id', id)
-      .select('*, b2b_profiles(name,email)')
       .single()
     if (error) throw error
     await logAuditReal('kunde.aktualisiert', data.name, 'Konditionen/Stammdaten geändert', id)
@@ -219,6 +232,7 @@ export async function adminCreateCustomer(input: NewCustomerInput): Promise<Comp
         name: input.company,
         customer_number: `B2B-${num}`,
         discount_percent: input.discountPercent ?? 0,
+        annual_budget: input.annualBudget ?? null,
         payment_terms: input.paymentTerms ?? '14 Tage netto',
       })
       .select('*')
@@ -235,7 +249,7 @@ export async function adminCreateCustomer(input: NewCustomerInput): Promise<Comp
         const res = await fetch('/api/admin-create-user', {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ companyId: data.id, email: input.email, name: input.contactPerson }),
+          body: JSON.stringify({ companyId: data.id, email: input.email, name: input.contactPerson, phone: input.phone }),
         })
         if (!res.ok) console.warn('[admin] Invite fehlgeschlagen:', await res.text())
       }

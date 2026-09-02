@@ -1,17 +1,34 @@
 import { Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { FileText, Loader2 } from 'lucide-react'
-import { adminGetInquiries } from '@/lib/adminApi'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Check, FileText, Loader2 } from 'lucide-react'
+import { adminGetInquiries, adminSetInquiryStatus } from '@/lib/adminApi'
+import type { AdminInquiry } from '@/lib/types'
 import { formatDate } from '@/lib/utils'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/PageHeader'
 
+const STATUS_LABELS: Record<AdminInquiry['status'], string> = {
+  neu: 'Neu',
+  in_bearbeitung: 'In Bearbeitung',
+  angebot_gesendet: 'Angebot gesendet',
+  abgeschlossen: 'Abgeschlossen',
+}
+
 export default function Inquiries() {
+  const queryClient = useQueryClient()
   const { data: inquiries = [], isLoading } = useQuery({
     queryKey: ['admin', 'inquiries'],
     queryFn: adminGetInquiries,
+  })
+  const setStatus = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: AdminInquiry['status'] }) =>
+      adminSetInquiryStatus(id, status),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'inquiries'] })
+      queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] })
+    },
   })
 
   return (
@@ -37,8 +54,8 @@ export default function Inquiries() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-3">
                     <span className="font-semibold">{i.productType}</span>
-                    <Badge variant={i.status === 'neu' ? 'info' : 'neutral'}>
-                      {i.status === 'neu' ? 'Neu' : 'In Bearbeitung'}
+                    <Badge variant={i.status === 'neu' ? 'info' : i.status === 'abgeschlossen' ? 'neutral' : 'success'}>
+                      {STATUS_LABELS[i.status] ?? i.status}
                     </Badge>
                   </div>
                   <p className="mt-1 text-sm">
@@ -53,11 +70,24 @@ export default function Inquiries() {
                     {i.message ? ` · „${i.message}"` : ''}
                   </p>
                 </div>
-                <Link to={`/admin/angebote/neu?anfrage=${i.id}`}>
-                  <Button variant="brand" size="sm">
-                    Angebot erstellen
-                  </Button>
-                </Link>
+                <div className="flex shrink-0 gap-2">
+                  {i.status !== 'abgeschlossen' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setStatus.mutate({ id: i.id, status: 'abgeschlossen' })}
+                      disabled={setStatus.isPending}
+                    >
+                      <Check className="size-4" />
+                      Als erledigt
+                    </Button>
+                  )}
+                  <Link to={`/admin/angebote/neu?anfrage=${i.id}`}>
+                    <Button variant="brand" size="sm">
+                      Angebot erstellen
+                    </Button>
+                  </Link>
+                </div>
               </div>
             </Card>
           ))}

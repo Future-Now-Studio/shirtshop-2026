@@ -43,7 +43,7 @@ export default async (req) => {
   } catch {
     return json(400, { error: 'Invalid JSON' })
   }
-  const { companyId, email, name } = body || {}
+  const { companyId, email, name, phone } = body || {}
   if (!companyId || !email) return json(400, { error: 'companyId und email erforderlich' })
 
   // 4) Create the auth user (confirmed) via the Admin API
@@ -67,7 +67,7 @@ export default async (req) => {
       'Content-Type': 'application/json',
       Prefer: 'return=minimal',
     },
-    body: JSON.stringify({ user_id: user.id, company_id: companyId, name: name ?? null, email }),
+    body: JSON.stringify({ user_id: user.id, company_id: companyId, name: name ?? null, email, phone: phone ?? null }),
   })
   if (!profRes.ok) {
     const err = await profRes.text()
