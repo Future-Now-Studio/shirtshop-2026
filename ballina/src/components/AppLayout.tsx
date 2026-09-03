@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ShoppingBag, FileCheck2, LogOut, Menu, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -7,14 +7,22 @@ import { useAuth } from '@/lib/auth'
 import { getCompany } from '@/lib/api'
 import { BrandMark } from './BrandMark'
 
+// `match` keeps the item active on the singular detail routes too
+// (/bestellung/:id) which don't share the plural nav prefix.
 const NAV = [
-  { to: '/bestellungen', label: 'Bestellungen', icon: ShoppingBag },
-  { to: '/angebote', label: 'Angebote & Anfragen', icon: FileCheck2 },
+  { to: '/bestellungen', label: 'Bestellungen', icon: ShoppingBag, match: ['/bestellungen', '/bestellung'] },
+  { to: '/angebote', label: 'Angebote & Anfragen', icon: FileCheck2, match: ['/angebote', '/anfrage'] },
 ]
+
+/** Active when the path equals a prefix or is a sub-route of it. */
+function isNavActive(pathname: string, match: string[]): boolean {
+  return match.some((p) => pathname === p || pathname.startsWith(p + '/'))
+}
 
 export function AppLayout() {
   const { signOut } = useAuth()
   const navigate = useNavigate()
+  const { pathname } = useLocation()
   const { data: company } = useQuery({ queryKey: ['company'], queryFn: getCompany })
   const [mobileOpen, setMobileOpen] = useState(false)
 
@@ -46,19 +54,17 @@ export function AppLayout() {
         </div>
 
         <nav className="flex-1 space-y-1 p-3">
-          {NAV.map(({ to, label, icon: Icon }) => (
+          {NAV.map(({ to, label, icon: Icon, match }) => (
             <NavLink
               key={to}
               to={to}
               onClick={() => setMobileOpen(false)}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-brand-muted text-brand'
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                )
-              }
+              className={cn(
+                'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                isNavActive(pathname, match)
+                  ? 'bg-brand-muted text-brand'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+              )}
             >
               <Icon className="size-4.5" />
               {label}

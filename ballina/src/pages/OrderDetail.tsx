@@ -2,9 +2,8 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ArrowLeft, Ban, FileText, Loader2, MoreHorizontal, RefreshCw, Truck } from 'lucide-react'
-import { cancelOrder, getCompany, getOrder, reclaimOrder } from '@/lib/api'
+import { cancelOrder, getOrder, reclaimOrder } from '@/lib/api'
 import { formatDate, formatEUR, ITEM_PLACEHOLDER } from '@/lib/utils'
-import { openDocument } from '@/lib/documents'
 import { invoiceHref } from '@/lib/invoices'
 import { useReorder } from '@/lib/useReorder'
 import { Button } from '@/components/ui/button'
@@ -20,7 +19,6 @@ export default function OrderDetail() {
     queryKey: ['order', id],
     queryFn: () => getOrder(id),
   })
-  const { data: company } = useQuery({ queryKey: ['company'], queryFn: getCompany })
   const { quickReorder, isReordering } = useReorder()
   const [reclaimOpen, setReclaimOpen] = useState(false)
   const [reclaimText, setReclaimText] = useState('')
@@ -280,49 +278,24 @@ export default function OrderDetail() {
           )}
         </Card>
 
-        {(order.invoiceDataUrl ||
-          (company && (order.status === 'versendet' || order.status === 'abgeschlossen'))) && (
+        {order.invoiceDataUrl && (
           <Card className="p-5">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Dokumente
             </p>
             <div className="mt-3 space-y-2">
-              {order.invoiceDataUrl && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full justify-start"
-                  onClick={async () => {
-                    const href = await invoiceHref(order.invoiceDataUrl!)
-                    window.open(href, '_blank')
-                  }}
-                >
-                  <FileText className="size-4" />
-                  {order.invoiceName || 'Dokument (PDF)'}
-                </Button>
-              )}
-              {company && (order.status === 'versendet' || order.status === 'abgeschlossen') && (
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full justify-start"
-                    onClick={() => openDocument('rechnung', order, company)}
-                  >
-                    <FileText className="size-4" />
-                    Rechnung (PDF)
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full justify-start"
-                    onClick={() => openDocument('lieferschein', order, company)}
-                  >
-                    <FileText className="size-4" />
-                    Lieferschein (PDF)
-                  </Button>
-                </>
-              )}
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full justify-start"
+                onClick={async () => {
+                  const href = await invoiceHref(order.invoiceDataUrl!)
+                  window.open(href, '_blank')
+                }}
+              >
+                <FileText className="size-4" />
+                {order.invoiceName || 'Dokument (PDF)'}
+              </Button>
             </div>
           </Card>
         )}

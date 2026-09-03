@@ -147,6 +147,15 @@ export default function AdminOrderDetail() {
           </div>
         </Card>
 
+        {order.note && (
+          <Card className="p-5 lg:col-span-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Anmerkung
+            </p>
+            <p className="mt-1.5 whitespace-pre-line text-sm">{order.note}</p>
+          </Card>
+        )}
+
         {/* Editor */}
         <div className="space-y-6">
           <Card className="p-5">

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   LayoutDashboard,
@@ -17,18 +17,28 @@ import { useAuth } from '@/lib/auth'
 import { adminGetStats } from '@/lib/adminApi'
 import { BrandMark } from './BrandMark'
 
+// `match` lists every path prefix that should keep this item highlighted — the
+// detail routes are singular (/admin/bestellung/:id) while the nav targets are
+// plural (/admin/bestellungen), so NavLink's own matching would drop the active
+// state as soon as you open a detail page.
 const NAV = [
-  { to: '/admin', label: 'Übersicht', icon: LayoutDashboard, end: true },
-  { to: '/admin/kunden', label: 'Kunden', icon: Building2 },
-  { to: '/admin/bestellungen', label: 'Bestellungen', icon: ShoppingBag },
-  { to: '/admin/anfragen', label: 'Anfragen', icon: FileText },
-  { to: '/admin/angebote', label: 'Angebote', icon: FileCheck2 },
-  { to: '/admin/audit', label: 'Audit-Log', icon: ScrollText },
+  { to: '/admin', label: 'Übersicht', icon: LayoutDashboard, end: true, match: ['/admin'] },
+  { to: '/admin/kunden', label: 'Kunden', icon: Building2, match: ['/admin/kunden', '/admin/kunde'] },
+  { to: '/admin/bestellungen', label: 'Bestellungen', icon: ShoppingBag, match: ['/admin/bestellungen', '/admin/bestellung'] },
+  { to: '/admin/anfragen', label: 'Anfragen', icon: FileText, match: ['/admin/anfragen'] },
+  { to: '/admin/angebote', label: 'Angebote', icon: FileCheck2, match: ['/admin/angebote', '/admin/angebot'] },
+  { to: '/admin/audit', label: 'Audit-Log', icon: ScrollText, match: ['/admin/audit'] },
 ]
+
+/** Active when the path equals a prefix or is a sub-route of it (`end` = exact only). */
+function isNavActive(pathname: string, match: string[], end?: boolean): boolean {
+  return match.some((p) => (end ? pathname === p : pathname === p || pathname.startsWith(p + '/')))
+}
 
 export function AdminLayout() {
   const { signOut } = useAuth()
   const navigate = useNavigate()
+  const { pathname } = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
   const { data: stats } = useQuery({ queryKey: ['admin', 'stats'], queryFn: adminGetStats })
 
@@ -65,20 +75,18 @@ export function AdminLayout() {
         </div>
 
         <nav className="flex-1 space-y-1 p-3">
-          {NAV.map(({ to, label, icon: Icon, end }) => (
+          {NAV.map(({ to, label, icon: Icon, end, match }) => (
             <NavLink
               key={to}
               to={to}
               end={end}
               onClick={() => setMobileOpen(false)}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-brand-muted text-brand'
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                )
-              }
+              className={cn(
+                'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                isNavActive(pathname, match, end)
+                  ? 'bg-brand-muted text-brand'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+              )}
             >
               <Icon className="size-4.5" />
               <span className="flex-1">{label}</span>

@@ -1,9 +1,8 @@
 import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, FileDown, Loader2 } from 'lucide-react'
+import { ArrowLeft, Loader2 } from 'lucide-react'
 import { adminGetQuote } from '@/lib/adminApi'
 import { formatDate, formatEUR } from '@/lib/utils'
-import { openQuoteDocument } from '@/lib/documents'
 import { QUOTE_STATUS_LABELS, type Quote } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -58,10 +57,6 @@ export default function AdminQuoteDetail() {
             {formatDate(quote.validUntil)}
           </p>
         </div>
-        <Button variant="outline" size="lg" onClick={() => openQuoteDocument(quote, quote.companyName)}>
-          <FileDown className="size-4" />
-          Angebot (PDF)
-        </Button>
       </div>
 
       <Card className="mt-6 overflow-hidden">
