@@ -30,9 +30,11 @@ export default async (req) => {
 
   if (event.type === 'payment_intent.succeeded') {
     const pi = event.data.object;
-    console.log('payment_intent.succeeded:', pi.id, 'metadata:', pi.metadata);
-    // Frontend creates the WC order; this log lets ops reconcile if the
-    // browser flow dies between payment success and order creation.
+    // Frontend creates the WC order (create-order stores wc_order_id on the
+    // PaymentIntent); this log lets ops reconcile if the browser flow dies
+    // between payment success and order creation.
+    // (The event usually arrives before the order exists, so wc_order_id may be empty here.)
+    console.log('payment_intent.succeeded:', pi.id, 'amount:', pi.amount, 'cart:', pi.metadata?.cart_hash, 'items:', pi.metadata?.items);
   }
 
   return new Response(JSON.stringify({ received: true }), {

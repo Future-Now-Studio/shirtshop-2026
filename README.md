@@ -1,120 +1,64 @@
-# Welcome to your Lovable project
+# Private Shirt – shop monorepo
 
-## Project info
+This repository contains three apps:
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+| Path        | What it is                                                                 |
+|-------------|-----------------------------------------------------------------------------|
+| `/` (root)  | **Legacy shop** (`privateshirt-legacy`): Vite + React frontend, WooCommerce as catalogue/order backend, Stripe payments, Netlify Functions in `netlify/functions/`, local Express dev API in `server.js`. |
+| `v2/`       | **Rebuild** of the shop on Supabase (Postgres, Auth, Storage, Edge Functions). See `v2/README.md`. |
+| `ballina/`  | **B2B portal** (Supabase auth/orders, WooCommerce catalogue). See `ballina/README.md` and `ballina/DEPLOY.md`. |
 
-## How can I edit this code?
-
-There are several ways of editing your application.
-
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
+## Legacy shop (root)
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+npm install
+npm run server   # Express API on http://localhost:3001 (Stripe, WooCommerce orders, contact mail)
+npm run dev      # Vite frontend
+npm run build    # production build → dist/ (deployed to Netlify together with netlify/functions)
 ```
 
-**Edit a file directly in GitHub**
+Checkout flow: the browser sends the cart to `/api/create-payment-intent`; the server
+recomputes the price from WooCommerce product prices (`netlify/functions/_lib/pricing.mjs`)
+and creates the Stripe PaymentIntent. After payment, `/api/create-order` re-verifies the
+PaymentIntent with Stripe (status, currency, amount, cart fingerprint) and creates the
+WooCommerce order once per PaymentIntent. The same code runs in `server.js` (local) and the
+Netlify functions (production).
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### Environment variables
 
-**Use GitHub Codespaces**
+Set these in `.env` for local development and in the Netlify site settings for production
+(never commit values; server-side keys must not get a `VITE_` prefix):
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+| Variable | Used by | Notes |
+|----------|---------|-------|
+| `WC_BASE_URL` | server, functions | WooCommerce REST root, e.g. `https://<shop>/wp-json/wc/v3` (required by `server.js`) |
+| `WC_CONSUMER_KEY`, `WC_CONSUMER_SECRET` | server, functions | WooCommerce REST API keys (server-side only) |
+| `STRIPE_SECRET_KEY` | server, functions | Stripe secret key |
+| `STRIPE_WEBHOOK_SECRET` | server, `stripe-webhook` | Webhook signing secret; webhooks are rejected without it |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | contact mail | SMTP account for the contact form |
+| `CONTACT_EMAIL_TO` | contact mail | Recipient of contact form mails |
+| `VITE_STRIPE_PUBLISHABLE_KEY` | frontend | Stripe publishable key (public) |
+| `VITE_API_URL` | frontend | Base URL of the API (`http://localhost:3001/api` locally) |
 
-## What technologies are used for this project?
+## v2 (Supabase rebuild)
 
-This project is built with:
+```sh
+cd v2
+npm install
+npm run dev      # or: npm run build
+```
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-- Stripe (for payments)
+Env: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_STRIPE_PUBLISHABLE_KEY` (frontend);
+`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (scripts);
+`WC_BASE_URL`, `WC_CONSUMER_KEY`, `WC_CONSUMER_SECRET` (server-side catalogue proxy).
 
-## Stripe Payment Setup
+## ballina (B2B portal)
 
-To enable payment processing:
+```sh
+cd ballina
+npm install
+npm run dev      # or: npm run build
+```
 
-1. **Get your Stripe keys:**
-   - Sign up at https://stripe.com
-   - Go to Developers > API keys
-   - Copy your Publishable key
-
-2. **Set environment variable:**
-   - Create a `.env` file in the root directory
-   - Add: `VITE_STRIPE_PUBLISHABLE_KEY=pk_test_your_key_here`
-
-3. **Backend Setup (Required for production):**
-   - You need to create a backend endpoint at `/api/create-payment-intent`
-   - This endpoint should:
-     - Create a Stripe PaymentIntent
-     - Return the `clientSecret` to the frontend
-   - Example backend code (Node.js/Express):
-     ```javascript
-     const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-     
-     app.post('/api/create-payment-intent', async (req, res) => {
-       const { amount, currency = 'eur' } = req.body;
-       
-       const paymentIntent = await stripe.paymentIntents.create({
-         amount: Math.round(amount * 100), // Convert to cents
-         currency,
-       });
-       
-       res.json({ clientSecret: paymentIntent.client_secret });
-     });
-     ```
-
-4. **Start the backend server:**
-   - Open a new terminal window
-   - Run: `npm run server`
-   - The server will start on http://localhost:3001
-   - Make sure your Stripe secret key is set (it's already configured in server.js)
-
-5. **Start the frontend:**
-   - In another terminal, run: `npm run dev`
-   - The frontend will run on http://localhost:8080 (or the port shown)
-
-**Note:** Both the backend server and frontend need to be running for payments to work!
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+Env: see `ballina/.env.example` (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_USE_MOCK`,
+`WC_BASE_URL`, `WC_CONSUMER_KEY`, `WC_CONSUMER_SECRET`, plus the variables listed in `ballina/DEPLOY.md`).

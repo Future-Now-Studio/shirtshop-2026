@@ -13,6 +13,7 @@ export const ChatButton = () => {
     email: "",
     phone: "",
     message: "",
+    website: "", // honeypot – must stay empty
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -50,6 +51,7 @@ export const ChatButton = () => {
           email: formData.email,
           phone: formData.phone,
           message: formData.message,
+          website: formData.website,
         }),
       });
 
@@ -60,7 +62,7 @@ export const ChatButton = () => {
       }
 
       toast.success("Ihre Nachricht wurde erfolgreich gesendet!");
-      setFormData({ name: "", email: "", phone: "", message: "" });
+      setFormData({ name: "", email: "", phone: "", message: "", website: "" });
       setIsOpen(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Fehler beim Senden der Nachricht. Bitte versuchen Sie es später erneut.");
@@ -130,6 +132,19 @@ export const ChatButton = () => {
 
               {/* Form */}
               <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[calc(100vh-200px)] overflow-y-auto">
+                {/* Honeypot for bots – hidden from users and assistive tech */}
+                <div aria-hidden="true" style={{ position: "absolute", left: "-10000px", width: 1, height: 1, overflow: "hidden" }}>
+                  <label htmlFor="chat-website">Website</label>
+                  <input
+                    id="chat-website"
+                    name="website"
+                    type="text"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    value={formData.website}
+                    onChange={(e) => handleChange("website", e.target.value)}
+                  />
+                </div>
                 <div>
                   <Label htmlFor="chat-name">Name *</Label>
                   <Input

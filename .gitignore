@@ -30,3 +30,6 @@ dist-ssr
 
 # Local Netlify folder
 .netlify
+
+# Customer design exports (may contain personal data)
+order-designs/

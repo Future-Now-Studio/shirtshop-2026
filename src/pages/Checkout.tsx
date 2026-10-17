@@ -213,15 +213,11 @@ const CheckoutForm = ({ paymentIntentId }: CheckoutFormProps) => {
           const orderResponse = await fetch(`${apiUrl}/create-order`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            // Prices/totals are recomputed and verified against the PaymentIntent on the server.
             body: JSON.stringify({
               items: items,
-              shipping: {
-                total: shipping,
-              },
               billing: billingData,
               paymentIntentId: paymentIntent.id,
-              transactionId: (paymentIntent as any).latest_charge || paymentIntent.id,
-              total: total,
             }),
           });
 
@@ -579,10 +575,17 @@ const Checkout = () => {
         const response = await fetch(`${apiUrl}/create-payment-intent`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          // The server computes the amount from WooCommerce prices; only send what it needs.
           body: JSON.stringify({
-            amount: total, // Total in EUR (will be converted to cents on backend)
-            currency: 'eur',
-            items: items,
+            items: items.map((item) => ({
+              productId: item.productId,
+              name: item.name,
+              quantity: item.quantity,
+              color: item.color,
+              size: item.size,
+              designElementCount: item.designElementCount,
+              customDesignRaw: item.customDesignRaw,
+            })),
           }),
         });
         
@@ -592,6 +595,9 @@ const Checkout = () => {
         }
         
         const data = await response.json();
+        if (typeof data.amount === 'number' && Math.abs(data.amount - total) > 0.01) {
+          toast.info(`Der Gesamtpreis wurde aktualisiert: ${data.amount.toFixed(2).replace(".", ",")} €`);
+        }
         setClientSecret(data.clientSecret);
         setPaymentIntentId(data.paymentIntentId);
       } catch (error: any) {

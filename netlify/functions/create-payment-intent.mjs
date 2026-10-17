@@ -1,7 +1,10 @@
 // Netlify Function V2 – creates a Stripe PaymentIntent server-side.
-// Replaces the Express route in server.js for production deployment.
+// The amount is recomputed from WooCommerce prices (see _lib/pricing.mjs);
+// any amount sent by the browser is ignored.
 
 import Stripe from 'stripe';
+import { getWcConfig } from './_lib/pricing.mjs';
+import { createPaymentIntentForCart } from './_lib/checkout.mjs';
 
 const ALLOWED_ORIGINS = [
   'https://private-shirt.de',
@@ -15,6 +18,7 @@ function corsHeaders(origin) {
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Content-Type': 'application/json',
+    'Cache-Control': 'no-store',
   };
 }
 
@@ -29,47 +33,21 @@ export default async (req) => {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers });
   }
 
-  if (!process.env.STRIPE_SECRET_KEY) {
-    return new Response(JSON.stringify({ error: 'Stripe not configured' }), { status: 500, headers });
+  const wc = getWcConfig();
+  if (!process.env.STRIPE_SECRET_KEY || !wc) {
+    return new Response(JSON.stringify({ error: 'Checkout not configured' }), { status: 500, headers });
+  }
+
+  let body;
+  try {
+    body = await req.json();
+  } catch {
+    return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400, headers });
   }
 
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-12-18.acacia' });
-
-  try {
-    const { amount, currency = 'eur', items } = await req.json();
-
-    if (!amount || amount <= 0) {
-      return new Response(JSON.stringify({ error: 'Invalid amount' }), { status: 400, headers });
-    }
-
-    const metadata = {};
-    if (Array.isArray(items) && items.length > 0) {
-      metadata.item_count = items.length.toString();
-      metadata.total_items = items.reduce((s, i) => s + i.quantity, 0).toString();
-      const ids = items.map((i) => i.productId).join(',');
-      if (ids.length <= 500) metadata.product_ids = ids;
-      const names = items.map((i) => `${i.name} (${i.quantity}x)`).join(', ');
-      metadata.items = names.length <= 500 ? names : names.substring(0, 497) + '...';
-    }
-
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(amount * 100),
-      currency: currency.toLowerCase(),
-      automatic_payment_methods: { enabled: true, allow_redirects: 'always' },
-      metadata,
-    });
-
-    return new Response(
-      JSON.stringify({ clientSecret: paymentIntent.client_secret, paymentIntentId: paymentIntent.id }),
-      { status: 200, headers },
-    );
-  } catch (error) {
-    console.error('create-payment-intent error:', error);
-    return new Response(
-      JSON.stringify({ error: error.message || 'Failed to create payment intent' }),
-      { status: 500, headers },
-    );
-  }
+  const result = await createPaymentIntentForCart({ stripe, wc, items: body?.items });
+  return new Response(JSON.stringify(result.body), { status: result.status, headers });
 };
 
 export const config = { path: '/api/create-payment-intent' };
