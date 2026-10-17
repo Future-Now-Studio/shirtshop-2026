@@ -1,9 +1,11 @@
 import { Layout } from "@/components/layout/Layout";
+import { Seo } from "@/components/Seo";
 import { motion } from "framer-motion";
 
 const Impressum = () => {
   return (
     <Layout>
+      <Seo title="Impressum" canonical="/impressum" />
       <div className="container-wide py-12">
         <motion.div
           initial={{ opacity: 0, y: 20 }}

@@ -84,11 +84,7 @@ export const HeroSection = () => {
                   <ArrowRight className="w-5 h-5 transition-transform group-hover:translate-x-1" />
                 </Button>
               </Link>
-              <Link to="/produkte">
-                <Button variant="glass" size="xl" className="!bg-white/20 !backdrop-blur-md !border-2 !border-white/50 !text-white hover:!bg-white/30 !shadow-lg">
-                  produkte entdecken
-                </Button>
-              </Link>
+              {/* TEMP: "produkte entdecken" hidden */}
             </motion.div>
           </motion.div>
         </div>

@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { Layout } from "@/components/layout/Layout";
+import { Seo } from "@/components/Seo";
 import { CheckCircle, Printer, Palette, Package, Settings, Shirt, Sparkles } from "lucide-react";
 import lifestyleImage from "@/assets/lifestyle-woman.jpg";
 
@@ -118,6 +119,11 @@ const features = [
 const Leistungen = () => {
   return (
     <Layout>
+      <Seo
+        title="Leistungen – Textildruck & Stickerei"
+        description="Unsere Leistungen: Siebdruck, Digitaldruck, Transferdruck, Stickerei und Veredelung. Hochwertige Textilveredelung aus Hamburg ab einem Stück."
+        canonical="/leistungen"
+      />
       {/* Hero */}
       <section className="relative pt-12 pb-20 overflow-hidden">
         <div className="container-wide">

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
+import { Seo, localBusinessJsonLd } from "@/components/Seo";
 import { HeroSection } from "@/components/home/HeroSection";
 import { ShopSection } from "@/components/home/ShopSection";
 import { ProductSlider } from "@/components/home/ProductSlider";
@@ -26,9 +27,16 @@ const Index = () => {
 
   return (
     <Layout>
+      <Seo
+        title="Private Shirt | Sei du selbst. Sei einzigartig."
+        description="Professionelle Textilveredelung aus Hamburg. T-Shirts, Hoodies, Sweatshirts individuell gestalten. Druck & Stickerei ab einem Stück."
+        canonical="/"
+        jsonLd={localBusinessJsonLd}
+      />
       <HeroSection />
-      <ProductSlider />
-      <ShopSection />
+      {/* TEMP: ProductSlider + ShopSection hidden until product catalog is ready */}
+      {/* <ProductSlider /> */}
+      {/* <ShopSection /> */}
       <AboutPreview />
       <FAQSection />
       <LocationsSection />

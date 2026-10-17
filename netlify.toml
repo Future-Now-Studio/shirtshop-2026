@@ -3,6 +3,12 @@
   publish = "dist"
   functions = "netlify/functions"
 
+[dev]
+  framework = "vite"
+  targetPort = 8080
+  port = 8888
+  autoLaunch = false
+
 # SPA fallback – Netlify Functions V2 handle /api/wc/* via config.path automatically
 [[redirects]]
   from = "/*"
