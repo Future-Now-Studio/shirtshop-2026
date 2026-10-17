@@ -1,9 +1,7 @@
 import { Routes, Route, Link, useLocation } from "react-router-dom";
 import Home from "@/pages/Home";
 import ProductDetail from "@/pages/ProductDetail";
-import Designer from "@/pages/Designer";
 import Cart from "@/pages/Cart";
-import Checkout from "@/pages/Checkout";
 import OrderSuccess from "@/pages/OrderSuccess";
 import Footer from "@/components/layout/Footer";
 import { Unternehmen, Leistungen, Filialen, Grossbestellung, Impressum, AGB, Datenschutz, Widerruf } from "@/pages/marketing";
@@ -16,21 +14,28 @@ import SupportBubble from "@/components/layout/SupportBubble";
 import CookieConsent from "@/components/CookieConsent";
 import Header from "@/components/layout/Header";
 import ErrorBoundary from "@/components/ErrorBoundary";
-import { useEffect } from "react";
-import AdminLayout from "@/pages/admin/AdminLayout";
-import Overview from "@/pages/admin/Overview";
-import Colors from "@/pages/admin/Colors";
-import Sizes from "@/pages/admin/Sizes";
-import Products from "@/pages/admin/Products";
-import ProductEditor from "@/pages/admin/ProductEditor";
-import Discounts from "@/pages/admin/Discounts";
-import Orders from "@/pages/admin/Orders";
-import Messages from "@/pages/admin/Messages";
-import Inventory from "@/pages/admin/Inventory";
-import Inquiries from "@/pages/admin/Inquiries";
-import Settings from "@/pages/admin/Settings";
-import Coupons from "@/pages/admin/Coupons";
-import AdminReviews from "@/pages/admin/Reviews";
+import { lazy, Suspense, useEffect } from "react";
+import { setPageMeta } from "@/lib/seo";
+
+// Heavy routes (fabric.js designer, Stripe checkout, admin) load on demand.
+const Designer = lazy(() => import("@/pages/Designer"));
+const Checkout = lazy(() => import("@/pages/Checkout"));
+const CheckoutReturn = lazy(() => import("@/pages/CheckoutReturn"));
+const NewsletterAction = lazy(() => import("@/pages/NewsletterAction"));
+const AdminLayout = lazy(() => import("@/pages/admin/AdminLayout"));
+const Overview = lazy(() => import("@/pages/admin/Overview"));
+const Colors = lazy(() => import("@/pages/admin/Colors"));
+const Sizes = lazy(() => import("@/pages/admin/Sizes"));
+const Products = lazy(() => import("@/pages/admin/Products"));
+const ProductEditor = lazy(() => import("@/pages/admin/ProductEditor"));
+const Discounts = lazy(() => import("@/pages/admin/Discounts"));
+const Orders = lazy(() => import("@/pages/admin/Orders"));
+const Messages = lazy(() => import("@/pages/admin/Messages"));
+const Inventory = lazy(() => import("@/pages/admin/Inventory"));
+const Inquiries = lazy(() => import("@/pages/admin/Inquiries"));
+const Settings = lazy(() => import("@/pages/admin/Settings"));
+const Coupons = lazy(() => import("@/pages/admin/Coupons"));
+const AdminReviews = lazy(() => import("@/pages/admin/Reviews"));
 
 const TITLES: Record<string, string> = {
   "/": "Private Shirt | Sei du selbst. Sei einzigartig.",
@@ -50,17 +55,35 @@ const TITLES: Record<string, string> = {
   "/datenschutz": "Datenschutz | Private Shirt",
 };
 
+const DESCRIPTIONS: Record<string, string> = {
+  "/": "T-Shirts, Hoodies und mehr selbst gestalten und in Hamburg bedrucken lassen – online oder in unseren Filialen.",
+  "/produkte": "Alle Textilien zum Bedrucken: T-Shirts, Hoodies, Polos und mehr – gestalte dein Lieblingsstück.",
+  "/selbst-gestalten": "Gestalte dein Shirt direkt im Browser: Text, Logo oder Foto platzieren und bestellen.",
+  "/leistungen": "Siebdruck, Digitaldruck, Flex, Flock und Stick – unsere Druckverfahren im Überblick.",
+  "/unternehmen": "Private Shirt: Textilveredelung aus Hamburg seit 2010.",
+  "/filialen": "Besuch uns in Hamburg: Europa Passage und Mercado Altona.",
+  "/grossbestellung": "Großbestellungen für Firmen, Vereine und Events – individuelles Angebot anfragen.",
+  "/kontakt": "Fragen, Sonderwünsche oder Großbestellung? Schreib uns.",
+};
+
 export default function App() {
   const { pathname } = useLocation();
   useEffect(() => {
-    document.title = TITLES[pathname] ?? (pathname.startsWith("/admin") ? "Admin | Private Shirt" : "Private Shirt");
+    // product and designer pages set their own meta once the product loaded
+    if (pathname.startsWith("/produkt/") || pathname.startsWith("/gestalten/")) return;
+    setPageMeta({
+      title: TITLES[pathname] ?? (pathname.startsWith("/admin") ? "Admin | Private Shirt" : "Private Shirt"),
+      description: DESCRIPTIONS[pathname],
+      path: pathname,
+    });
   }, [pathname]);
 
   return (
     <div className="min-h-screen overflow-x-hidden">
       <Header />
       <main className="container py-10">
-        <ErrorBoundary>
+        <ErrorBoundary key={pathname}>
+        <Suspense fallback={<p className="text-muted-foreground">Lade…</p>}>
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/produkte" element={<Produkte />} />
@@ -70,6 +93,9 @@ export default function App() {
           <Route path="/gestalten/:slug" element={<Designer />} />
           <Route path="/warenkorb" element={<Cart />} />
           <Route path="/kasse" element={<Checkout />} />
+          <Route path="/kasse/abschluss" element={<CheckoutReturn />} />
+          <Route path="/newsletter/bestaetigen" element={<NewsletterAction action="confirm" />} />
+          <Route path="/newsletter/abmelden" element={<NewsletterAction action="unsubscribe" />} />
           <Route path="/bestellung/:orderId" element={<OrderSuccess />} />
           <Route path="/unternehmen" element={<Unternehmen />} />
           <Route path="/leistungen" element={<Leistungen />} />
@@ -97,6 +123,7 @@ export default function App() {
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
+        </Suspense>
         </ErrorBoundary>
       </main>
       <Footer />

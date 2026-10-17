@@ -6,6 +6,9 @@ import { supabase } from "@/lib/supabase";
 import { STORES } from "@/pages/marketing";
 import aboutImage from "@/assets/lifestyle-woman.jpg";
 import hamburgImage from "@/assets/hamburg-city.jpg";
+import ConsentMap from "@/components/ConsentMap";
+import { eur } from "@/lib/utils";
+import { PRICE_NOTE } from "@/lib/pricing";
 
 /* ---------- Highlights slider ---------- */
 async function fetchHighlights() {
@@ -41,7 +44,7 @@ export function ProductHighlights() {
             >
               <div className="flex aspect-square items-center justify-center overflow-hidden bg-white">
                 {url ? (
-                  <img src={url} alt={p.name} className="h-full w-full object-contain p-3" />
+                  <img loading="lazy" decoding="async" src={url} alt={p.name} className="h-full w-full object-contain p-3" />
                 ) : (
                   <div className="flex h-full">
                     {(p.variants ?? []).slice(0, 4).map((v: any) => (
@@ -52,7 +55,7 @@ export function ProductHighlights() {
               </div>
               <div className="p-4">
                 <h3 className="truncate font-bold">{p.name}</h3>
-                <p className="mt-1 font-bold text-primary">{Number(p.base_price).toFixed(2)} €</p>
+                <p className="mt-1 font-bold text-primary">{eur(Number(p.base_price))}<span className="block text-[10px] font-normal text-muted-foreground">{PRICE_NOTE}</span></p>
               </div>
             </Link>
           );
@@ -71,7 +74,7 @@ export function ShopBento() {
           to="/produkte"
           className="hover-lift group relative flex flex-col justify-end overflow-hidden rounded-3xl p-8 text-white shadow-card md:col-span-2 md:row-span-2 md:min-h-[320px]"
         >
-          <img src={aboutImage} alt="" className="absolute inset-0 h-full w-full object-cover" />
+          <img loading="lazy" decoding="async" src={aboutImage} alt="" className="absolute inset-0 h-full w-full object-cover" />
           <div className="absolute inset-0 bg-neutral-900/55" />
           <div className="relative">
             <Layers className="mb-4 h-10 w-10" />
@@ -118,7 +121,7 @@ export function LocationsTeaser() {
         {STORES.map((s) => (
           <div key={s.name} className="hover-lift overflow-hidden rounded-3xl border border-border/60 bg-card shadow-card">
             <div className="relative h-48 overflow-hidden">
-              <img src={s.image} alt={s.name} className="h-full w-full object-cover" />
+              <img loading="lazy" decoding="async" src={s.image} alt={s.name} className="h-full w-full object-cover" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
               <h3 className="absolute bottom-3 left-5 text-2xl font-bold capitalize text-white drop-shadow">{s.name}</h3>
             </div>
@@ -132,7 +135,7 @@ export function LocationsTeaser() {
                 </Link>
               </div>
               <div className="overflow-hidden rounded-xl border border-border/60">
-                <iframe src={s.map} title={`Karte ${s.name}`} className="h-40 w-full border-0 sm:h-full" loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+                <ConsentMap src={s.map} title={`Karte ${s.name}`} className="h-40 w-full border-0 sm:h-full" />
               </div>
             </div>
           </div>
@@ -157,7 +160,7 @@ const FAQ = [
   },
   {
     q: "Welche Zahlungsmethoden werden akzeptiert?",
-    a: "Kreditkarte, PayPal, Vorkasse und Rechnung (für Geschäftskunden). Alle Zahlungen laufen sicher über verschlüsselte Verbindungen.",
+    a: "Online bezahlst du sicher über unseren Zahlungsdienstleister Stripe, z. B. per Kreditkarte. Welche weiteren Zahlarten (etwa Apple Pay oder Google Pay) angezeigt werden, hängt von deinem Gerät ab. Geschäftskunden können über eine Großbestellung auch auf Rechnung bestellen.",
   },
   {
     q: "Was ist, wenn das Produkt nicht passt?",
@@ -181,7 +184,7 @@ export function AboutTeaser() {
       {/* Image with floating cards */}
       <div className="relative">
         <div className="hover-lift overflow-hidden rounded-[2rem] shadow-card">
-          <img src={hamburgImage} alt="Hamburg — Heimat von Private Shirt" className="aspect-[4/5] w-full object-cover sm:aspect-square" />
+          <img loading="lazy" decoding="async" src={hamburgImage} alt="Hamburg — Heimat von Private Shirt" className="aspect-[4/5] w-full object-cover sm:aspect-square" />
         </div>
         {/* seit 2010 badge, overlapping bottom-left */}
         <div className="absolute -bottom-5 -left-3 rounded-2xl border border-border/60 bg-card/95 p-5 shadow-xl backdrop-blur sm:-left-6">

@@ -5,6 +5,8 @@ import { supabase } from "@/lib/supabase";
 import { useWishlist } from "@/stores/wishlist";
 import HeartButton from "@/components/HeartButton";
 import { Button } from "@/components/ui/button";
+import { eur } from "@/lib/utils";
+import { PRICE_NOTE } from "@/lib/pricing";
 
 async function fetchByIds(ids: string[]) {
   if (!ids.length) return [];
@@ -40,13 +42,13 @@ export default function Wunschliste() {
             <Link key={p.id} to={`/produkt/${p.slug}`} className="hover-lift group relative overflow-hidden rounded-2xl border border-border/60 bg-card shadow-card">
               <div className="absolute right-3 top-3 z-10"><HeartButton id={p.id} /></div>
               <div className="flex aspect-square items-center justify-center overflow-hidden bg-white">
-                {url ? <img src={url} alt={p.name} className="h-full w-full object-contain p-3" /> : (
+                {url ? <img loading="lazy" decoding="async" src={url} alt={p.name} className="h-full w-full object-contain p-3" /> : (
                   <div className="flex h-full w-full">{(p.variants ?? []).slice(0, 6).map((v: any) => <div key={v.id} className="h-full flex-1" style={{ backgroundColor: v.hex ?? v.colors?.hex }} />)}</div>
                 )}
               </div>
               <div className="p-5">
                 <h3 className="text-lg font-bold transition-colors group-hover:text-primary">{p.name}</h3>
-                <span className="mt-2 block text-lg font-bold text-primary">{Number(p.base_price).toFixed(2)} €</span>
+                <span className="mt-2 block text-lg font-bold text-primary">{eur(Number(p.base_price))}<span className="block text-[10px] font-normal text-muted-foreground">{PRICE_NOTE}</span></span>
               </div>
             </Link>
           );

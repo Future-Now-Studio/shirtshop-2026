@@ -1,0 +1,25 @@
+# Netlify site for the v2 shop. In the Netlify UI set "Base directory" to v2.
+# Backend runs on Supabase (Edge Functions), so no Netlify functions here.
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# SPA fallback: deep links like /produkt/xyz or /admin must serve index.html.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "SAMEORIGIN"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+
+# Hashed build assets never change — cache them for a year.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

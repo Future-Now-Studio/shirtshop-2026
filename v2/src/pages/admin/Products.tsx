@@ -3,8 +3,10 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Download, Upload } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { publishProblem } from "@/lib/publish-check";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { eur } from "@/lib/utils";
 
 function slugify(s: string) {
   return s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -66,7 +68,13 @@ export default function Products() {
 
   const create = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.from("products").insert({ name, slug: slugify(name) });
+      // New products start with the default design price from the settings.
+      const { data: cfg } = await supabase.from("settings").select("design_element_price").eq("id", 1).maybeSingle();
+      const { error } = await supabase.from("products").insert({
+        name,
+        slug: slugify(name),
+        design_element_price: Number(cfg?.design_element_price ?? 10),
+      });
       if (error) throw error;
     },
     onSuccess: () => {
@@ -78,6 +86,10 @@ export default function Products() {
   const toggleStatus = useMutation({
     mutationFn: async (p: { id: string; status: string }) => {
       const next = p.status === "published" ? "draft" : "published";
+      if (next === "published") {
+        const problem = await publishProblem(p.id);
+        if (problem) throw new Error(`Noch nicht veröffentlichbar: ${problem}`);
+      }
       const { error } = await supabase.from("products").update({ status: next }).eq("id", p.id);
       if (error) throw error;
     },
@@ -119,6 +131,7 @@ export default function Products() {
         </Button>
       </form>
       {create.error && <p className="mb-4 text-sm text-destructive">{(create.error as Error).message}</p>}
+      {toggleStatus.error && <p role="alert" className="mb-4 text-sm text-destructive">{(toggleStatus.error as Error).message}</p>}
 
       {isLoading ? (
         <p className="text-muted-foreground">Lade…</p>
@@ -129,7 +142,7 @@ export default function Products() {
               <Link to={`/admin/products/${p.id}`} className="flex-1 hover:underline">
                 <p className="font-medium">{p.name}</p>
                 <p className="text-xs text-muted-foreground no-underline">
-                  {p.variants?.length ?? 0} Varianten · {Number(p.base_price).toFixed(2)} €
+                  {p.variants?.length ?? 0} {(p.variants?.length ?? 0) === 1 ? "Variante" : "Varianten"} · {eur(Number(p.base_price))}
                 </p>
               </Link>
               <button

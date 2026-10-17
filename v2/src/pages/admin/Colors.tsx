@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { dbErrorMessage } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -68,7 +69,8 @@ export default function Colors() {
           Hinzufügen
         </Button>
       </form>
-      {add.error && <p className="mb-4 text-sm text-destructive">{(add.error as Error).message}</p>}
+      {add.error && <p className="mb-4 text-sm text-destructive">{dbErrorMessage(add.error)}</p>}
+      {remove.error && <p role="alert" className="mb-4 text-sm text-destructive">Löschen fehlgeschlagen: {dbErrorMessage(remove.error)}</p>}
 
       {isLoading ? (
         <p className="text-muted-foreground">Lade…</p>
@@ -79,7 +81,7 @@ export default function Colors() {
               <span className="h-6 w-6 rounded-full border" style={{ backgroundColor: c.hex }} />
               <span className="flex-1 text-sm">{c.name}</span>
               <span className="text-xs tabular-nums text-muted-foreground">{c.hex}</span>
-              <Button variant="ghost" size="icon" onClick={() => remove.mutate(c.id)} title="Löschen">
+              <Button variant="ghost" size="icon" onClick={() => confirm(`Farbe „${c.name}“ wirklich löschen?`) && remove.mutate(c.id)} title="Löschen">
                 <Trash2 className="h-4 w-4" />
               </Button>
             </li>

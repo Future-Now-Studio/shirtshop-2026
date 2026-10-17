@@ -5,4 +5,4 @@ Disallow: /warenkorb
 Disallow: /kasse
 Disallow: /bestellung/
 
-Sitemap: https://privateshirt.netlify.app/sitemap.xml
+Sitemap: https://private-shirt.de/sitemap.xml

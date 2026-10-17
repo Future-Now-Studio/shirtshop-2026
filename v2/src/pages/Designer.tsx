@@ -2,16 +2,32 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import * as fabric from "fabric";
-import { Type, ImagePlus, Trash2, ShoppingCart, Loader2, ArrowRight, ArrowLeft, AlertTriangle, Download } from "lucide-react";
+import { Type, ImagePlus, Trash2, ShoppingCart, Loader2, ArrowRight, ArrowLeft, AlertTriangle, Download, Bold, Minus, Plus } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { publicUrl } from "@/lib/storage";
 import { uploadDesignFile, uploadDesignJson } from "@/lib/design-upload";
 import { Button } from "@/components/ui/button";
+import NotFound from "@/pages/NotFound";
+import { setPageMeta } from "@/lib/seo";
 import { useCart } from "@/stores/cart";
+import { PRICE_NOTE } from "@/lib/pricing";
+import { eur } from "@/lib/utils";
 
 const VIEWS = ["front", "back", "left", "right"] as const;
 const VIEW_LABEL: Record<string, string> = { front: "Vorne", back: "Hinten", left: "Links", right: "Rechts" };
 const SIZE = 480;
+
+const TEXT_COLORS = ["#111111", "#ffffff", "#e6007e", "#f5b700", "#d32f2f", "#1565c0", "#2e7d32", "#7f8c8d"];
+const FONTS = ["Outfit", "Arial", "Georgia", "Courier New", "Impact", "Brush Script MT"];
+
+/** Readable default text colour for a garment colour (white on dark shirts). */
+function contrastText(hex?: string | null) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex ?? "");
+  if (!m) return "#111111";
+  const n = parseInt(m[1], 16);
+  const lum = (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  return lum < 0.5 ? "#ffffff" : "#111111";
+}
 
 async function fetchProduct(slug: string) {
   const { data, error } = await supabase
@@ -25,7 +41,7 @@ async function fetchProduct(slug: string) {
     )
     .eq("slug", slug)
     .eq("status", "published")
-    .single();
+    .maybeSingle();
   if (error) throw error;
   return data;
 }
@@ -33,10 +49,11 @@ async function fetchProduct(slug: string) {
 export default function Designer() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
-  const { data: p } = useQuery({ queryKey: ["designer", slug], queryFn: () => fetchProduct(slug!) });
+  const { data: p, isLoading: productLoading, error: productError } = useQuery({ queryKey: ["designer", slug], queryFn: () => fetchProduct(slug!) });
   const addToCart = useCart((s) => s.add);
 
   const canvasElRef = useRef<HTMLCanvasElement>(null);
+  const canvasWrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<fabric.Canvas | null>(null);
   const viewJson = useRef<Record<string, any>>({});
 
@@ -48,6 +65,12 @@ export default function Designer() {
   const [step, setStep] = useState(1);
   const [outOfZone, setOutOfZone] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
+  // Currently selected design object + a tick to re-render after edits.
+  const [selected, setSelected] = useState<fabric.FabricObject | null>(null);
+  const [, setEditTick] = useState(0);
   const imgCache = useRef<Map<string, fabric.FabricImage>>(new Map());
   const zonesRef = useRef<{ left: number; top: number; width: number; height: number }[]>([]);
 
@@ -84,6 +107,10 @@ export default function Designer() {
     setElementCount(n);
   }, [view]);
 
+  useEffect(() => {
+    if (p?.name) setPageMeta({ title: `${p.name} gestalten | Private Shirt`, description: `${p.name} selbst gestalten: Text, Logo oder Foto platzieren.`, path: `/gestalten/${p.slug}` });
+  }, [p?.name]);
+
   // Keep a stable ref to the latest recount so canvas listeners never go stale.
   const recountRef = useRef(recount);
   recountRef.current = recount;
@@ -105,8 +132,27 @@ export default function Designer() {
     c.on("object:modified", () => checkZonesRef.current());
     c.on("object:moving", () => checkZonesRef.current());
     c.on("object:scaling", () => checkZonesRef.current());
+    const onSelect = () => setSelected(c.getActiveObject() ?? null);
+    c.on("selection:created", onSelect);
+    c.on("selection:updated", onSelect);
+    c.on("selection:cleared", () => setSelected(null));
     loadView(view, variant);
+
+    // Phones: keep the 480px design space but display it smaller (CSS only);
+    // fabric maps pointer coordinates through the CSS scale itself.
+    const wrap = canvasWrapRef.current;
+    const fit = () => {
+      const avail = wrap?.parentElement?.clientWidth ?? SIZE;
+      const px = Math.min(SIZE, Math.max(240, avail - 32));
+      c.setDimensions({ width: `${px}px`, height: `${px}px` }, { cssOnly: true });
+      c.calcOffset();
+    };
+    fit();
+    const ro = wrap?.parentElement ? new ResizeObserver(fit) : null;
+    if (ro && wrap?.parentElement) ro.observe(wrap.parentElement);
+
     return () => {
+      ro?.disconnect();
       c.dispose();
       canvasRef.current = null;
     };
@@ -168,6 +214,10 @@ export default function Designer() {
           strokeWidth: 1.5,
           selectable: false,
           evented: false,
+          // Guides are UI only: keep them out of toJSON(), otherwise a view
+          // switch would save the guide as a design element (extra charge,
+          // printed dashed box).
+          excludeFromExport: true,
         });
         (rect as any).__zone = true;
         c.add(rect);
@@ -209,14 +259,46 @@ export default function Designer() {
     setView(v);
   }
 
+  /**
+   * Renders the canvas to PNG without the print-zone guides; with
+   * `transparent` also without garment image and white background (the
+   * actual print file — white text must survive).
+   */
+  function exportPng(c: fabric.Canvas, multiplier: number, transparent = false) {
+    const guides = c.getObjects().filter((o: any) => o.__zone);
+    const bgImage = c.backgroundImage;
+    const bgColor = c.backgroundColor;
+    guides.forEach((g) => g.set({ visible: false }));
+    if (transparent) {
+      c.backgroundImage = undefined;
+      c.backgroundColor = "";
+    }
+    try {
+      c.renderAll();
+      return c.toDataURL({ format: "png", multiplier });
+    } finally {
+      guides.forEach((g) => g.set({ visible: true }));
+      c.backgroundImage = bgImage;
+      c.backgroundColor = bgColor;
+      c.renderAll();
+    }
+  }
+
+  /** Print zone of the current view (or the whole canvas if none). */
+  function placementBox() {
+    return zonesRef.current[0] ?? { left: 0, top: 0, width: SIZE, height: SIZE };
+  }
+
   function addText() {
     const c = canvasRef.current;
     if (!c) return;
+    const z = placementBox();
     const t = new fabric.Textbox("Dein Text", {
-      left: SIZE / 2 - 60,
-      top: SIZE / 2 - 15,
+      left: z.left + z.width / 2 - 80,
+      top: z.top + z.height / 2 - 15,
       fontSize: 28,
-      fill: "#111111",
+      fontFamily: "Outfit",
+      fill: contrastText(variant?.hex ?? variant?.colors?.hex),
       width: 160,
       textAlign: "center",
     });
@@ -231,9 +313,14 @@ export default function Designer() {
     const reader = new FileReader();
     reader.onload = async () => {
       const img = await fabric.FabricImage.fromURL(reader.result as string);
-      const scale = Math.min((SIZE * 0.5) / (img.width || 1), (SIZE * 0.5) / (img.height || 1));
+      // Fit into the print zone (80 % of it), centred.
+      const z = placementBox();
+      const scale = Math.min((z.width * 0.8) / (img.width || 1), (z.height * 0.8) / (img.height || 1));
       img.scale(scale);
-      img.set({ left: SIZE / 2 - (img.width! * scale) / 2, top: SIZE / 2 - (img.height! * scale) / 2 });
+      img.set({
+        left: z.left + z.width / 2 - (img.width! * scale) / 2,
+        top: z.top + z.height / 2 - (img.height! * scale) / 2,
+      });
       c.add(img);
       c.setActiveObject(img);
       c.renderAll();
@@ -246,99 +333,130 @@ export default function Designer() {
     const obj = c?.getActiveObject();
     if (c && obj && !(obj as any).__zone) {
       c.remove(obj);
+      c.discardActiveObject();
       c.renderAll();
+      setSelected(null);
     }
   }
+  const deleteRef = useRef(deleteSelected);
+  deleteRef.current = deleteSelected;
+
+  // Entf/Backspace deletes the selection — but not while typing in a text box
+  // or in a form field.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      const target = e.target as HTMLElement;
+      if (target.closest("input, textarea, select, [contenteditable]")) return;
+      const obj: any = canvasRef.current?.getActiveObject();
+      if (!obj || obj.isEditing) return;
+      e.preventDefault();
+      deleteRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  /** Applies style props to the selected text and re-renders. */
+  function styleText(props: Record<string, unknown>) {
+    const c = canvasRef.current;
+    const obj = c?.getActiveObject();
+    if (!c || !obj) return;
+    obj.set(props);
+    obj.setCoords();
+    c.requestRenderAll();
+    checkZonesRef.current();
+    setEditTick((t) => t + 1);
+  }
+  const selectedText: any = selected && (selected.type === "textbox" || selected.type === "i-text") ? selected : null;
 
   const totalPieces = Object.values(sizeQty).reduce((s, q) => s + (q || 0), 0);
 
   async function handleAddToCart() {
-    if (!p) return;
+    if (!p || adding) return;
     const entries = Object.entries(sizeQty).filter(([, q]) => q > 0);
     if (entries.length === 0) return;
+    setAdding(true);
+    setAddError(null);
     saveView(view);
-
-    const c = canvasRef.current!;
     const originalView = view;
-    const designId = (crypto as any).randomUUID();
-    const manifest: any[] = [];
-    let thumbnail: string | undefined;
-    let anyDesign = false;
+    try {
+      const c = canvasRef.current!;
+      const designId = (crypto as any).randomUUID();
+      const manifest: any[] = [];
+      let thumbnail: string | undefined;
+      let anyDesign = false;
 
-    // For every view that has design objects: upload composite, design-only and each element.
-    for (const v of VIEWS) {
-      const objs = (viewJson.current[v]?.objects ?? []).filter((o: any) => !o.__zone);
-      if (objs.length === 0) continue;
-      anyDesign = true;
-      await loadView(v, variant);
+      // For every view that has design objects: upload composite, design-only and each element.
+      for (const v of VIEWS) {
+        const objs = (viewJson.current[v]?.objects ?? []).filter((o: any) => !o.__zone);
+        if (objs.length === 0) continue;
+        anyDesign = true;
+        await loadView(v, variant);
 
-      // composite (garment + design)
-      try {
-        const composite = c.toDataURL({ format: "png", multiplier: 1.5 });
-        await uploadDesignFile(designId, `${v}-composite.png`, composite);
-        if (!thumbnail) thumbnail = c.toDataURL({ format: "png", multiplier: 0.28 }); // tiny cart preview
-      } catch { /* skip */ }
+        // composite (garment + design) — print files are required, so any
+        // upload error aborts instead of producing an order without artwork.
+        await uploadDesignFile(designId, `${v}-composite.png`, exportPng(c, 1.5));
+        if (!thumbnail) thumbnail = exportPng(c, 0.28); // tiny cart preview
 
-      // design-only (objects on transparent, no garment)
-      const bg = c.backgroundImage;
-      c.backgroundImage = undefined;
-      c.renderAll();
-      try {
-        const designOnly = c.toDataURL({ format: "png", multiplier: 2 });
-        await uploadDesignFile(designId, `${v}-design.png`, designOnly);
-      } catch { /* skip */ }
+        // design-only print file (transparent, no garment, no guides)
+        await uploadDesignFile(designId, `${v}-design.png`, exportPng(c, 2, true));
 
-      // each element separately
-      const live = c.getObjects().filter((o: any) => !o.__zone);
-      for (let i = 0; i < live.length; i++) {
-        const o: any = live[i];
-        try {
+        // each element separately
+        const live = c.getObjects().filter((o: any) => !o.__zone);
+        for (let i = 0; i < live.length; i++) {
+          const o: any = live[i];
           const png = o.toDataURL({ format: "png", multiplier: 2 });
           await uploadDesignFile(designId, `${v}-element-${i + 1}.png`, png);
-        } catch { /* skip */ }
-        manifest.push({
-          view: v,
-          index: i + 1,
-          type: o.type,
-          text: o.type === "textbox" || o.type === "i-text" ? o.text : undefined,
-          fontFamily: o.fontFamily,
-          fill: o.fill,
-          left: Math.round(o.left),
-          top: Math.round(o.top),
-          width: Math.round(o.getScaledWidth?.() ?? o.width),
-          height: Math.round(o.getScaledHeight?.() ?? o.height),
-          angle: Math.round(o.angle ?? 0),
+          manifest.push({
+            view: v,
+            index: i + 1,
+            type: o.type,
+            text: o.type === "textbox" || o.type === "i-text" ? o.text : undefined,
+            fontFamily: o.fontFamily,
+            fill: o.fill,
+            left: Math.round(o.left),
+            top: Math.round(o.top),
+            width: Math.round(o.getScaledWidth?.() ?? o.width),
+            height: Math.round(o.getScaledHeight?.() ?? o.height),
+            angle: Math.round(o.angle ?? 0),
+          });
+        }
+        c.renderAll();
+      }
+
+      if (anyDesign) {
+        await uploadDesignJson(designId, viewJson.current);
+      }
+
+      // one cart line per chosen size; heavy media lives in storage, cart keeps only ids
+      for (const [sid, q] of entries) {
+        addToCart({
+          productId: p.id,
+          productName: p.name,
+          slug: p.slug,
+          variantId: variant.id,
+          colorName: variant.colors?.name,
+          sizeId: sid,
+          sizeName: sizes.find((s: any) => s.id === sid)?.name ?? null,
+          qty: q,
+          basePrice: Number(p.base_price),
+          designElementPrice: Number(p.design_element_price),
+          designElementCount: elementCount,
+          designId: anyDesign ? designId : undefined,
+          designManifest: anyDesign ? manifest : undefined,
+          thumbnail,
         });
       }
-      c.backgroundImage = bg;
-      c.renderAll();
+      await loadView(originalView, variant);
+      navigate("/warenkorb");
+    } catch (e) {
+      console.error(e);
+      setAddError("Dein Design konnte nicht gespeichert werden. Bitte versuche es erneut.");
+      await loadView(originalView, variant);
+    } finally {
+      setAdding(false);
     }
-
-    if (anyDesign) {
-      await uploadDesignJson(designId, viewJson.current);
-    }
-
-    // one cart line per chosen size; heavy media lives in storage, cart keeps only ids
-    for (const [sid, q] of entries) {
-      addToCart({
-        productId: p.id,
-        productName: p.name,
-        slug: p.slug,
-        variantId: variant.id,
-        colorName: variant.colors?.name,
-        sizeId: sid,
-        sizeName: sizes.find((s: any) => s.id === sid)?.name ?? null,
-        qty: q,
-        basePrice: Number(p.base_price),
-        designElementPrice: Number(p.design_element_price),
-        designElementCount: elementCount,
-        designId: anyDesign ? designId : undefined,
-        designManifest: anyDesign ? manifest : undefined,
-        thumbnail,
-      });
-    }
-    await loadView(originalView, variant);
-    navigate("/warenkorb");
   }
 
   async function handleDownload() {
@@ -359,8 +477,7 @@ export default function Designer() {
       if (!c) continue;
 
       try {
-        const composite = c.toDataURL({ format: "png", multiplier: 2 });
-        downloads.push({ view: v, dataUrl: composite });
+        downloads.push({ view: v, dataUrl: exportPng(c, 2) });
       } catch { /* skip */ }
     }
 
@@ -387,7 +504,9 @@ export default function Designer() {
   const unit = p ? Number(p.base_price) + elementCount * Number(p.design_element_price) : 0;
   const fileRef = useRef<HTMLInputElement>(null);
 
-  if (!p) return <p className="text-muted-foreground">Lade…</p>;
+  if (productLoading) return <p className="text-muted-foreground">Lade…</p>;
+  if (productError) return <p className="text-destructive">Produkt konnte nicht geladen werden. Bitte Seite neu laden.</p>;
+  if (!p) return <NotFound />;
 
   return (
     <div>
@@ -401,29 +520,32 @@ export default function Designer() {
 
       <div className="grid gap-6 lg:grid-cols-12">
         {/* Tool rail */}
-        <div className="lg:col-span-2">
-          <div className="flex flex-col gap-2 rounded-2xl border bg-card p-2 shadow-sm">
-            <Button variant="ghost" className="h-11 w-full justify-start gap-2.5 rounded-xl font-medium" onClick={addText}>
+        <div className="min-w-0 lg:col-span-2">
+          <div className="grid grid-cols-4 gap-1 rounded-2xl border bg-card p-2 shadow-sm lg:flex lg:flex-col lg:gap-2">
+            <Button variant="ghost" className="h-11 w-full flex-col justify-center gap-0.5 rounded-xl px-1 text-xs font-medium lg:flex-row lg:justify-start lg:gap-2.5 lg:px-4 lg:text-sm" onClick={addText}>
               <Type className="h-4 w-4 shrink-0" /> Text
             </Button>
-            <Button variant="ghost" className="h-11 w-full justify-start gap-2.5 rounded-xl font-medium" onClick={() => fileRef.current?.click()}>
+            <Button variant="ghost" className="h-11 w-full flex-col justify-center gap-0.5 rounded-xl px-1 text-xs font-medium lg:flex-row lg:justify-start lg:gap-2.5 lg:px-4 lg:text-sm" onClick={() => fileRef.current?.click()}>
               <ImagePlus className="h-4 w-4 shrink-0" /> Bild
             </Button>
             <Button
               variant="ghost"
-              className="h-11 w-full justify-start gap-2.5 rounded-xl font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              className="h-11 w-full flex-col justify-center gap-0.5 rounded-xl px-1 text-xs font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive lg:flex-row lg:justify-start lg:gap-2.5 lg:px-4 lg:text-sm"
               onClick={deleteSelected}
+              disabled={!selected}
+              title={selected ? "Auswahl löschen (Entf)" : "Erst ein Element auswählen"}
             >
               <Trash2 className="h-4 w-4 shrink-0" /> Löschen
             </Button>
             <Button
               variant="ghost"
-              className="h-11 w-full justify-start gap-2.5 rounded-xl font-medium"
+              className="h-11 w-full flex-col justify-center gap-0.5 rounded-xl px-1 text-xs font-medium lg:flex-row lg:justify-start lg:gap-2.5 lg:px-4 lg:text-sm"
               onClick={handleDownload}
               disabled={downloading || elementCount === 0}
             >
               <Download className="h-4 w-4 shrink-0" /> {downloading ? "Lade..." : "Download"}
             </Button>
+            {imageError && <p role="alert" className="col-span-4 px-2 pb-1 text-xs text-destructive">{imageError}</p>}
             <input
               ref={fileRef}
               type="file"
@@ -431,17 +553,21 @@ export default function Designer() {
               className="hidden"
               onChange={(e) => {
                 const f = e.target.files?.[0];
-                if (f) addImage(f);
                 e.target.value = "";
+                if (!f) return;
+                if (!f.type.startsWith("image/")) { setImageError("Bitte eine Bilddatei (PNG, JPG, SVG) wählen."); return; }
+                if (f.size > 15 * 1024 * 1024) { setImageError("Das Bild ist größer als 15 MB."); return; }
+                setImageError(null);
+                addImage(f);
               }}
             />
           </div>
         </div>
 
         {/* Canvas + views */}
-        <div className="lg:col-span-6">
-          <div className="flex items-center justify-center rounded-2xl bg-muted/30 p-4 sm:p-6">
-            <div className="relative overflow-hidden rounded-xl bg-white shadow-sm">
+        <div className="min-w-0 lg:col-span-6">
+          <div className="flex items-center justify-center rounded-2xl bg-muted/30 p-2 sm:p-6">
+            <div ref={canvasWrapRef} className="relative overflow-hidden rounded-xl bg-white shadow-sm">
               <canvas ref={canvasElRef} width={SIZE} height={SIZE} />
               {imgLoading && (
                 <div className="absolute inset-0 flex items-center justify-center bg-white/60 backdrop-blur-sm">
@@ -455,6 +581,60 @@ export default function Designer() {
               )}
             </div>
           </div>
+
+          {selectedText && (
+            <div className="mt-5 space-y-3 rounded-2xl border bg-card p-3 shadow-sm" aria-label="Text bearbeiten">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Text bearbeiten · Doppelklick zum Ändern</p>
+              <div className="flex flex-wrap items-center gap-2">
+                {TEXT_COLORS.map((col) => (
+                  <button
+                    key={col}
+                    type="button"
+                    aria-label={`Textfarbe ${col}`}
+                    onClick={() => styleText({ fill: col })}
+                    className={"h-7 w-7 rounded-full border-2 " + (selectedText.fill === col ? "border-primary ring-2 ring-primary/30" : "border-border")}
+                    style={{ backgroundColor: col }}
+                  />
+                ))}
+                <label className="flex h-7 items-center gap-1 rounded-md border px-2 text-xs text-muted-foreground">
+                  eigene
+                  <input
+                    type="color"
+                    aria-label="Eigene Textfarbe"
+                    value={typeof selectedText.fill === "string" && selectedText.fill.startsWith("#") ? selectedText.fill : "#111111"}
+                    onChange={(e) => styleText({ fill: e.target.value })}
+                    className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0"
+                  />
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  aria-label="Schriftart"
+                  value={selectedText.fontFamily}
+                  onChange={(e) => styleText({ fontFamily: e.target.value })}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                >
+                  {FONTS.map((f) => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}
+                </select>
+                <div className="flex items-center gap-1">
+                  <Button type="button" variant="outline" size="icon" className="h-9 w-9" aria-label="Schrift kleiner"
+                    onClick={() => styleText({ fontSize: Math.max(10, (selectedText.fontSize ?? 28) - 4) })}>
+                    <Minus className="h-4 w-4" />
+                  </Button>
+                  <span className="w-10 text-center text-sm tabular-nums">{Math.round(selectedText.fontSize ?? 28)}</span>
+                  <Button type="button" variant="outline" size="icon" className="h-9 w-9" aria-label="Schrift größer"
+                    onClick={() => styleText({ fontSize: Math.min(160, (selectedText.fontSize ?? 28) + 4) })}>
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+                <Button type="button" variant={selectedText.fontWeight === "bold" ? "default" : "outline"} size="icon" className="h-9 w-9"
+                  aria-label="Fett" aria-pressed={selectedText.fontWeight === "bold"}
+                  onClick={() => styleText({ fontWeight: selectedText.fontWeight === "bold" ? "normal" : "bold" })}>
+                  <Bold className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
 
           <div className="mt-5 rounded-2xl border bg-card p-3 shadow-sm">
             <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">Ansichten</p>
@@ -475,7 +655,7 @@ export default function Designer() {
                     }
                   >
                     {img ? (
-                      <img src={publicUrl(img.storage_path)} alt={VIEW_LABEL[v]} className="h-full w-full object-cover" />
+                      <img loading="lazy" decoding="async" src={publicUrl(img.storage_path)} alt={VIEW_LABEL[v]} className="h-full w-full object-cover" />
                     ) : (
                       <span className="flex h-full w-full items-center justify-center bg-muted text-[10px] text-muted-foreground">kein bild</span>
                     )}
@@ -490,13 +670,13 @@ export default function Designer() {
         </div>
 
         {/* Config — step based */}
-        <div className="lg:col-span-4">
+        <div className="min-w-0 lg:col-span-4">
           <div className="space-y-5 rounded-2xl border bg-card p-5 shadow-sm">
             <div>
               <h2 className="text-lg font-bold">{p.name}</h2>
-              <p className="mt-1 text-2xl font-bold tabular-nums text-primary">{unit.toFixed(2)} €</p>
+              <p className="mt-1 text-2xl font-bold tabular-nums text-primary">{eur(unit)}</p>
               <p className="text-xs text-muted-foreground">
-                Basis {Number(p.base_price).toFixed(2)} € + {elementCount} Element(e) × {Number(p.design_element_price).toFixed(2)} €
+                Basis {eur(Number(p.base_price))} + {elementCount} Element(e) × {eur(Number(p.design_element_price))} · {PRICE_NOTE}
               </p>
             </div>
 
@@ -579,11 +759,18 @@ export default function Designer() {
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">{totalPieces} Stück gesamt</span>
-                  <span className="font-bold tabular-nums">{(unit * totalPieces).toFixed(2)} €</span>
+                  <span className="font-bold tabular-nums">{eur((unit * totalPieces))}</span>
                 </div>
-                <Button className="w-full" size="lg" disabled={totalPieces === 0} onClick={handleAddToCart}>
-                  <ShoppingCart className="mr-2 h-4 w-4" /> In den Warenkorb
+                {outOfZone && (
+                  <p className="flex items-center gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                    <AlertTriangle className="h-4 w-4 shrink-0" /> Ein Motiv liegt außerhalb der Druckzone und wird evtl. nicht vollständig gedruckt.
+                  </p>
+                )}
+                <Button className="w-full" size="lg" disabled={totalPieces === 0 || adding} onClick={handleAddToCart}>
+                  {adding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShoppingCart className="mr-2 h-4 w-4" />}
+                  {adding ? "Design wird gespeichert…" : "In den Warenkorb"}
                 </Button>
+                {addError && <p role="alert" className="text-center text-sm text-destructive">{addError}</p>}
                 {totalPieces === 0 && <p className="text-center text-xs text-muted-foreground">Mindestens 1 Stück wählen.</p>}
               </>
             )}

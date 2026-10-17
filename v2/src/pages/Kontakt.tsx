@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Honeypot, isBot } from "@/components/Honeypot";
 
 export default function Kontakt() {
   const [form, setForm] = useState({ name: "", email: "", message: "" });
@@ -13,6 +14,7 @@ export default function Kontakt() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (isBot(e.currentTarget as HTMLFormElement)) { setSent(true); return; }
     setBusy(true);
     setError(null);
     const { error } = await supabase.from("contact_messages").insert({
@@ -21,7 +23,7 @@ export default function Kontakt() {
       message: form.message,
     });
     setBusy(false);
-    if (error) setError(error.message);
+    if (error) setError((error.code === "P0001" ? error.message : "Senden fehlgeschlagen. Bitte versuche es später erneut."));
     else setSent(true);
   }
 
@@ -44,9 +46,9 @@ export default function Kontakt() {
           <a href="mailto:info@private-shirt.de" className="flex items-center gap-3 hover:text-primary">
             <Mail className="h-5 w-5 text-primary" /> info@private-shirt.de
           </a>
-          <p className="flex items-center gap-3">
+          <a href="tel:+494032873804" className="flex items-center gap-3 hover:text-primary">
             <Phone className="h-5 w-5 text-primary" /> 040 – 328 73 804
-          </p>
+          </a>
         </div>
 
         <div className="rounded-2xl border bg-card p-6 shadow-card">
@@ -57,18 +59,20 @@ export default function Kontakt() {
               <p className="mt-1 text-sm text-muted-foreground">Wir melden uns zeitnah bei dir.</p>
             </div>
           ) : (
-            <form onSubmit={submit} className="space-y-4">
+            <form onSubmit={submit} className="relative space-y-4">
+              <Honeypot />
               <div className="space-y-1.5">
-                <Label>Name</Label>
-                <Input required value={form.name} onChange={(e) => set("name", e.target.value)} />
+                <Label htmlFor="kt-name">Name</Label>
+                <Input id="kt-name" autoComplete="name" required value={form.name} onChange={(e) => set("name", e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label>E-Mail</Label>
-                <Input type="email" required value={form.email} onChange={(e) => set("email", e.target.value)} />
+                <Label htmlFor="kt-email">E-Mail</Label>
+                <Input id="kt-email" autoComplete="email" type="email" required value={form.email} onChange={(e) => set("email", e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label>Nachricht</Label>
+                <Label htmlFor="kt-msg">Nachricht</Label>
                 <textarea
+                  id="kt-msg"
                   required
                   rows={4}
                   value={form.message}

@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { PRICE_NOTE } from "@/lib/pricing";
+import { eur } from "@/lib/utils";
 
 async function fetchProducts() {
   const { data, error } = await supabase
@@ -69,7 +71,7 @@ export default function ProductGrid() {
             >
               <div className="flex aspect-square items-center justify-center overflow-hidden bg-white">
                 {url ? (
-                  <img src={url} alt={p.name} className="h-full w-full object-contain p-3" />
+                  <img loading="lazy" decoding="async" src={url} alt={p.name} className="h-full w-full object-contain p-3" />
                 ) : (p.variants ?? []).length > 0 ? (
                   <div className="flex h-full w-full">
                     {(p.variants ?? []).slice(0, 6).map((v: any) => (
@@ -88,7 +90,10 @@ export default function ProductGrid() {
                   </span>
                 )}
                 <div className="mt-4 flex items-center justify-between">
-                  <span className="text-lg font-bold text-primary">{Number(p.base_price).toFixed(2)} €</span>
+                  <span className="text-lg font-bold text-primary">
+                    {eur(Number(p.base_price))}
+                    <span className="block text-[10px] font-normal text-muted-foreground">{PRICE_NOTE}</span>
+                  </span>
                   <span className="flex items-center gap-1 text-sm font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
                     Gestalten <ArrowRight className="h-4 w-4" />
                   </span>

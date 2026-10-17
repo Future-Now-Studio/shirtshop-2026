@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Check } from "lucide-react";
@@ -8,6 +8,10 @@ import { Button } from "@/components/ui/button";
 import { useCart } from "@/stores/cart";
 import HeartButton from "@/components/HeartButton";
 import { SizeChartButton, Reviews, SimilarProducts } from "@/components/ProductExtras";
+import NotFound from "@/pages/NotFound";
+import { setPageMeta } from "@/lib/seo";
+import { PRICE_NOTE, shippingNote, useShopConfig } from "@/lib/pricing";
+import { eur } from "@/lib/utils";
 
 const VIEWS = ["front", "back", "left", "right"] as const;
 const VIEW_LABEL: Record<string, string> = { front: "Vorne", back: "Hinten", left: "Links", right: "Rechts" };
@@ -23,7 +27,7 @@ async function fetchProduct(slug: string) {
     )
     .eq("slug", slug)
     .eq("status", "published")
-    .single();
+    .maybeSingle();
   if (error) throw error;
   return data;
 }
@@ -49,9 +53,37 @@ export default function ProductDetail() {
   const [sizeQty, setSizeQty] = useState<Record<string, number>>({});
   const addToCart = useCart((s) => s.add);
   const navigate = useNavigate();
+  const shopConfig = useShopConfig();
+
+  useEffect(() => {
+    if (!p) return;
+    const img = p.variants?.[0]?.variant_images?.find((i: any) => i.view === "front");
+    const inStock = (p.variants ?? []).some((v: any) => (v.variant_size_availability ?? []).some((a: any) => a.available && a.stock > 0));
+    setPageMeta({
+      title: `${p.name} | Private Shirt`,
+      description: p.description || `${p.name} bedrucken lassen – ab ${eur(Number(p.base_price))} inkl. MwSt.`,
+      path: `/produkt/${p.slug}`,
+      jsonLd: {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        name: p.name,
+        description: p.description ?? undefined,
+        image: img ? publicUrl(img.storage_path) : undefined,
+        brand: { "@type": "Brand", name: "Private Shirt" },
+        offers: {
+          "@type": "Offer",
+          priceCurrency: "EUR",
+          price: Number(p.base_price).toFixed(2),
+          availability: inStock ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+          url: `https://private-shirt.de/produkt/${p.slug}`,
+        },
+      },
+    });
+  }, [p]);
 
   if (isLoading) return <p className="text-muted-foreground">Lade…</p>;
-  if (error || !p) return <p className="text-destructive">Produkt nicht gefunden.</p>;
+  if (error) return <p className="text-destructive">Produkt konnte nicht geladen werden. Bitte Seite neu laden.</p>;
+  if (!p) return <NotFound />;
 
   const variant: any = variants[variantIdx];
   const image =
@@ -93,7 +125,7 @@ export default function ProductDetail() {
         <div className="relative flex aspect-square items-center justify-center overflow-hidden rounded-xl border bg-white">
           <div className="absolute right-3 top-3 z-10"><HeartButton id={p.id} /></div>
           {image ? (
-            <img src={publicUrl(image.storage_path)} alt={p.name} className="h-full w-full object-contain p-4" />
+            <img {...{ fetchpriority: "high" }} decoding="async" src={publicUrl(image.storage_path)} alt={p.name} className="h-full w-full object-contain p-4" />
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Kein Bild</div>
           )}
@@ -123,7 +155,8 @@ export default function ProductDetail() {
       <div>
         <Link to="/produkte" className="text-sm text-muted-foreground hover:text-foreground">← Alle Produkte</Link>
         <h1 className="mt-2 text-3xl font-semibold">{p.name}</h1>
-        <p className="mt-1 text-2xl tabular-nums">{Number(p.base_price).toFixed(2)} €</p>
+        <p className="mt-1 text-2xl tabular-nums">{eur(Number(p.base_price))}</p>
+        <p className="text-xs text-muted-foreground">{PRICE_NOTE} · {shippingNote(shopConfig)}</p>
         {p.description && <p className="mt-4 text-muted-foreground">{p.description}</p>}
 
         {/* Colors */}
@@ -174,7 +207,7 @@ export default function ProductDetail() {
 
         <div className="mt-4 flex items-center justify-between text-sm">
           <span className="text-muted-foreground">{totalPieces} Stück gesamt</span>
-          <span className="font-bold tabular-nums">{(Number(p.base_price) * totalPieces).toFixed(2)} €</span>
+          <span className="font-bold tabular-nums">{eur((Number(p.base_price) * totalPieces))}</span>
         </div>
 
         <div className="mt-4 flex gap-3">

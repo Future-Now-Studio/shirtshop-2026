@@ -4,6 +4,8 @@ import { Link } from "react-router-dom";
 import { ArrowRight, Search } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import HeartButton from "@/components/HeartButton";
+import { eur } from "@/lib/utils";
+import { PRICE_NOTE } from "@/lib/pricing";
 
 async function fetchProducts() {
   const { data, error } = await supabase
@@ -95,7 +97,7 @@ export default function ProductBrowser() {
               {soldOut && <span className="absolute left-3 top-3 z-10 rounded-full bg-neutral-900/85 px-2.5 py-1 text-xs font-medium text-white">ausverkauft</span>}
               <div className="flex aspect-square items-center justify-center overflow-hidden bg-white">
                 {url ? (
-                  <img src={url} alt={p.name} className={"h-full w-full object-contain p-3 " + (soldOut ? "opacity-60" : "")} />
+                  <img loading="lazy" decoding="async" src={url} alt={p.name} className={"h-full w-full object-contain p-3 " + (soldOut ? "opacity-60" : "")} />
                 ) : (p.variants ?? []).length > 0 ? (
                   <div className="flex h-full w-full">
                     {(p.variants ?? []).slice(0, 6).map((v: any) => (
@@ -108,7 +110,7 @@ export default function ProductBrowser() {
                 <h3 className="text-lg font-bold leading-tight transition-colors group-hover:text-primary">{p.name}</h3>
                 {p.category && <span className="mt-1 inline-block rounded-full bg-accent px-2.5 py-0.5 text-xs font-medium text-accent-foreground">{p.category}</span>}
                 <div className="mt-4 flex items-center justify-between">
-                  <span className="text-lg font-bold text-primary">{Number(p.base_price).toFixed(2)} €</span>
+                  <span className="text-lg font-bold text-primary">{eur(Number(p.base_price))}<span className="block text-[10px] font-normal text-muted-foreground">{PRICE_NOTE}</span></span>
                   <span className="flex items-center gap-1 text-sm font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
                     {soldOut ? "ansehen" : "gestalten"} <ArrowRight className="h-4 w-4" />
                   </span>

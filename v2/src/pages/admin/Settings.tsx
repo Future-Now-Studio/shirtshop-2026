@@ -58,7 +58,7 @@ export default function Settings() {
             <Input type="number" step="0.01" value={f.vat_rate ?? ""} onChange={(e) => set("vat_rate", e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label>Preis je Design-Element (€)</Label>
+            <Label>Standard-Preis je Design-Element (€) für neue Produkte</Label>
             <Input type="number" step="0.01" value={f.design_element_price ?? ""} onChange={(e) => set("design_element_price", e.target.value)} />
           </div>
         </div>
@@ -71,7 +71,7 @@ export default function Settings() {
           {msg && <span className="text-sm text-muted-foreground">{msg}</span>}
         </div>
       </div>
-      <p className="mt-3 text-xs text-muted-foreground">Hinweis: Der Checkout nutzt diese Werte, sobald die Edge Functions die Settings lesen (Deploy).</p>
+      <p className="mt-3 text-xs text-muted-foreground">Versandkosten, Gratisversand-Grenze und MwSt gelten sofort für Warenkorb, Kasse und Rechnungen. Der Preis je Design-Element wird pro Produkt gepflegt; dieser Wert ist nur die Vorgabe für neu angelegte Produkte.</p>
     </div>
   );
 }

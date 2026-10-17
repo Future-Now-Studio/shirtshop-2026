@@ -12,6 +12,8 @@ import lifestyleImage from "@/assets/lifestyle-woman.jpg";
 import europaStore from "@/assets/Europa-Passage-Store.webp";
 import altonaStore from "@/assets/Altona-Store.webp";
 import bulkImage from "@/assets/ryoji-hayasaka-gkb-ayjimvda-unsplash@3x-1024x684.jpg";
+import ConsentMap from "@/components/ConsentMap";
+import { Honeypot, isBot } from "@/components/Honeypot";
 
 /* Lowercase two-tone page hero, matching the old subpage style. */
 function PageHero({ pre, head, gold, lead }: { pre?: string; head: string; gold: string; lead?: string }) {
@@ -63,7 +65,7 @@ export function Unternehmen() {
           </Link>
         </div>
         <div className="relative">
-          <img src={hamburgImage} alt="Hamburg" className="aspect-[4/5] w-full rounded-[2rem] object-cover shadow-card sm:aspect-square" />
+          <img loading="lazy" decoding="async" src={hamburgImage} alt="Hamburg" className="aspect-[4/5] w-full rounded-[2rem] object-cover shadow-card sm:aspect-square" />
           <div className="absolute -bottom-5 -left-3 rounded-2xl border border-border/60 bg-card/95 p-5 shadow-xl backdrop-blur sm:-left-6">
             <p className="text-xl font-black text-primary">seit 2010</p>
             <p className="mt-0.5 text-xs text-muted-foreground">professionelle textilveredelung<br />aus hamburg</p>
@@ -83,7 +85,7 @@ export function Unternehmen() {
 
       {/* Story */}
       <div className="mt-20 grid items-center gap-12 md:grid-cols-2">
-        <img src={lifestyleImage} alt="Private Shirt Team" className="aspect-[4/3] w-full rounded-[2rem] object-cover shadow-card" />
+        <img loading="lazy" decoding="async" src={lifestyleImage} alt="Private Shirt Team" className="aspect-[4/3] w-full rounded-[2rem] object-cover shadow-card" />
         <div className="space-y-4 text-muted-foreground">
           <h2 className="text-3xl font-extrabold lowercase text-foreground">für einen auftritt, der bleibt.</h2>
           <p>
@@ -357,14 +359,14 @@ export function Filialen() {
       <div className="grid gap-8 md:grid-cols-2">
         {STORES.map((s) => (
           <div key={s.name} className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-card">
-            <img src={s.image} alt={s.name} className="h-56 w-full object-cover" />
+            <img loading="lazy" decoding="async" src={s.image} alt={s.name} className="h-56 w-full object-cover" />
             <div className="space-y-3 p-6">
               <h3 className="text-xl font-bold lowercase text-primary">{s.name}</h3>
               <p className="flex items-center gap-2 text-sm text-muted-foreground"><MapPin className="h-4 w-4 shrink-0 text-primary" /> {s.address}</p>
               <a href={`mailto:${s.email}`} className="flex items-center gap-2 text-sm hover:text-primary"><Mail className="h-4 w-4 shrink-0 text-primary" /> {s.email}</a>
               <p className="flex items-center gap-2 text-sm text-muted-foreground"><Phone className="h-4 w-4 shrink-0 text-primary" /> {s.phone}</p>
               <div className="overflow-hidden rounded-lg">
-                <iframe src={s.map} title={s.name} className="h-48 w-full border-0" loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+                <ConsentMap src={s.map} title={s.name} className="h-48 w-full border-0" />
               </div>
             </div>
           </div>
@@ -403,12 +405,15 @@ function BulkForm() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (isBot(e.currentTarget as HTMLFormElement)) { setDone(true); return; }
     setBusy(true);
     setError(null);
     try {
       let motivPath: string | null = null;
       if (file) {
-        const path = `bulk/${crypto.randomUUID()}/${file.name}`;
+        if (file.size > 25 * 1024 * 1024) throw new Error("Das Motiv ist größer als 25 MB.");
+        const safeName = file.name.normalize("NFKD").replace(/[^\w.-]+/g, "_").slice(-100);
+        const path = `bulk/${crypto.randomUUID()}/${safeName}`;
         const { error: upErr } = await supabase.storage.from("order-designs").upload(path, file, { upsert: false });
         if (upErr) throw upErr;
         motivPath = path;
@@ -431,7 +436,9 @@ function BulkForm() {
       if (insErr) throw insErr;
       setDone(true);
     } catch (err) {
-      setError((err as Error).message ?? "Fehler beim Senden.");
+      const er = err as { code?: string; message?: string };
+      // our own messages (size check, rate limit) are German; hide raw DB/storage errors
+      setError(er.code === "P0001" || !er.code ? er.message ?? "Fehler beim Senden." : "Senden fehlgeschlagen. Bitte versuche es später erneut.");
     } finally {
       setBusy(false);
     }
@@ -450,35 +457,36 @@ function BulkForm() {
     );
 
   return (
-    <form onSubmit={submit} className="space-y-8 rounded-3xl border border-border/60 bg-card p-6 shadow-card sm:p-10">
+    <form onSubmit={submit} className="relative space-y-8 rounded-3xl border border-border/60 bg-card p-6 shadow-card sm:p-10">
+      <Honeypot />
       {/* Textilien */}
       <fieldset className="space-y-4">
         <legend className="mb-2 text-sm font-semibold uppercase tracking-wide text-primary">textilien</legend>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label>Filiale *</Label>
-            <select required className={selectCls} value={f.filiale} onChange={(e) => set("filiale", e.target.value)}>
+            <Label htmlFor="bulk-filiale">Filiale *</Label>
+            <select id="bulk-filiale" required className={selectCls} value={f.filiale} onChange={(e) => set("filiale", e.target.value)}>
               <option value="">Filiale wählen</option>
               {FILIALEN.map((o) => <option key={o}>{o}</option>)}
             </select>
           </div>
           <div className="space-y-1.5">
-            <Label>Textil-Art</Label>
-            <select className={selectCls} value={f.textilArt} onChange={(e) => set("textilArt", e.target.value)}>
+            <Label htmlFor="bulk-textilArt">Textil-Art</Label>
+            <select id="bulk-textilArt" className={selectCls} value={f.textilArt} onChange={(e) => set("textilArt", e.target.value)}>
               <option value="">Textil-Art wählen</option>
               {TEXTIL_ARTEN.map((o) => <option key={o}>{o}</option>)}
             </select>
           </div>
           <div className="space-y-1.5">
-            <Label>Textil-Qualität *</Label>
-            <select required className={selectCls} value={f.qualitaet} onChange={(e) => set("qualitaet", e.target.value)}>
+            <Label htmlFor="bulk-qualitaet">Textil-Qualität *</Label>
+            <select id="bulk-qualitaet" required className={selectCls} value={f.qualitaet} onChange={(e) => set("qualitaet", e.target.value)}>
               <option value="">Qualität wählen</option>
               {TEXTIL_QUALITAETEN.map((o) => <option key={o}>{o}</option>)}
             </select>
           </div>
           <div className="space-y-1.5">
-            <Label>Gewünschte Stückzahl *</Label>
-            <Input required type="text" inputMode="numeric" placeholder="z. B. 200" value={f.stueckzahl} onChange={(e) => set("stueckzahl", e.target.value)} />
+            <Label htmlFor="bulk-stueckzahl">Gewünschte Stückzahl *</Label>
+            <Input id="bulk-stueckzahl" required type="text" inputMode="numeric" placeholder="z. B. 200" value={f.stueckzahl} onChange={(e) => set("stueckzahl", e.target.value)} />
           </div>
         </div>
       </fieldset>
@@ -488,15 +496,15 @@ function BulkForm() {
         <legend className="mb-2 text-sm font-semibold uppercase tracking-wide text-primary">druckdaten</legend>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label>Druckverfahren (wenn bekannt)</Label>
-            <select className={selectCls} value={f.druckverfahren} onChange={(e) => set("druckverfahren", e.target.value)}>
+            <Label htmlFor="bulk-druckverfahren">Druckverfahren (wenn bekannt)</Label>
+            <select id="bulk-druckverfahren" className={selectCls} value={f.druckverfahren} onChange={(e) => set("druckverfahren", e.target.value)}>
               <option value="">Druckverfahren wählen</option>
               {DRUCKVERFAHREN.map((o) => <option key={o}>{o}</option>)}
             </select>
           </div>
           <div className="space-y-1.5">
-            <Label>Druckmotiv (optional)</Label>
-            <input
+            <Label htmlFor="bulk-motiv">Druckmotiv (optional)</Label>
+            <input id="bulk-motiv"
               type="file"
               accept=".jpg,.jpeg,.png,.eps,.ai,.pdf,.svg"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
@@ -512,36 +520,36 @@ function BulkForm() {
         <legend className="mb-2 text-sm font-semibold uppercase tracking-wide text-primary">kontaktperson</legend>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label>Anrede *</Label>
-            <select required className={selectCls} value={f.anrede} onChange={(e) => set("anrede", e.target.value)}>
+            <Label htmlFor="bulk-anrede">Anrede *</Label>
+            <select id="bulk-anrede" required className={selectCls} value={f.anrede} onChange={(e) => set("anrede", e.target.value)}>
               <option value="">Anrede wählen</option>
               {ANREDEN.map((o) => <option key={o}>{o}</option>)}
             </select>
           </div>
           <div className="space-y-1.5">
-            <Label>Firma / Organisation</Label>
-            <Input value={f.firma} onChange={(e) => set("firma", e.target.value)} />
+            <Label htmlFor="bulk-firma">Firma / Organisation</Label>
+            <Input id="bulk-firma" autoComplete="organization" value={f.firma} onChange={(e) => set("firma", e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label>Vorname *</Label>
-            <Input required value={f.vorname} onChange={(e) => set("vorname", e.target.value)} />
+            <Label htmlFor="bulk-vorname">Vorname *</Label>
+            <Input id="bulk-vorname" autoComplete="given-name" required value={f.vorname} onChange={(e) => set("vorname", e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label>Nachname *</Label>
-            <Input required value={f.nachname} onChange={(e) => set("nachname", e.target.value)} />
+            <Label htmlFor="bulk-nachname">Nachname *</Label>
+            <Input id="bulk-nachname" autoComplete="family-name" required value={f.nachname} onChange={(e) => set("nachname", e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label>E-Mail *</Label>
-            <Input required type="email" value={f.email} onChange={(e) => set("email", e.target.value)} />
+            <Label htmlFor="bulk-email">E-Mail *</Label>
+            <Input id="bulk-email" autoComplete="email" required type="email" value={f.email} onChange={(e) => set("email", e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label>Telefon</Label>
-            <Input type="tel" value={f.telefon} onChange={(e) => set("telefon", e.target.value)} />
+            <Label htmlFor="bulk-telefon">Telefon</Label>
+            <Input id="bulk-telefon" autoComplete="tel" type="tel" value={f.telefon} onChange={(e) => set("telefon", e.target.value)} />
           </div>
         </div>
         <div className="space-y-1.5">
-          <Label>Bemerkungen / weitere Informationen</Label>
-          <textarea rows={4} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={f.bemerkungen} onChange={(e) => set("bemerkungen", e.target.value)} />
+          <Label htmlFor="bulk-bemerkungen">Bemerkungen / weitere Informationen</Label>
+          <textarea id="bulk-bemerkungen" rows={4} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={f.bemerkungen} onChange={(e) => set("bemerkungen", e.target.value)} />
         </div>
       </fieldset>
 
@@ -579,7 +587,7 @@ export function Grossbestellung() {
             <Button size="lg">jetzt anfragen <ArrowRight className="ml-2 h-4 w-4" /></Button>
           </a>
         </div>
-        <img src={bulkImage} alt="Großbestellung" className="aspect-[4/3] w-full rounded-[2rem] object-cover shadow-card" />
+        <img loading="lazy" decoding="async" src={bulkImage} alt="Großbestellung" className="aspect-[4/3] w-full rounded-[2rem] object-cover shadow-card" />
       </div>
 
       {/* Benefits */}
@@ -627,7 +635,8 @@ export function Impressum() {
         <p><strong className="text-foreground">HRB:</strong> 83191</p>
         <p><strong className="text-foreground">USt-IdNr.:</strong> DE175961471</p>
         <p className="pt-4 text-sm"><strong className="text-foreground">Haftungshinweis:</strong> Trotz sorgfältiger inhaltlicher Kontrolle übernehmen wir keine Haftung für die Inhalte externer Links. Für den Inhalt der verlinkten Seiten sind ausschließlich deren Betreiber verantwortlich.</p>
-        <p className="text-sm">Angaben gemäß §6 Anbieterkennzeichnung des TDG (Teledienstgesetz).</p>
+        <p className="text-sm"><strong className="text-foreground">Verbraucherstreitbeilegung:</strong> Wir sind nicht bereit und nicht verpflichtet, an Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle teilzunehmen (§ 36 VSBG).</p>
+        <p className="text-sm">Angaben gemäß § 5 DDG (Digitale-Dienste-Gesetz).</p>
       </div>
     </div>
   );

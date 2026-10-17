@@ -1,11 +1,11 @@
-// Creates a Stripe PaymentIntent. The authoritative amount is recomputed
-// server-side from the database in `create-order`; here we create an intent
-// for the client-reported total so the payment sheet can render. The order is
-// only persisted after payment via create-order, which re-validates pricing.
+// Creates a Stripe PaymentIntent for the server-computed total. The intent's
+// metadata pins the priced cart (hash) and coupon; the cart + customer are
+// stored in checkout_carts so create-order / stripe-webhook can build the order
+// from server-side data only.
 import Stripe from "https://esm.sh/stripe@17.7.0?target=denonext";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { validateCoupon } from "../_shared/coupon.ts";
+import { cartHash, computeTotal, errorResponse, HttpError, parseCustomer, parseItems, type CartLine } from "../_shared/cart.ts";
 
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") ?? "", {
   apiVersion: "2024-12-18.acacia",
@@ -18,7 +18,7 @@ const supabase = createClient(
 
 // Live stock check before payment — rejects lines exceeding available stock so
 // nobody can pay for pieces we cannot fulfil.
-async function assertStock(items: { variantId: string; sizeId?: string | null; qty: number }[]) {
+async function assertStock(items: CartLine[]) {
   const withSize = items.filter((i) => i.sizeId);
   if (!withSize.length) return;
   const { data } = await supabase
@@ -37,69 +37,44 @@ async function assertStock(items: { variantId: string; sizeId?: string | null; q
     const stock = row && row.available ? (row.stock ?? 0) : 0;
     if (qty > stock) {
       const sizeName = (row as any)?.sizes?.name ?? "";
-      throw new Error(`Nicht genug Bestand${sizeName ? ` (Größe ${sizeName})` : ""}: nur noch ${stock} verfügbar.`);
+      throw new HttpError(409, `Nicht genug Bestand${sizeName ? ` (Größe ${sizeName})` : ""}: nur noch ${stock} verfügbar.`);
     }
   }
-}
-
-// Shipping config from settings (admin-editable), with safe fallbacks.
-async function shippingConfig() {
-  const { data } = await supabase.from("settings").select("shipping_flat, free_shipping_threshold").eq("id", 1).maybeSingle();
-  return { flat: Number(data?.shipping_flat ?? 4.9), free: Number(data?.free_shipping_threshold ?? 50) };
-}
-
-// Recompute the authoritative total from DB prices + volume discounts + coupon.
-async function computeTotal(items: { productId: string; variantId: string; qty: number; designElementCount: number }[], couponCode?: string) {
-  const productIds = [...new Set(items.map((i) => i.productId))];
-  const { data: products } = await supabase
-    .from("products")
-    .select("id, base_price, design_element_price, excluded_from_volume_discount")
-    .in("id", productIds);
-  const { data: discounts } = await supabase.from("volume_discounts").select("min_qty, discount_percent");
-  const byId = new Map((products ?? []).map((p) => [p.id, p]));
-
-  let subtotal = 0;
-  let eligibleQty = 0;
-  let eligibleSubtotal = 0;
-  for (const i of items) {
-    const p = byId.get(i.productId);
-    if (!p) throw new Error(`Unknown product ${i.productId}`);
-    const unit = Number(p.base_price) + i.designElementCount * Number(p.design_element_price);
-    const line = unit * i.qty;
-    subtotal += line;
-    if (!p.excluded_from_volume_discount) {
-      eligibleQty += i.qty;
-      eligibleSubtotal += line;
-    }
-  }
-  const tier = (discounts ?? []).filter((d) => d.min_qty <= eligibleQty).sort((a, b) => b.min_qty - a.min_qty)[0];
-  const pct = tier?.discount_percent ?? 0;
-  let goodsTotal = subtotal - (eligibleSubtotal * pct) / 100;
-  const { discount, reason } = await validateCoupon(supabase, couponCode, goodsTotal);
-  goodsTotal -= discount;
-  const cfg = await shippingConfig();
-  const shipping = goodsTotal >= cfg.free ? 0 : cfg.flat;
-  const amount = Math.round((goodsTotal + shipping) * 100); // cents, VAT already included
-  return { amount, discount, couponReason: reason };
 }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
-    const { items, couponCode } = await req.json();
-    if (!Array.isArray(items) || items.length === 0) return json({ error: "No items" }, 400);
+    const body = await req.json();
+    const lines = parseItems(body?.items);
+    const customer = parseCustomer(body?.customer);
+    const couponCode = typeof body?.couponCode === "string" ? body.couponCode.slice(0, 64) : undefined;
 
-    await assertStock(items);
-    const { amount, discount, couponReason } = await computeTotal(items, couponCode);
-    if (amount <= 0) return json({ error: "Invalid amount" }, 400);
+    await assertStock(lines);
+    const { amount, discount, volumeDiscount, shipping, coupon, couponReason } = await computeTotal(supabase, lines, couponCode);
+    if (amount <= 0) return json({ error: "Ungültiger Betrag." }, 400);
 
     const intent = await stripe.paymentIntents.create({
       amount,
       currency: "eur",
       automatic_payment_methods: { enabled: true },
+      metadata: {
+        cart_hash: await cartHash(lines),
+        coupon_id: coupon?.id ?? "",
+        coupon_code: coupon?.code ?? "",
+        discount: discount.toFixed(2),
+        volume_discount: volumeDiscount.toFixed(2),
+        shipping: shipping.toFixed(2),
+      },
     });
+    const { error: cartErr } = await supabase
+      .from("checkout_carts")
+      .insert({ payment_intent_id: intent.id, items: lines, customer });
+    if (cartErr) throw cartErr;
+
     return json({ clientSecret: intent.client_secret, amount, discount, couponReason });
   } catch (e) {
-    return json({ error: (e as Error).message }, 500);
+    const { body, status } = errorResponse(e);
+    return json(body, status);
   }
 });

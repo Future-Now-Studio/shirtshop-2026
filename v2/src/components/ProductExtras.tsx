@@ -1,9 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Star, Ruler, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
+import { eur } from "@/lib/utils";
+import { PRICE_NOTE } from "@/lib/pricing";
+import { Honeypot, isBot } from "@/components/Honeypot";
 
 /* ---------- Size chart ---------- */
 const SIZE_ROWS = [
@@ -11,6 +14,12 @@ const SIZE_ROWS = [
 ];
 export function SizeChartButton() {
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline">
@@ -18,10 +27,10 @@ export function SizeChartButton() {
       </button>
       {open && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={() => setOpen(false)}>
-          <div className="w-full max-w-md rounded-2xl bg-card p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div role="dialog" aria-modal="true" aria-labelledby="size-chart-title" className="w-full max-w-md rounded-2xl bg-card p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-bold lowercase">größentabelle</h3>
-              <button onClick={() => setOpen(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
+              <h3 id="size-chart-title" className="text-lg font-bold lowercase">größentabelle</h3>
+              <button onClick={() => setOpen(false)} aria-label="Schließen" autoFocus><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
             <table className="w-full text-sm">
               <thead><tr className="border-b text-left text-muted-foreground"><th className="py-2">Größe</th><th>Brustweite (cm)</th><th>Länge (cm)</th></tr></thead>
@@ -67,10 +76,11 @@ export function Reviews({ productId }: { productId: string }) {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name.trim() || !form.text.trim()) return;
+    if (isBot(e.currentTarget as HTMLFormElement)) { setMsg("Danke! Deine Bewertung wird nach Prüfung veröffentlicht."); return; }
     setBusy(true); setMsg(null);
     const { error } = await supabase.from("reviews").insert({ product_id: productId, rating: form.rating, name: form.name.trim(), text: form.text.trim() });
     setBusy(false);
-    if (error) { setMsg("Fehler: " + error.message); return; }
+    if (error) { setMsg(error.code === "P0001" ? error.message : "Bewertung konnte nicht gesendet werden. Bitte später erneut versuchen."); return; }
     setForm({ name: "", rating: 5, text: "" });
     setMsg("Danke! Deine Bewertung wird nach Prüfung veröffentlicht.");
     qc.invalidateQueries({ queryKey: ["reviews", productId] });
@@ -99,11 +109,12 @@ export function Reviews({ productId }: { productId: string }) {
           ))}
         </div>
 
-        <form onSubmit={submit} className="space-y-3 rounded-xl border bg-card p-5">
+        <form onSubmit={submit} className="relative space-y-3 rounded-xl border bg-card p-5">
+          <Honeypot />
           <p className="font-semibold lowercase">bewertung schreiben</p>
           <div className="flex gap-1">
             {[1, 2, 3, 4, 5].map((i) => (
-              <button type="button" key={i} onClick={() => setForm((f) => ({ ...f, rating: i }))}>
+              <button type="button" key={i} aria-label={`${i} von 5 Sternen`} aria-pressed={i === form.rating} onClick={() => setForm((f) => ({ ...f, rating: i }))}>
                 <Star className={"h-6 w-6 " + (i <= form.rating ? "fill-secondary text-secondary" : "text-muted-foreground/40")} />
               </button>
             ))}
@@ -139,11 +150,11 @@ export function SimilarProducts({ category, excludeId }: { category: string | nu
           return (
             <Link key={p.id} to={`/produkt/${p.slug}`} className="hover-lift group overflow-hidden rounded-2xl border border-border/60 bg-card shadow-card">
               <div className="flex aspect-square items-center justify-center overflow-hidden bg-white">
-                {url ? <img src={url} alt={p.name} className="h-full w-full object-contain p-3" /> : <div className="flex h-full w-full">{(p.variants ?? []).slice(0, 5).map((v: any, i: number) => <div key={i} className="h-full flex-1" style={{ backgroundColor: v.hex ?? v.colors?.hex }} />)}</div>}
+                {url ? <img loading="lazy" decoding="async" src={url} alt={p.name} className="h-full w-full object-contain p-3" /> : <div className="flex h-full w-full">{(p.variants ?? []).slice(0, 5).map((v: any, i: number) => <div key={i} className="h-full flex-1" style={{ backgroundColor: v.hex ?? v.colors?.hex }} />)}</div>}
               </div>
               <div className="p-4">
                 <h3 className="truncate text-sm font-bold group-hover:text-primary">{p.name}</h3>
-                <span className="text-sm font-bold text-primary">{Number(p.base_price).toFixed(2)} €</span>
+                <span className="text-sm font-bold text-primary">{eur(Number(p.base_price))}<span className="block text-[10px] font-normal text-muted-foreground">{PRICE_NOTE}</span></span>
               </div>
             </Link>
           );

@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { eur } from "@/lib/utils";
 
 async function fetchCoupons() {
   const { data, error } = await supabase.from("coupons").select("*").order("created_at", { ascending: false });
@@ -68,7 +69,7 @@ export default function Coupons() {
         {data?.map((c: any) => (
           <li key={c.id} className="flex items-center gap-3 px-4 py-3 text-sm">
             <span className="font-mono font-bold">{c.code}</span>
-            <span className="rounded bg-muted px-2 py-0.5 text-xs">{c.kind === "percent" ? `${c.value}%` : `${Number(c.value).toFixed(2)} €`}</span>
+            <span className="rounded bg-muted px-2 py-0.5 text-xs">{c.kind === "percent" ? `${c.value}%` : `${eur(Number(c.value))}`}</span>
             <span className="text-xs text-muted-foreground">
               {Number(c.min_order) > 0 && `ab ${Number(c.min_order).toFixed(0)} € · `}
               {c.used_count}{c.max_uses ? `/${c.max_uses}` : ""} genutzt

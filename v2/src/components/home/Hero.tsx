@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, CheckCircle, Truck, Factory } from "lucide-react";
 import heroImage from "@/assets/hero-image.jpg";
@@ -9,20 +10,32 @@ const TRUST = [
   { icon: Truck, stat: "24–48 h", label: "blitzschnelle lieferung" },
 ];
 
+// Phones and "reduce motion" users get the still image: saves ~1.4 MB of
+// mobile data and respects the OS setting.
+function wantsVideo() {
+  if (typeof window === "undefined" || !window.matchMedia) return true;
+  return !window.matchMedia("(max-width: 767px), (prefers-reduced-motion: reduce)").matches;
+}
+
 export default function Hero() {
+  const [showVideo] = useState(wantsVideo);
   return (
     // full-bleed breakout from the page container
     <section className="relative left-1/2 right-1/2 -mx-[50vw] -mt-10 mb-16 w-screen overflow-hidden">
-      <div className="relative flex h-[88vh] min-h-[560px] flex-col">
-        <video autoPlay loop muted playsInline className="absolute inset-0 h-full w-full object-cover" poster={heroImage}>
-          <source src={heroVideo} type="video/mp4" />
-        </video>
+      <div className="relative flex min-h-[88vh] flex-col md:h-[88vh] md:min-h-[560px]">
+        {showVideo ? (
+          <video autoPlay loop muted playsInline className="absolute inset-0 h-full w-full object-cover" poster={heroImage}>
+            <source src={heroVideo} type="video/mp4" />
+          </video>
+        ) : (
+          <img src={heroImage} alt="" {...{ fetchpriority: "high" }} className="absolute inset-0 h-full w-full object-cover" />
+        )}
         <div
           className="absolute inset-0"
           style={{ background: "linear-gradient(to right, rgba(0,0,0,.65) 0%, rgba(0,0,0,.45) 40%, rgba(0,0,0,.2) 60%, transparent 100%)" }}
         />
 
-        <div className="container relative z-10 flex flex-1 items-center pb-28">
+        <div className="container relative z-10 flex flex-1 items-center pb-8 md:pb-28">
           <div className="max-w-xl py-8 text-center lg:text-left">
             <h1 className="mb-6 text-5xl font-black lowercase leading-[0.92] sm:text-6xl lg:text-7xl">
               <span className="text-primary">sei du selbst.</span>
@@ -50,7 +63,7 @@ export default function Hero() {
           </div>
         </div>
 
-        <div className="absolute inset-x-0 bottom-0 z-20 border-t-2 border-primary/20 bg-background/90 backdrop-blur-xl">
+        <div className="relative z-20 border-t-2 md:absolute md:inset-x-0 md:bottom-0 border-primary/20 bg-background/90 backdrop-blur-xl">
           <div className="container grid grid-cols-1 divide-y divide-border/60 py-4 md:grid-cols-3 md:divide-x md:divide-y-0">
             {TRUST.map(({ icon: Icon, stat, label }) => (
               <div key={label} className="group flex items-center justify-center gap-4 py-3 md:py-2">

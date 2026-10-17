@@ -164,7 +164,7 @@ function ViewUploader({
         className="relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-md border border-dashed bg-muted/30 hover:bg-muted"
       >
         {storagePath ? (
-          <img src={publicUrl(storagePath) + `?t=${Date.now()}`} alt={view} className="h-full w-full object-cover" />
+          <img loading="lazy" decoding="async" src={publicUrl(storagePath) + `?t=${Date.now()}`} alt={view} className="h-full w-full object-cover" />
         ) : busy ? (
           <span className="text-xs text-muted-foreground">Lädt…</span>
         ) : (

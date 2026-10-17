@@ -26,7 +26,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function signIn(email: string, password: string) {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error: error?.message ?? null };
+    if (!error) return { error: null };
+    if (/invalid login credentials/i.test(error.message)) return { error: "E-Mail oder Passwort ist falsch." };
+    if (/email not confirmed/i.test(error.message)) return { error: "Die E-Mail-Adresse ist noch nicht bestätigt." };
+    if (/rate limit|too many/i.test(error.message)) return { error: "Zu viele Versuche. Bitte kurz warten." };
+    return { error: "Anmeldung fehlgeschlagen. Bitte später erneut versuchen." };
   }
 
   async function signOut() {

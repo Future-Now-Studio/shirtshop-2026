@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 
@@ -116,15 +117,11 @@ export default function SizeMatrix({ productId }: { productId: string }) {
                               checked={available}
                               onChange={(e) => setCell.mutate({ variantId: v.id, sizeId: s.id, available: e.target.checked })}
                             />
-                            <input
-                              type="number"
-                              min={0}
+                            <StockInput
                               value={cell?.stock ?? 0}
                               disabled={!available}
-                              onChange={(e) =>
-                                setCell.mutate({ variantId: v.id, sizeId: s.id, stock: Math.max(0, Number(e.target.value)) })
-                              }
-                              className="w-14 rounded border border-input bg-background px-1 py-0.5 text-center text-xs disabled:opacity-40"
+                              label={`Bestand ${v.colors?.name ?? ""} ${s.name}`}
+                              onCommit={(stock) => setCell.mutate({ variantId: v.id, sizeId: s.id, stock })}
                             />
                           </div>
                         </td>
@@ -138,5 +135,30 @@ export default function SizeMatrix({ productId }: { productId: string }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Number field with a local draft: saves on blur / Enter, not per keystroke
+ * (per-keystroke saves raced the refetch and swallowed digits). */
+function StockInput({ value, disabled, label, onCommit }: { value: number; disabled: boolean; label: string; onCommit: (n: number) => void }) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+  const commit = () => {
+    const n = Math.max(0, Math.floor(Number(draft) || 0));
+    setDraft(String(n));
+    if (n !== value) onCommit(n);
+  };
+  return (
+    <input
+      type="number"
+      min={0}
+      aria-label={label}
+      value={draft}
+      disabled={disabled}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
+      className="w-14 rounded border border-input bg-background px-1 py-0.5 text-center text-xs disabled:opacity-40"
+    />
   );
 }

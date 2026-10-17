@@ -1,6 +1,7 @@
 import { useParams, useLocation, Link } from "react-router-dom";
 import { CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { eur } from "@/lib/utils";
 
 export default function OrderSuccess() {
   const { orderId } = useParams<{ orderId: string }>();
@@ -26,12 +27,13 @@ export default function OrderSuccess() {
         {state?.total && (
           <div className="flex justify-between border-t pt-2 text-base font-bold">
             <span>Gesamt</span>
-            <span className="text-primary">{Number(state.total).toFixed(2)} €</span>
+            <span className="text-primary">{eur(Number(state.total))}</span>
           </div>
         )}
-        {state?.email && (
-          <p className="pt-2 text-xs text-muted-foreground">bestätigung an {state.email}</p>
-        )}
+        <p className="pt-2 text-xs text-muted-foreground">
+          {state?.email ? `Die Bestellbestätigung geht an ${state.email}.` : "Die Bestellbestätigung hast du per E-Mail erhalten."}
+          {" "}Fragen? <a href="mailto:info@private-shirt.de" className="underline">info@private-shirt.de</a>
+        </p>
       </div>
 
       <Link to="/" className="mt-8 inline-block">

@@ -11,6 +11,8 @@ const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") ?? "", {
 });
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
+const REFUNDABLE = ["paid", "in_production", "shipped", "completed"];
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
@@ -19,29 +21,32 @@ Deno.serve(async (req) => {
     if (!orderId) return json({ error: "Missing orderId" }, 400);
 
     const { data: order, error } = await supabase
-      .from("orders").select("id, status, stripe_payment_intent_id, order_items(variant_id, size_id, qty)").eq("id", orderId).single();
+      .from("orders").select("id, status, stripe_payment_intent_id").eq("id", orderId).single();
     if (error) throw error;
     if (order.status === "refunded") return json({ error: "Already refunded" }, 400);
+    if (!REFUNDABLE.includes(order.status)) return json({ error: `Status ${order.status} kann nicht erstattet werden` }, 400);
     if (!order.stripe_payment_intent_id) return json({ error: "No payment to refund" }, 400);
 
-    // Stripe refund (full)
-    await stripe.refunds.create({ payment_intent: order.stripe_payment_intent_id });
-
-    // Restore stock
-    for (const it of order.order_items ?? []) {
-      if (!it.variant_id || !it.size_id) continue;
-      const { data: av } = await supabase.from("variant_size_availability")
-        .select("stock").eq("variant_id", it.variant_id).eq("size_id", it.size_id).single();
-      if (av) {
-        await supabase.from("variant_size_availability")
-          .update({ stock: (av.stock ?? 0) + it.qty, available: true })
-          .eq("variant_id", it.variant_id).eq("size_id", it.size_id);
-      }
+    // Full Stripe refund. The idempotency key makes retries / double clicks
+    // return the same refund instead of failing or refunding twice.
+    // Idempotency keys expire after 24h; a later retry gets
+    // charge_already_refunded, which still means the money is back.
+    try {
+      await stripe.refunds.create(
+        { payment_intent: order.stripe_payment_intent_id },
+        { idempotencyKey: `refund-${order.id}` },
+      );
+    } catch (e) {
+      if ((e as any)?.code !== "charge_already_refunded") throw e;
     }
 
-    await supabase.from("orders").update({ status: "refunded" }).eq("id", orderId);
+    // Status change + stock restore in one transaction, at most once.
+    const { error: markErr } = await supabase.rpc("mark_order_refunded", { p_order_id: order.id });
+    if (markErr) throw markErr;
+
     return json({ ok: true });
   } catch (e) {
-    return json({ error: (e as Error).message }, 500);
+    console.error(e);
+    return json({ error: "Erstattung fehlgeschlagen" }, 500);
   }
 });

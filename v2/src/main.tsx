@@ -1,3 +1,11 @@
+// Self-hosted font (no request to Google Fonts → no IP transfer, DSGVO).
+import "@fontsource/outfit/300.css";
+import "@fontsource/outfit/400.css";
+import "@fontsource/outfit/500.css";
+import "@fontsource/outfit/600.css";
+import "@fontsource/outfit/700.css";
+import "@fontsource/outfit/800.css";
+import "@fontsource/outfit/900.css";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";

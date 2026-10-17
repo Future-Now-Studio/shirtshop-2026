@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { publishProblem } from "@/lib/publish-check";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -87,6 +88,10 @@ function Basics({ product, onSaved }: { product: any; onSaved: () => void }) {
 
   const save = useMutation({
     mutationFn: async () => {
+      if (form.status === "published") {
+        const problem = await publishProblem(product.id);
+        if (problem) throw new Error(`Noch nicht veröffentlichbar: ${problem}`);
+      }
       const { error } = await supabase
         .from("products")
         .update({

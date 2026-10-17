@@ -2,35 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { useCart, unitPrice, type CartItem } from "@/stores/cart";
-import { shippingFor, vatIncludedIn, FREE_SHIPPING_THRESHOLD } from "@/lib/pricing";
+import { useCart, unitPrice } from "@/stores/cart";
+import { fetchDiscountData, computeTotals, vatLabel } from "@/lib/pricing";
 import { Button } from "@/components/ui/button";
-
-export async function fetchDiscountData(productIds: string[]) {
-  const [discounts, products] = await Promise.all([
-    supabase.from("volume_discounts").select("min_qty, discount_percent").order("min_qty"),
-    productIds.length
-      ? supabase.from("products").select("id, excluded_from_volume_discount").in("id", productIds)
-      : Promise.resolve({ data: [], error: null }),
-  ]);
-  if (discounts.error) throw discounts.error;
-  if (products.error) throw products.error;
-  return { discounts: discounts.data, excluded: new Set(products.data!.filter((p) => p.excluded_from_volume_discount).map((p) => p.id)) };
-}
-
-export function computeTotals(items: CartItem[], discounts: { min_qty: number; discount_percent: number }[], excluded: Set<string>) {
-  const subtotal = items.reduce((s, i) => s + unitPrice(i) * i.qty, 0);
-  const eligibleQty = items.filter((i) => !excluded.has(i.productId)).reduce((s, i) => s + i.qty, 0);
-  const eligibleSubtotal = items.filter((i) => !excluded.has(i.productId)).reduce((s, i) => s + unitPrice(i) * i.qty, 0);
-  const tier = [...discounts].filter((d) => d.min_qty <= eligibleQty).sort((a, b) => b.min_qty - a.min_qty)[0];
-  const pct = tier?.discount_percent ?? 0;
-  const discount = (eligibleSubtotal * pct) / 100;
-  const goodsTotal = subtotal - discount;
-  const shipping = shippingFor(goodsTotal);
-  const grandTotal = goodsTotal + shipping;
-  const vat = vatIncludedIn(grandTotal);
-  return { subtotal, eligibleQty, pct, discount, goodsTotal, shipping, grandTotal, vat, total: grandTotal };
-}
+import { eur } from "@/lib/utils";
 
 /** Sizes selectable per variant, with availability + stock. */
 async function fetchSizeOptions(variantIds: string[]) {
@@ -78,7 +53,7 @@ export default function Cart() {
       </div>
     );
 
-  const totals = data ? computeTotals(items, data.discounts, data.excluded) : null;
+  const totals = data ? computeTotals(items, data.discounts, data.excluded, data.cfg) : null;
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -88,7 +63,7 @@ export default function Cart() {
           <li key={i.key} className="flex flex-wrap items-center gap-3 p-4">
             <div className="h-16 w-16 shrink-0 overflow-hidden rounded-md border bg-muted/30">
               {i.thumbnail ? (
-                <img src={i.thumbnail} alt="" className="h-full w-full object-cover" />
+                <img loading="lazy" decoding="async" src={i.thumbnail} alt="" className="h-full w-full object-cover" />
               ) : (
                 <div className="flex h-full items-center justify-center text-[10px] text-muted-foreground">kein Bild</div>
               )}
@@ -99,7 +74,7 @@ export default function Cart() {
                 {i.colorName}
                 {i.designElementCount > 0 && ` · ${i.designElementCount} Design-Element(e)`}
               </p>
-              <p className="text-xs tabular-nums text-muted-foreground">{unitPrice(i).toFixed(2)} € / Stück</p>
+              <p className="text-xs tabular-nums text-muted-foreground">{eur(unitPrice(i))} / Stück</p>
             </div>
 
             {/* Controls: eigene Zeile auf Mobile */}
@@ -146,8 +121,8 @@ export default function Cart() {
               );
             })()}
 
-            <span className="w-16 shrink-0 text-right text-sm tabular-nums">{(unitPrice(i) * i.qty).toFixed(2)} €</span>
-            <Button variant="ghost" size="icon" className="shrink-0" onClick={() => remove(i.key)}>
+            <span className="w-16 shrink-0 text-right text-sm tabular-nums">{eur((unitPrice(i) * i.qty))}</span>
+            <Button variant="ghost" size="icon" className="shrink-0" onClick={() => remove(i.key)} aria-label={`${i.productName} entfernen`}>
               <Trash2 className="h-4 w-4" />
             </Button>
             </div>
@@ -159,29 +134,29 @@ export default function Cart() {
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Zwischensumme</span>
-            <span className="tabular-nums">{totals?.subtotal.toFixed(2) ?? "…"} €</span>
+            <span className="tabular-nums">{totals ? eur(totals.subtotal) : "… €"}</span>
           </div>
           {totals && totals.pct > 0 && (
             <div className="flex justify-between font-medium text-secondary-foreground">
               <span>Mengenrabatt ({totals.pct}%)</span>
-              <span className="tabular-nums">−{totals.discount.toFixed(2)} €</span>
+              <span className="tabular-nums">−{eur(totals.discount)}</span>
             </div>
           )}
           <div className="flex justify-between">
             <span className="text-muted-foreground">Versand</span>
-            <span className="tabular-nums">{totals ? (totals.shipping === 0 ? "gratis" : `${totals.shipping.toFixed(2)} €`) : "…"}</span>
+            <span className="tabular-nums">{totals ? (totals.shipping === 0 ? "gratis" : `${eur(totals.shipping)}`) : "…"}</span>
           </div>
           {totals && totals.shipping > 0 && (
             <p className="text-xs text-muted-foreground">
-              Noch {(FREE_SHIPPING_THRESHOLD - totals.goodsTotal).toFixed(2)} € bis zum Gratisversand.
+              Noch {eur(totals.cfg.freeShippingThreshold - totals.goodsTotal)} bis zum Gratisversand.
             </p>
           )}
           <div className="flex justify-between border-t pt-2 text-lg font-bold">
             <span>Gesamt</span>
-            <span className="tabular-nums text-primary">{totals?.grandTotal.toFixed(2) ?? "…"} €</span>
+            <span className="tabular-nums text-primary">{totals ? eur(totals.grandTotal) : "… €"}</span>
           </div>
           {totals && (
-            <p className="text-right text-xs text-muted-foreground">inkl. {totals.vat.toFixed(2)} € MwSt (19%)</p>
+            <p className="text-right text-xs text-muted-foreground">inkl. {eur(totals.vat)} MwSt ({vatLabel(totals.cfg)})</p>
           )}
         </div>
         <Link to="/kasse" className="mt-4 block">

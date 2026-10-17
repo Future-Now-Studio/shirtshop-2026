@@ -31,6 +31,8 @@ export default function Messages() {
 
   if (isLoading) return <p className="text-muted-foreground">Lade…</p>;
 
+  const confirmed = (data?.subscribers ?? []).filter((s) => s.confirmed_at);
+
   return (
     <div className="max-w-3xl space-y-10">
       <div>
@@ -57,12 +59,36 @@ export default function Messages() {
 
       <div>
         <h2 className="mb-1 text-2xl font-semibold">Newsletter</h2>
-        <p className="mb-4 text-sm text-muted-foreground">{data?.subscribers.length ?? 0} Abonnenten</p>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-muted-foreground">
+            {confirmed.length} bestätigt · {(data?.subscribers.length ?? 0) - confirmed.length} unbestätigt
+            {" "}— nur bestätigte Adressen dürfen angeschrieben werden.
+          </p>
+          <button
+            type="button"
+            disabled={confirmed.length === 0}
+            onClick={() => {
+              const csv = "email,bestaetigt_am\n" + confirmed.map((s) => `${s.email},${s.confirmed_at}`).join("\n");
+              const a = document.createElement("a");
+              a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+              a.download = "newsletter-bestaetigt.csv";
+              a.click();
+            }}
+            className="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-40"
+          >
+            Bestätigte als CSV
+          </button>
+        </div>
         <ul className="divide-y rounded-lg border">
           {data?.subscribers.map((s) => (
-            <li key={s.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
-              <span>{s.email}</span>
-              <span className="text-xs text-muted-foreground">{fmt(s.created_at)}</span>
+            <li key={s.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+              <span className="truncate">{s.email}</span>
+              <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                {s.confirmed_at
+                  ? <span className="rounded-full bg-green-100 px-2 py-0.5 text-green-800">bestätigt</span>
+                  : <span className="rounded-full bg-muted px-2 py-0.5">unbestätigt</span>}
+                {fmt(s.created_at)}
+              </span>
             </li>
           ))}
           {data?.subscribers.length === 0 && <li className="px-4 py-8 text-center text-sm text-muted-foreground">Noch keine Abonnenten.</li>}

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { dbErrorMessage } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -56,7 +57,8 @@ export default function Sizes() {
           Hinzufügen
         </Button>
       </form>
-      {add.error && <p className="mb-4 text-sm text-destructive">{(add.error as Error).message}</p>}
+      {add.error && <p className="mb-4 text-sm text-destructive">{dbErrorMessage(add.error)}</p>}
+      {remove.error && <p role="alert" className="mb-4 text-sm text-destructive">Löschen fehlgeschlagen: {dbErrorMessage(remove.error)}</p>}
 
       {isLoading ? (
         <p className="text-muted-foreground">Lade…</p>
@@ -65,7 +67,7 @@ export default function Sizes() {
           {data?.map((s) => (
             <li key={s.id} className="flex items-center gap-3 px-4 py-2.5">
               <span className="flex-1 text-sm font-medium">{s.name}</span>
-              <Button variant="ghost" size="icon" onClick={() => remove.mutate(s.id)} title="Löschen">
+              <Button variant="ghost" size="icon" onClick={() => confirm(`Größe „${s.name}“ wirklich löschen?`) && remove.mutate(s.id)} title="Löschen">
                 <Trash2 className="h-4 w-4" />
               </Button>
             </li>

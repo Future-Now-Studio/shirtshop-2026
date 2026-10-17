@@ -1,8 +1,11 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, ChevronLeft, Download, FileText, Package, Undo2 } from "lucide-react";
 import JSZip from "jszip";
 import { supabase } from "@/lib/supabase";
+import { invokeFn } from "@/lib/functions";
+import { eur } from "@/lib/utils";
 
 function FileRow({ title, files, manifest }: { title: string; files: any[]; manifest?: any[] }) {
   return (
@@ -21,7 +24,7 @@ function FileRow({ title, files, manifest }: { title: string; files: any[]; mani
               className="group relative"
               title={(m?.text ? `"${m.text}"` : f.name) + " — herunterladen"}
             >
-              <img src={f.url} alt="" className="h-16 w-16 rounded border bg-[repeating-conic-gradient(#eee_0_25%,#fff_0_50%)] bg-[length:12px_12px] object-contain" />
+              <img loading="lazy" decoding="async" src={f.url} alt="" className="h-16 w-16 rounded border bg-[repeating-conic-gradient(#eee_0_25%,#fff_0_50%)] bg-[length:12px_12px] object-contain" />
               <span className="absolute inset-0 flex items-center justify-center rounded bg-black/0 opacity-0 transition group-hover:bg-black/40 group-hover:opacity-100">
                 <Download className="h-5 w-5 text-white" />
               </span>
@@ -64,11 +67,12 @@ function FulfillmentCard({ order, onChange }: { order: any; onChange: () => void
       status: "shipped", tracking_number: tracking || null, shipped_at: new Date().toISOString(),
     }).eq("id", order.id);
     if (error) { setMsg("Fehler: " + error.message); setBusy(false); return; }
-    // send shipping mail (best effort — needs send-ship-email function deployed)
-    try {
-      await supabase.functions.invoke("send-ship-email", { body: { orderId: order.id } });
-      setMsg("Als versendet markiert · Mail ausgelöst.");
-    } catch { setMsg("Als versendet markiert (Mail-Funktion nicht erreichbar)."); }
+    // send shipping mail (best effort) and report honestly what happened
+    const { data, error: mailErr } = await invokeFn("send-ship-email", { orderId: order.id });
+    if (mailErr) setMsg(`Als versendet markiert · Mail fehlgeschlagen: ${mailErr}`);
+    else if (data?.skipped) setMsg(`Als versendet markiert · keine Mail gesendet (${data.skipped === "no customer email" ? "keine Kunden-E-Mail" : "E-Mail-Versand nicht eingerichtet"}).`);
+    else if (data?.ok === false) setMsg(`Als versendet markiert · Mail fehlgeschlagen.`);
+    else setMsg("Als versendet markiert · Versandmail an den Kunden gesendet.");
     setBusy(false); onChange();
   }
 
@@ -111,12 +115,13 @@ async function fetchOrders() {
 async function fetchOrder(id: string) {
   const { data, error } = await supabase
     .from("orders")
-    .select(`*, order_items(id, qty, unit_price, design_render_paths, products(name), variants(colors(name)), sizes(name))`)
+    .select(`*, order_items(id, qty, unit_price, design_data, design_render_paths, products(name), variants(colors(name)), sizes(name))`)
     .eq("id", id)
     .single();
   if (error) throw error;
+  const order: any = data; // items get a runtime `files` list below
   // list + sign every design file for each item (order-designs/<designId>/...)
-  for (const it of data.order_items ?? []) {
+  for (const it of order.order_items ?? []) {
     it.files = [];
     const designId = it.design_data?.designId;
     if (designId) {
@@ -131,7 +136,7 @@ async function fetchOrder(id: string) {
       it.files.sort((a: any, b: any) => a.name.localeCompare(b.name));
     }
   }
-  return data;
+  return order;
 }
 
 /** F2 + F3 + F4: production ZIP, invoice PDF, refund. */
@@ -170,15 +175,15 @@ function OrderActions({ order, onChange }: { order: any; onChange: () => void })
   async function invoice() {
     setBusy("pdf"); setMsg(null);
     try {
-      const { data, error } = await supabase.functions.invoke("generate-invoice", { body: { orderId: order.id } });
-      if (error || data?.error) throw new Error(error?.message ?? data.error);
+      const { data, error } = await invokeFn("generate-invoice", { orderId: order.id });
+      if (error) throw new Error(error);
       if (data?.pdfBase64) {
         const a = document.createElement("a");
         a.href = `data:application/pdf;base64,${data.pdfBase64}`;
         a.download = `rechnung-${order.id.slice(0, 8)}.pdf`; a.click();
         setMsg("Rechnung erstellt.");
       } else setMsg("Keine PDF erhalten.");
-    } catch (e) { setMsg("PDF-Funktion nicht erreichbar (deployen): " + (e as Error).message); }
+    } catch (e) { setMsg("Rechnung fehlgeschlagen: " + (e as Error).message); }
     setBusy(null);
   }
 
@@ -186,11 +191,11 @@ function OrderActions({ order, onChange }: { order: any; onChange: () => void })
     if (!confirm("Diese Bestellung wirklich vollständig über Stripe erstatten? Bestand wird zurückgebucht.")) return;
     setBusy("refund"); setMsg(null);
     try {
-      const { data, error } = await supabase.functions.invoke("refund-order", { body: { orderId: order.id } });
-      if (error || data?.error) throw new Error(error?.message ?? data.error);
+      const { error } = await invokeFn("refund-order", { orderId: order.id });
+      if (error) throw new Error(error);
       setMsg("Erstattet.");
       onChange();
-    } catch (e) { setMsg("Refund-Funktion nicht erreichbar (deployen): " + (e as Error).message); }
+    } catch (e) { setMsg("Erstattung fehlgeschlagen: " + (e as Error).message); }
     setBusy(null);
   }
 
@@ -216,7 +221,10 @@ function OrderActions({ order, onChange }: { order: any; onChange: () => void })
 
 export default function Orders() {
   const qc = useQueryClient();
-  const [openId, setOpenId] = useState<string | null>(null);
+  // The open order lives in the URL (?id=…) so reload, back button and links work.
+  const [params, setParams] = useSearchParams();
+  const openId = params.get("id");
+  const setOpenId = (id: string | null) => setParams(id ? { id } : {});
   const { data: orders, isLoading } = useQuery({ queryKey: ["admin-orders"], queryFn: fetchOrders });
   const { data: order } = useQuery({ queryKey: ["admin-order", openId], queryFn: () => fetchOrder(openId!), enabled: !!openId });
 
@@ -266,7 +274,7 @@ export default function Orders() {
           <div className="rounded-xl border p-4 text-sm">
             <p className="mb-2 font-semibold">Zahlung</p>
             <p className="text-muted-foreground">Stripe PI: {order.stripe_payment_intent_id || "—"}</p>
-            <p className="mt-1 text-lg font-bold text-primary">{Number(order.total).toFixed(2)} €</p>
+            <p className="mt-1 text-lg font-bold text-primary">{eur(Number(order.total))}</p>
           </div>
         </div>
 
@@ -287,7 +295,7 @@ export default function Orders() {
                     {composites.length > 0 ? (
                       composites.map((f: any) => (
                         <a key={f.name} href={f.url} target="_blank" rel="noreferrer">
-                          <img src={f.url} alt="" className="h-16 w-16 rounded border object-contain bg-white" />
+                          <img loading="lazy" decoding="async" src={f.url} alt="" className="h-16 w-16 rounded border object-contain bg-white" />
                         </a>
                       ))
                     ) : (
@@ -298,7 +306,7 @@ export default function Orders() {
                     <p className="font-medium">{it.products?.name ?? "—"}</p>
                     <p className="text-muted-foreground">{it.variants?.colors?.name} · {it.sizes?.name} · {it.qty}×</p>
                   </div>
-                  <span className="text-sm tabular-nums">{(Number(it.unit_price) * it.qty).toFixed(2)} €</span>
+                  <span className="text-sm tabular-nums">{eur((Number(it.unit_price) * it.qty))}</span>
                 </div>
 
                 {(it.files ?? []).length > 0 && (
@@ -338,7 +346,7 @@ export default function Orders() {
                 <span className={"rounded-full px-2.5 py-0.5 text-xs font-medium " + (STATUS_CLS[o.status] ?? "")}>
                   {STATUS_LABEL[o.status] ?? o.status}
                 </span>
-                <span className="w-20 text-right text-sm font-semibold tabular-nums">{Number(o.total).toFixed(2)} €</span>
+                <span className="w-20 text-right text-sm font-semibold tabular-nums">{eur(Number(o.total))}</span>
                 <ChevronRight className="h-4 w-4 text-muted-foreground" />
               </button>
             </li>

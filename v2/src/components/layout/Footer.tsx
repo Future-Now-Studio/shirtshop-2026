@@ -28,7 +28,7 @@ export default function Footer() {
 
       <div className="container grid grid-cols-1 gap-12 py-16 md:grid-cols-2 lg:grid-cols-4">
         <div>
-          <img src={logo} alt="Private Shirt" className="h-11 w-auto" />
+          <img loading="lazy" decoding="async" src={logo} alt="Private Shirt" className="h-11 w-auto" />
           <p className="mt-5 max-w-xs text-muted-foreground">
             sei du selbst. sei einzigartig. professionelle textilveredelung aus hamburg.
           </p>

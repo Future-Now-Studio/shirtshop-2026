@@ -115,7 +115,7 @@ export default function PrintZoneEditor({ productId }: { productId: string }) {
           }}
         >
           {data?.imagePath ? (
-            <img src={publicUrl(data.imagePath)} alt={view} className="pointer-events-none h-full w-full object-cover" />
+            <img loading="lazy" decoding="async" src={publicUrl(data.imagePath)} alt={view} className="pointer-events-none h-full w-full object-cover" />
           ) : (
             <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
               Kein Bild für diese Ansicht. Erst Varianten-Bild hochladen.

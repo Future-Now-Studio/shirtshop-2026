@@ -31,7 +31,7 @@ const LINKS = [
 function CartLink() {
   const count = useCart((s) => s.items.reduce((n, i) => n + i.qty, 0));
   return (
-    <Link to="/warenkorb" className="relative flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-primary">
+    <Link to="/warenkorb" aria-label="Warenkorb" className="relative flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-primary">
       <ShoppingBag className="h-5 w-5" />
       {count > 0 && (
         <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[0.65rem] font-bold text-primary-foreground">
@@ -51,7 +51,7 @@ export default function Header() {
     <header className="glass-nav sticky top-0 z-40">
       <div className="container flex h-16 items-center justify-between">
         <Link to="/" className="flex items-center" onClick={() => setOpen(false)}>
-          <img src={logo} alt="Private Shirt" className="h-8 w-auto" />
+          <img loading="lazy" decoding="async" src={logo} alt="Private Shirt" className="h-8 w-auto" />
         </Link>
 
         {/* desktop nav */}
@@ -68,7 +68,7 @@ export default function Header() {
         <div className="flex items-center gap-4 lg:hidden">
           <WishlistLink />
           <CartLink />
-          <button onClick={() => setOpen((v) => !v)} aria-label="Menü" className="text-foreground">
+          <button onClick={() => setOpen((v) => !v)} aria-label="Menü" aria-expanded={open} className="text-foreground">
             {open ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
           </button>
         </div>
