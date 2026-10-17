@@ -63,13 +63,20 @@ begin
   end loop;
 end $$;
 
--- --- Seed the demo admin account -------------------------------------------
+-- --- Grant admin rights to an EXISTING auth user ----------------------------
+-- SECURITY: no passwords in SQL. Create/invite the admin first
+-- (Dashboard → Authentication → Users → Invite user), enable MFA for it,
+-- then this block marks it as admin.
 do $$
 declare uid uuid;
 begin
-  uid := seed_auth_user('admin@ballina.de', 'Ballina-Admin2026!');
-  insert into b2b_admins (user_id, email) values (uid, 'admin@ballina.de')
-  on conflict (user_id) do nothing;
+  select id into uid from auth.users where email = 'admin@ballina.de';
+  if uid is null then
+    raise notice 'auth user admin@ballina.de not found — invite it first, then re-run';
+  else
+    insert into b2b_admins (user_id, email) values (uid, 'admin@ballina.de')
+    on conflict (user_id) do nothing;
+  end if;
 end $$;
 
 -- ===========================================================================

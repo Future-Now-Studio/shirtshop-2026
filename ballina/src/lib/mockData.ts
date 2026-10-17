@@ -185,3 +185,10 @@ export const MOCK_QUOTES: Quote[] = [
     ],
   },
 ]
+
+// Demo credentials — ONLY valid in mock mode (VITE_USE_MOCK=true, localStorage
+// data). Deliberately unrelated to any real account password.
+export const MOCK_LOGINS = {
+  customer: { email: MOCK_COMPANY.email, password: 'demo-kunde-2026' },
+  admin: { email: 'admin@ballina.de', password: 'demo-admin-2026' },
+} as const

@@ -10,5 +10,9 @@ export function orderToCartLines(order: Order): CartLine[] {
     size: it.size,
     quantity: it.quantity,
     unitPrice: it.unitPrice,
+    // A reorder is "the same again": keep print position and print file.
+    printPosition: it.printPosition,
+    artworkName: it.artworkName,
+    artworkPath: it.artworkPath,
   }))
 }

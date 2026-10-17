@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ArrowLeft, Ban, FileText, Loader2, MoreHorizontal, RefreshCw, Truck } from 'lucide-react'
 import { cancelOrder, getOrder, reclaimOrder } from '@/lib/api'
-import { formatDate, formatEUR, ITEM_PLACEHOLDER } from '@/lib/utils'
+import { formatDate, formatEUR, ITEM_PLACEHOLDER, VAT_RATE } from '@/lib/utils'
 import { invoiceHref } from '@/lib/invoices'
 import { useReorder } from '@/lib/useReorder'
 import { Button } from '@/components/ui/button'
@@ -57,8 +57,10 @@ export default function OrderDetail() {
   }
 
   const subtotal = order.items.reduce((s, i) => s + i.unitPrice * i.quantity, 0)
+  const netTotal = order.total + (order.shipping ?? 0)
   const totalQty = order.items.reduce((s, i) => s + i.quantity, 0)
-  const canCancel = order.status === 'offen' || order.status === 'in_bearbeitung'
+  // Customers can only cancel before production starts (enforced by cancel_order()).
+  const canCancel = order.status === 'offen'
   const canReclaim =
     (order.status === 'versendet' || order.status === 'abgeschlossen') && !order.reclamation
 
@@ -79,7 +81,7 @@ export default function OrderDetail() {
             <StatusBadge status={order.status} />
           </div>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            Bestellt am {formatDate(order.createdAt)} · {order.items.length} Positionen · {totalQty}{' '}
+            Bestellt am {formatDate(order.createdAt)} · {order.items.length} {order.items.length === 1 ? 'Position' : 'Positionen'} · {totalQty}{' '}
             Stück
           </p>
         </div>
@@ -140,6 +142,18 @@ export default function OrderDetail() {
         </div>
       </div>
 
+      {(cancel.error || reclaim.error) && (
+        <p className="mt-4 text-sm text-destructive">
+          {((cancel.error ?? reclaim.error) as Error).message}
+        </p>
+      )}
+
+      {order.priceConfirmed === false && (
+        <div className="mt-5 rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+          Die Preise dieser Bestellung sind vorläufig und werden vom Ballina-Team geprüft und bestätigt.
+        </div>
+      )}
+
       {/* #15 reclamation notice */}
       {order.reclamation && (
         <div className="mt-5 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm">
@@ -181,7 +195,7 @@ export default function OrderDetail() {
       <div className="lg:col-span-2">
       {/* Items */}
       <Card className="overflow-hidden">
-        <div className="hidden grid-cols-[1fr_auto_auto_auto] gap-4 border-b border-border bg-muted/40 px-5 py-3 text-xs font-medium uppercase tracking-wide text-muted-foreground sm:grid">
+        <div className="hidden grid-cols-[1fr_auto_auto_auto] gap-4 border-b border-border bg-muted/40 px-5 py-3 text-xs font-medium uppercase tracking-wide text-muted-foreground xl:grid">
           <span>Artikel</span>
           <span className="w-20 text-right">Menge</span>
           <span className="w-24 text-right">Einzelpreis</span>
@@ -191,7 +205,7 @@ export default function OrderDetail() {
           {order.items.map((it) => (
             <div
               key={it.id}
-              className="grid grid-cols-1 gap-3 px-5 py-4 sm:grid-cols-[1fr_auto_auto_auto] sm:items-center sm:gap-4"
+              className="grid grid-cols-1 gap-3 px-5 py-4 xl:grid-cols-[1fr_auto_auto_auto] xl:items-center xl:gap-4"
             >
               <div className="flex items-center gap-3">
                 <img
@@ -213,15 +227,15 @@ export default function OrderDetail() {
                   )}
                 </div>
               </div>
-              <div className="text-sm sm:w-20 sm:text-right">
-                <span className="text-muted-foreground sm:hidden">Menge: </span>
+              <div className="text-sm xl:w-20 xl:text-right">
+                <span className="text-muted-foreground xl:hidden">Menge: </span>
                 {it.quantity}
               </div>
-              <div className="text-sm sm:w-24 sm:text-right">
-                <span className="text-muted-foreground sm:hidden">Einzel: </span>
+              <div className="text-sm xl:w-24 xl:text-right">
+                <span className="text-muted-foreground xl:hidden">Einzel: </span>
                 {formatEUR(it.unitPrice)}
               </div>
-              <div className="font-medium sm:w-24 sm:text-right">
+              <div className="font-medium xl:w-24 xl:text-right">
                 {formatEUR(it.unitPrice * it.quantity)}
               </div>
             </div>
@@ -233,9 +247,17 @@ export default function OrderDetail() {
               <span>Zwischensumme (netto)</span>
               <span>{formatEUR(subtotal)}</span>
             </div>
+            <div className="flex justify-between text-muted-foreground">
+              <span>Versand (netto)</span>
+              <span>{order.shipping ? formatEUR(order.shipping) : 'kostenlos'}</span>
+            </div>
+            <div className="flex justify-between text-muted-foreground">
+              <span>zzgl. {Math.round(VAT_RATE * 100)} % USt.</span>
+              <span>{formatEUR(netTotal * VAT_RATE)}</span>
+            </div>
             <div className="flex justify-between border-t border-border pt-1.5 text-base font-semibold">
-              <span>Gesamt</span>
-              <span>{formatEUR(order.total)}</span>
+              <span>Gesamt (brutto)</span>
+              <span>{formatEUR(netTotal * (1 + VAT_RATE))}</span>
             </div>
           </div>
         </div>

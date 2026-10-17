@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Input, Label } from '@/components/ui/input'
 import { BrandMark } from '@/components/BrandMark'
 import { useAuth } from '@/lib/auth'
-import { USE_MOCK } from '@/lib/supabase'
+import { MOCK_LOGINS } from '@/lib/mockData'
+import { supabase, USE_MOCK } from '@/lib/supabase'
 
 export default function Login() {
   const { signIn } = useAuth()
@@ -14,6 +15,21 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [resetMode, setResetMode] = useState(false)
+  const [resetSent, setResetSent] = useState(false)
+
+  async function handleReset(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+    if (USE_MOCK || !supabase) return setError('Im Demo-Modus nicht verfügbar.')
+    setLoading(true)
+    await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/passwort-setzen`,
+    })
+    setLoading(false)
+    // Same answer whether or not the address exists (no account enumeration).
+    setResetSent(true)
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -59,6 +75,32 @@ export default function Login() {
             Willkommen zurück. Melden Sie sich in Ihrem B2B-Konto an.
           </p>
 
+          {resetMode ? (
+            <form onSubmit={handleReset} className="mt-8 space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Geben Sie Ihre E-Mail-Adresse ein. Sie erhalten einen Link, mit dem Sie ein neues Passwort festlegen.
+              </p>
+              <div className="space-y-1.5">
+                <Label htmlFor="reset-email">E-Mail</Label>
+                <Input id="reset-email" type="email" autoComplete="email" required
+                  value={email} onChange={(e) => setEmail(e.target.value)} />
+              </div>
+              {resetSent && (
+                <div role="status" className="rounded-lg bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800">
+                  Falls ein Konto mit dieser Adresse existiert, ist die E-Mail unterwegs.
+                </div>
+              )}
+              {error && <div className="rounded-lg bg-destructive/10 px-3 py-2.5 text-sm text-destructive">{error}</div>}
+              <Button type="submit" variant="brand" size="xl" className="w-full" disabled={loading}>
+                {loading && <Loader2 className="size-4 animate-spin" />}
+                Link anfordern
+              </Button>
+              <button type="button" onClick={() => { setResetMode(false); setResetSent(false); setError('') }}
+                className="text-sm text-muted-foreground hover:text-foreground">
+                Zurück zur Anmeldung
+              </button>
+            </form>
+          ) : (
           <form onSubmit={handleSubmit} className="mt-8 space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="email">E-Mail</Label>
@@ -95,14 +137,19 @@ export default function Login() {
               {loading && <Loader2 className="size-4 animate-spin" />}
               {loading ? 'Wird angemeldet…' : 'Anmelden'}
             </Button>
+            <button type="button" onClick={() => { setResetMode(true); setError('') }}
+              className="text-sm text-muted-foreground hover:text-foreground">
+              Passwort vergessen?
+            </button>
           </form>
+          )}
 
           {USE_MOCK && (
             <div className="mt-6 rounded-lg border border-dashed border-border bg-background px-4 py-3 text-xs text-muted-foreground">
               <p className="font-medium text-foreground">Demo-Zugang Kunde</p>
-              <p className="mt-1">einkauf@brauhaus-lindental.de · Ballina2026!</p>
+              <p className="mt-1">{MOCK_LOGINS.customer.email} · {MOCK_LOGINS.customer.password}</p>
               <p className="mt-2 font-medium text-foreground">Demo-Zugang Backoffice</p>
-              <p className="mt-1">admin@ballina.de · Ballina-Admin2026!</p>
+              <p className="mt-1">{MOCK_LOGINS.admin.email} · {MOCK_LOGINS.admin.password}</p>
             </div>
           )}
 

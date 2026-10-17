@@ -1,18 +1,22 @@
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, RefreshCw, ShoppingBag } from 'lucide-react'
-import { getOrders } from '@/lib/api'
-import { formatDate, formatEUR } from '@/lib/utils'
+import { getCompany, getOrders } from '@/lib/api'
+import { berlinYear, budgetSpent, formatDate, formatEUR } from '@/lib/utils'
 import { useReorder } from '@/lib/useReorder'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { StatusBadge } from '@/components/ui/badge'
 import { PageHeader } from '@/components/PageHeader'
 import { OrderItemsPreview } from '@/components/OrderItemsPreview'
+import { BudgetBar } from '@/components/BudgetBar'
 
 export default function Orders() {
   const { data: orders = [], isLoading } = useQuery({ queryKey: ['orders'], queryFn: getOrders })
+  const { data: company } = useQuery({ queryKey: ['company'], queryFn: getCompany })
   const { quickReorder, isReordering, reorderingId } = useReorder()
+  const budget = company?.annualBudget
+  const year = berlinYear()
 
   return (
     <div>
@@ -27,6 +31,10 @@ export default function Orders() {
           </Link>
         }
       />
+
+      {budget != null && budget > 0 && !isLoading && (
+        <BudgetBar className="-mt-4 mb-6" spent={budgetSpent(orders, year)} budget={budget} year={year} />
+      )}
 
       {isLoading ? (
         <div className="grid place-items-center py-16">
@@ -67,9 +75,10 @@ export default function Orders() {
 
                 <div className="flex items-center gap-6">
                   <div className="text-right">
-                    <p className="text-xs text-muted-foreground">{order.items.length} Positionen</p>
+                    <p className="text-xs text-muted-foreground">{order.items.length} {order.items.length === 1 ? 'Position' : 'Positionen'}</p>
                     <p className="text-lg font-semibold tracking-tight">
                       {formatEUR(order.total)}
+                      <span className="ml-1 text-xs font-normal text-muted-foreground">netto</span>
                     </p>
                   </div>
                   <div className="flex gap-2">

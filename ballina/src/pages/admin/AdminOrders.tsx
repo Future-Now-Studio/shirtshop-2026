@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { Loader2, Plus } from 'lucide-react'
-import { adminGetOrders } from '@/lib/adminApi'
+import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { Loader2, Plus, Search } from 'lucide-react'
+import { adminGetOrdersPage, adminGetOrderStatusCounts, type OrderFilter } from '@/lib/adminApi'
+import { useDebounced } from '@/lib/useDebounced'
 import { cn, formatDate, formatEUR } from '@/lib/utils'
 import { ORDER_STATUS_LABELS, type OrderStatus } from '@/lib/types'
 import { Card } from '@/components/ui/card'
@@ -10,21 +11,30 @@ import { StatusBadge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/PageHeader'
 
-const FILTERS: { key: OrderStatus | 'alle'; label: string }[] = [
+const FILTERS: { key: OrderFilter; label: string }[] = [
   { key: 'alle', label: 'Alle' },
   { key: 'offen', label: 'Offen' },
   { key: 'in_bearbeitung', label: 'In Bearbeitung' },
   { key: 'versendet', label: 'Versendet' },
   { key: 'abgeschlossen', label: 'Abgeschlossen' },
+  { key: 'storniert', label: 'Storniert' },
 ]
 
 export default function AdminOrders() {
-  const { data: orders = [], isLoading } = useQuery({
-    queryKey: ['admin', 'orders'],
-    queryFn: adminGetOrders,
+  const [filter, setFilter] = useState<OrderFilter>('alle')
+  const [q, setQ] = useState('')
+  const search = useDebounced(q.trim(), 300)
+  const { data, isLoading, isError, error, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
+    queryKey: ['admin', 'orders', 'list', filter, search],
+    queryFn: ({ pageParam }) => adminGetOrdersPage(filter, search, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (last, pages) =>
+      last.hasMore ? pages.reduce((n, p) => n + p.rows.length, 0) : undefined,
+    placeholderData: keepPreviousData,
   })
-  const [filter, setFilter] = useState<OrderStatus | 'alle'>('alle')
-  const shown = filter === 'alle' ? orders : orders.filter((o) => o.status === filter)
+  const { data: counts } = useQuery({ queryKey: ['admin', 'orders', 'counts'], queryFn: adminGetOrderStatusCounts })
+  const shown = data?.pages.flatMap((p) => p.rows) ?? []
+  const total = data?.pages[0]?.total
 
   return (
     <div>
@@ -41,6 +51,17 @@ export default function AdminOrders() {
         }
       />
 
+      <div className="relative mb-4 max-w-md">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Bestellnummer oder Firma suchen…"
+          aria-label="Bestellungen durchsuchen"
+          className="h-10 w-full rounded-lg border border-input bg-background pl-9 pr-3 text-sm focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40 focus-visible:outline-none"
+        />
+      </div>
+
       <div className="mb-6 flex flex-wrap gap-2">
         {FILTERS.map((f) => (
           <button
@@ -54,10 +75,8 @@ export default function AdminOrders() {
             )}
           >
             {f.label}
-            {f.key !== 'alle' && (
-              <span className="ml-1 text-xs">
-                ({orders.filter((o) => o.status === f.key).length})
-              </span>
+            {f.key !== 'alle' && counts && (
+              <span className="ml-1 text-xs">({counts[f.key]})</span>
             )}
           </button>
         ))}
@@ -67,6 +86,10 @@ export default function AdminOrders() {
         <div className="grid place-items-center py-16">
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
+      ) : isError ? (
+        <p className="rounded-xl border border-dashed border-destructive/40 py-12 text-center text-sm text-destructive">
+          Bestellungen konnten nicht geladen werden: {(error as Error)?.message ?? 'Unbekannter Fehler'}
+        </p>
       ) : (
         <div className="space-y-3">
           {shown.map((o) => (
@@ -81,7 +104,7 @@ export default function AdminOrders() {
                   <p className="mt-1 text-sm">
                     <span className="font-medium">{o.companyName}</span>
                     <span className="text-muted-foreground">
-                      {' '}· {o.items.length} Positionen
+                      {' '}· {o.itemCount} {o.itemCount === 1 ? 'Position' : 'Positionen'}
                     </span>
                   </p>
                 </div>
@@ -98,8 +121,26 @@ export default function AdminOrders() {
           ))}
           {shown.length === 0 && (
             <p className="rounded-xl border border-dashed border-border py-12 text-center text-sm text-muted-foreground">
-              Keine Bestellungen mit Status „{ORDER_STATUS_LABELS[filter as OrderStatus] ?? filter}".
+              {search
+                ? `Keine Bestellungen gefunden für „${search}“.`
+                : filter === 'alle'
+                  ? 'Noch keine Bestellungen.'
+                  : `Keine Bestellungen mit Status „${ORDER_STATUS_LABELS[filter as OrderStatus] ?? filter}“.`}
             </p>
+          )}
+          {shown.length > 0 && (
+            <div className="flex items-center justify-between gap-3 pt-1 text-xs text-muted-foreground">
+              <span>
+                {shown.length}
+                {total != null ? ` von ${total}` : ''} Bestellungen
+              </span>
+              {hasNextPage && (
+                <Button variant="outline" size="sm" onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
+                  {isFetchingNextPage && <Loader2 className="size-4 animate-spin" />}
+                  Mehr laden
+                </Button>
+              )}
+            </div>
           )}
         </div>
       )}

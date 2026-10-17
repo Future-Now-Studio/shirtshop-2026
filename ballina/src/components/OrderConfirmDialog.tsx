@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Minus, Paperclip, Plus, Trash2, X } from 'lucide-react'
 import { createOrder, getCompany, getProducts } from '@/lib/api'
+import { ARTWORK_ACCEPT, artworkProblem } from '@/lib/artwork'
 import { formatEUR, grossFrom, repriceLine, shippingFor, VAT_RATE } from '@/lib/utils'
 import type { CartLine, Order } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -27,7 +28,14 @@ export function OrderConfirmDialog({
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { data: company } = useQuery({ queryKey: ['company'], queryFn: getCompany })
-  const { data: products = [] } = useQuery({ queryKey: ['products'], queryFn: getProducts })
+  // Catalogue prices only refine the preview (Staffel); the server prices the
+  // order anyway (create_order). If the catalogue is unreachable, keep the
+  // prices from the order history and say so.
+  const { data: products = [], isError: catalogError } = useQuery({
+    queryKey: ['products'],
+    queryFn: getProducts,
+    retry: 1,
+  })
 
   const [rows, setRows] = useState<CartLine[]>(() => lines.map((l) => ({ ...l })))
   const [poNumber, setPoNumber] = useState('')
@@ -113,6 +121,13 @@ export function OrderConfirmDialog({
 
         {/* Body (scrolls) */}
         <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5">
+          {catalogError && (
+            <div role="status" className="rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+              Der Produktkatalog ist gerade nicht erreichbar. Die angezeigten Preise stammen aus
+              Ihren bisherigen Bestellungen – Sie können trotzdem bestellen, die endgültigen Preise
+              werden vom Ballina-Team bestätigt.
+            </div>
+          )}
           {/* Positions */}
           <section>
             <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -165,8 +180,15 @@ export function OrderConfirmDialog({
                       <input
                         type="file"
                         className="hidden"
-                        accept=".pdf,.png,.svg,.ai,.eps,.jpg,.jpeg"
-                        onChange={(e) => setLineField(i, { artworkName: e.target.files?.[0]?.name })}
+                        accept={ARTWORK_ACCEPT}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0]
+                          e.target.value = ''
+                          if (!f) return
+                          const problem = artworkProblem(f)
+                          if (problem) { alert(problem); return }
+                          setLineField(i, { artworkName: f.name, artworkFile: f })
+                        }}
                       />
                     </label>
                   </div>
@@ -263,9 +285,13 @@ export function OrderConfirmDialog({
           </div>
           {place.isError && (
             <p className="mt-2 text-center text-xs text-destructive">
-              Bestellung fehlgeschlagen. Bitte erneut versuchen.
+              Bestellung fehlgeschlagen: {(place.error as Error)?.message || 'Bitte erneut versuchen.'}
             </p>
           )}
+          <p className="mt-2 text-center text-xs text-muted-foreground">
+            Verbindlich sind Ihre hinterlegten Konditionen. Neue Artikel oder geänderte Mengen werden
+            vom Ballina-Team preislich bestätigt.
+          </p>
         </div>
       </div>
     </div>

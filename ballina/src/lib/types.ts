@@ -54,6 +54,7 @@ export interface OrderItem {
   unitPrice: number
   printPosition?: string // #12
   artworkName?: string // #12
+  artworkPath?: string // storage path in the `artwork` bucket
 }
 
 export interface StatusEvent {
@@ -67,6 +68,8 @@ export interface Order {
   orderNumber: string
   status: OrderStatus
   total: number
+  // false → prices are provisional until the back-office confirms them
+  priceConfirmed?: boolean
   shipping?: number
   note?: string
   createdAt: string
@@ -127,6 +130,7 @@ export interface Quote {
   total: number
   note?: string
   items: OrderItem[]
+  orderId?: string // set once the quote was accepted
 }
 
 export interface Inquiry {
@@ -135,6 +139,8 @@ export interface Inquiry {
   quantity: number
   deadline?: string
   message?: string
+  artworkName?: string
+  artworkPath?: string
   status: 'neu' | 'in_bearbeitung' | 'angebot_gesendet' | 'abgeschlossen'
   createdAt: string
 }
@@ -143,6 +149,17 @@ export interface Inquiry {
 export interface AdminOrder extends Order {
   companyId: string
   companyName: string
+}
+
+/** Lightweight row for the back-office order list (no nested items/events). */
+export type AdminOrderListItem = Omit<AdminOrder, 'items' | 'statusHistory'> & { itemCount: number }
+
+/** One page of a "Mehr laden" list. */
+export interface Page<T> {
+  rows: T[]
+  /** Total matching rows (if known). */
+  total?: number
+  hasMore: boolean
 }
 
 export interface AdminQuote extends Quote {
@@ -162,6 +179,9 @@ export interface AuditEntry {
   id: string
   at: string
   actor: string
+  /** Resolved login e-mail of the actor (admin or customer), if known. */
+  actorEmail?: string
+  companyName?: string
   action: string
   entity: string
   detail: string
@@ -178,4 +198,6 @@ export interface CartLine {
   unitPrice: number
   printPosition?: string // #12
   artworkName?: string // #12
+  artworkFile?: File // picked in the order dialog, uploaded on submit
+  artworkPath?: string // storage path in the `artwork` bucket
 }

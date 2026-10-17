@@ -28,6 +28,21 @@ export function netPrice(basePrice: number, discountPercent = 0): number {
   return Math.round(net * 100) / 100
 }
 
+/** Calendar date (YYYY-MM-DD) in the business time zone. */
+function berlinDate(d: Date): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' }).format(d)
+}
+
+/**
+ * A quote can be accepted while it is 'offen' and valid_until (inclusive, in
+ * Europe/Berlin) has not passed — mirrors public.b2b_quote_valid() in the DB.
+ */
+export function isQuoteAcceptable(q: { status: string; validUntil?: string | null }): boolean {
+  if (q.status !== 'offen') return false
+  if (!q.validUntil) return true
+  return berlinDate(new Date(q.validUntil)) >= berlinDate(new Date())
+}
+
 /** Whole days between an ISO date and now (positive = in the past). */
 export function daysAgo(iso: string): number {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000)
@@ -71,4 +86,40 @@ export function repriceLine(line: CartLine, products: Product[], discountPercent
   const product = products.find((p) => p.id === line.productId)
   if (!product) return line
   return { ...line, unitPrice: tierNetPrice(product, line.quantity, discountPercent) }
+}
+
+/** Allowed order status transitions — mirrors 010_order_status_rules.sql. */
+export const NEXT_STATUS: Record<string, string[]> = {
+  offen: ['in_bearbeitung', 'versendet', 'storniert'],
+  in_bearbeitung: ['offen', 'versendet', 'storniert'],
+  versendet: ['abgeschlossen'],
+  abgeschlossen: [],
+  storniert: [],
+}
+
+/** Current calendar year in the business time zone (Europe/Berlin). */
+export function berlinYear(d: Date = new Date()): number {
+  return Number(berlinDate(d).slice(0, 4))
+}
+
+/** [start, end) of a Berlin calendar year as ISO instants (1 Jan is always CET, UTC+1). */
+export function berlinYearRange(year = berlinYear()): { from: string; to: string } {
+  return {
+    from: new Date(`${year}-01-01T00:00:00+01:00`).toISOString(),
+    to: new Date(`${year + 1}-01-01T00:00:00+01:00`).toISOString(),
+  }
+}
+
+/**
+ * Budget usage: sum of the net order totals (goods, excl. shipping/VAT) of all
+ * non-cancelled orders placed in the given Berlin calendar year.
+ */
+export function budgetSpent(
+  orders: { status: string; total: number; createdAt: string }[],
+  year = berlinYear(),
+): number {
+  const sum = orders
+    .filter((o) => o.status !== 'storniert' && berlinYear(new Date(o.createdAt)) === year)
+    .reduce((s, o) => s + o.total, 0)
+  return Math.round(sum * 100) / 100
 }

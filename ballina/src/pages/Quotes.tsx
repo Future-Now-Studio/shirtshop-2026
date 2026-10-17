@@ -1,8 +1,9 @@
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, FileText, Loader2, X } from 'lucide-react'
-import { acceptQuote, declineQuote, getQuotes } from '@/lib/api'
-import { formatDate, formatEUR } from '@/lib/utils'
+import { Check, FileText, Loader2, Printer, X } from 'lucide-react'
+import { acceptQuote, declineQuote, getCompany, getQuotes } from '@/lib/api'
+import { openQuoteDocument } from '@/lib/documents'
+import { formatDate, formatEUR, isQuoteAcceptable } from '@/lib/utils'
 import { QUOTE_STATUS_LABELS, type Quote } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -19,6 +20,7 @@ const STATUS_VARIANT: Record<Quote['status'], 'info' | 'success' | 'destructive'
 export default function Quotes({ embedded = false }: { embedded?: boolean }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { data: company } = useQuery({ queryKey: ['company'], queryFn: getCompany })
   const { data: quotes = [], isLoading } = useQuery({ queryKey: ['quotes'], queryFn: getQuotes })
 
   const accept = useMutation({
@@ -33,6 +35,7 @@ export default function Quotes({ embedded = false }: { embedded?: boolean }) {
     mutationFn: (id: string) => declineQuote(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['quotes'] }),
   })
+  const actionError = (accept.error ?? decline.error) as Error | null
 
   return (
     <div>
@@ -61,7 +64,9 @@ export default function Quotes({ embedded = false }: { embedded?: boolean }) {
         <div className="space-y-4">
           {quotes.map((q) => {
             const totalQty = q.items.reduce((s, i) => s + i.quantity, 0)
-            const open = q.status === 'offen'
+            // Expired quotes are not acceptable even before the DB flags them.
+            const open = isQuoteAcceptable(q)
+            const status = q.status === 'offen' && !open ? 'abgelaufen' : q.status
             const busy = accept.isPending || decline.isPending
             return (
               <Card key={q.id} className="overflow-hidden">
@@ -69,7 +74,7 @@ export default function Quotes({ embedded = false }: { embedded?: boolean }) {
                   <div>
                     <div className="flex flex-wrap items-center gap-3">
                       <span className="font-semibold">{q.title}</span>
-                      <Badge variant={STATUS_VARIANT[q.status]}>{QUOTE_STATUS_LABELS[q.status]}</Badge>
+                      <Badge variant={STATUS_VARIANT[status]}>{QUOTE_STATUS_LABELS[status]}</Badge>
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {q.quoteNumber} · vom {formatDate(q.createdAt)} · gültig bis{' '}
@@ -104,11 +109,18 @@ export default function Quotes({ embedded = false }: { embedded?: boolean }) {
                   </p>
                 )}
 
+                <div className="flex flex-col gap-2 border-t border-border p-5 sm:flex-row sm:items-center sm:justify-end">
+                    <Button variant="ghost" size="sm" className="sm:mr-auto" onClick={() => openQuoteDocument(q, company?.company ?? '')}>
+                      <Printer className="size-4" /> Als PDF
+                    </Button>
                 {open && (
-                  <div className="flex flex-col gap-2 border-t border-border p-5 sm:flex-row sm:justify-end">
+                  <>
+                    {actionError && (accept.variables === q.id || decline.variables === q.id) && (
+                      <p className="text-sm text-destructive sm:mr-auto">{actionError.message}</p>
+                    )}
                     <Button
                       variant="outline"
-                      onClick={() => decline.mutate(q.id)}
+                      onClick={() => confirm(`Angebot ${q.quoteNumber} wirklich ablehnen?`) && decline.mutate(q.id)}
                       disabled={busy}
                     >
                       <X className="size-4" />
@@ -122,8 +134,9 @@ export default function Quotes({ embedded = false }: { embedded?: boolean }) {
                       )}
                       Angebot annehmen &amp; bestellen
                     </Button>
-                  </div>
+                  </>
                 )}
+                </div>
               </Card>
             )
           })}

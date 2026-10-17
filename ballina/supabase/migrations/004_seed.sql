@@ -3,46 +3,21 @@
 -- Creates the demo company "Brauhaus Lindental GmbH" with ONE account and one
 -- open quote. Idempotent: safe to re-run (upserts by email).
 --
--- Demo login:  einkauf@brauhaus-lindental.de  /  Ballina2026!
+-- Demo login:  einkauf@brauhaus-lindental.de — invite this user first
+--              (Dashboard → Authentication → Users → Invite). No passwords here.
 -- ===========================================================================
 
 create extension if not exists pgcrypto;
 
-create or replace function seed_auth_user(p_email text, p_password text)
-  returns uuid language plpgsql security definer set search_path = auth, public, extensions as $$
-declare uid uuid;
-begin
-  select id into uid from auth.users where email = p_email;
-  if uid is null then
-    uid := gen_random_uuid();
-    insert into auth.users (
-      instance_id, id, aud, role, email, encrypted_password,
-      email_confirmed_at, created_at, updated_at,
-      raw_app_meta_data, raw_user_meta_data,
-      -- GoTrue expects '' (not NULL) in these, otherwise login errors with
-      -- "Database error querying schema".
-      confirmation_token, recovery_token, email_change, email_change_token_new,
-      email_change_token_current, phone_change, phone_change_token, reauthentication_token
-    ) values (
-      '00000000-0000-0000-0000-000000000000', uid, 'authenticated', 'authenticated',
-      p_email, crypt(p_password, gen_salt('bf')),
-      now(), now(), now(),
-      '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb,
-      '', '', '', '', '', '', '', ''
-    );
-    insert into auth.identities (
-      id, provider_id, user_id, identity_data, provider,
-      last_sign_in_at, created_at, updated_at
-    ) values (
-      gen_random_uuid(), p_email, uid,
-      jsonb_build_object('sub', uid::text, 'email', p_email), 'email',
-      now(), now(), now()
-    );
-  else
-    update auth.users set encrypted_password = crypt(p_password, gen_salt('bf')) where id = uid;
-  end if;
-  return uid;
-end $$;
+-- SECURITY: this file used to define a SECURITY DEFINER helper
+-- seed_auth_user(email, password) and contained a plaintext demo password.
+-- That helper was callable by `anon` via PostgREST (account takeover) and has
+-- been removed (007_security_hardening.sql drops it on existing databases).
+--
+-- Create the demo login yourself instead — never put passwords in SQL:
+--   Dashboard → Authentication → Users → "Invite user"
+--   (or the back-office "Neuer Kunde" form, which calls admin-create-user).
+-- This seed only links an EXISTING auth user to the demo company.
 
 do $$
 declare
@@ -65,11 +40,14 @@ begin
   on conflict (customer_number) do update set name = excluded.name
   returning id into cid;
 
-  uid := seed_auth_user('einkauf@brauhaus-lindental.de', 'Ballina2026!');
-
-  insert into b2b_profiles (user_id, company_id, name, email)
-  values (uid, cid, 'Markus Lindenthal', 'einkauf@brauhaus-lindental.de')
-  on conflict (user_id) do update set company_id = excluded.company_id, name = excluded.name;
+  select id into uid from auth.users where email = 'einkauf@brauhaus-lindental.de';
+  if uid is null then
+    raise notice 'auth user einkauf@brauhaus-lindental.de not found — invite it first, then re-run to link the profile';
+  else
+    insert into b2b_profiles (user_id, company_id, name, email)
+    values (uid, cid, 'Markus Lindenthal', 'einkauf@brauhaus-lindental.de')
+    on conflict (user_id) do update set company_id = excluded.company_id, name = excluded.name;
+  end if;
 
   select id into qid from b2b_quotes where company_id = cid and quote_number = 'AN-2026-0088';
   if qid is null then

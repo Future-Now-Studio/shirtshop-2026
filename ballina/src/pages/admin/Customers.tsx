@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query'
 import { Loader2, Plus, Search } from 'lucide-react'
-import { adminGetCustomers } from '@/lib/adminApi'
+import { adminGetCustomersPage } from '@/lib/adminApi'
+import { useDebounced } from '@/lib/useDebounced'
 import { formatEUR } from '@/lib/utils'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -10,24 +11,18 @@ import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/PageHeader'
 
 export default function Customers() {
-  const { data: customers = [], isLoading } = useQuery({
-    queryKey: ['admin', 'customers'],
-    queryFn: adminGetCustomers,
-  })
   const [q, setQ] = useState('')
-
-  const filtered = useMemo(() => {
-    const term = q.trim().toLowerCase()
-    if (!term) return customers
-    return customers.filter(
-      (c) =>
-        c.company.toLowerCase().includes(term) ||
-        (c.customerNumber ?? '').toLowerCase().includes(term) ||
-        (c.contactPerson ?? '').toLowerCase().includes(term) ||
-        c.email.toLowerCase().includes(term) ||
-        (c.billingAddress?.city ?? '').toLowerCase().includes(term),
-    )
-  }, [customers, q])
+  const search = useDebounced(q.trim(), 300)
+  const { data, isLoading, isError, error, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
+    queryKey: ['admin', 'customers', 'list', search],
+    queryFn: ({ pageParam }) => adminGetCustomersPage(search, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (last, pages) =>
+      last.hasMore ? pages.reduce((n, p) => n + p.rows.length, 0) : undefined,
+    placeholderData: keepPreviousData,
+  })
+  const filtered = data?.pages.flatMap((p) => p.rows) ?? []
+  const total = data?.pages[0]?.total
 
   return (
     <div>
@@ -59,10 +54,15 @@ export default function Customers() {
         <div className="grid place-items-center py-16">
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
+      ) : isError ? (
+        <p className="rounded-xl border border-dashed border-destructive/40 py-12 text-center text-sm text-destructive">
+          Kunden konnten nicht geladen werden: {(error as Error)?.message ?? 'Unbekannter Fehler'}
+        </p>
       ) : (
         <>
           <p className="mb-2 text-xs text-muted-foreground">
-            {filtered.length} von {customers.length} Kunden
+            {filtered.length}
+            {total != null ? ` von ${total}` : ''} Kunden{search ? ` für „${search}“` : ''}
           </p>
           <Card className="overflow-hidden">
             {/* Header row (desktop) */}
@@ -111,11 +111,19 @@ export default function Customers() {
               ))}
               {filtered.length === 0 && (
                 <p className="px-5 py-12 text-center text-sm text-muted-foreground">
-                  Kein Kunde gefunden für „{q}".
+                  {search ? `Kein Kunde gefunden für „${search}“.` : 'Noch keine Kunden angelegt.'}
                 </p>
               )}
             </div>
           </Card>
+          {hasNextPage && (
+            <div className="mt-4 flex justify-end">
+              <Button variant="outline" size="sm" onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
+                {isFetchingNextPage && <Loader2 className="size-4 animate-spin" />}
+                Mehr laden
+              </Button>
+            </div>
+          )}
         </>
       )}
     </div>

@@ -8,7 +8,7 @@ const CONTENT: Record<Doc, { title: string; body: { h?: string; p: string }[] }>
   impressum: {
     title: 'Impressum',
     body: [
-      { h: 'Angaben gemäß § 5 TMG', p: 'Ballina B2B Textildruck\nMusterstraße 1\n12345 Musterstadt' },
+      { h: 'Angaben gemäß § 5 DDG', p: 'Ballina B2B Textildruck\nMusterstraße 1\n12345 Musterstadt' },
       { h: 'Vertreten durch', p: 'Geschäftsführung: Vorname Nachname' },
       { h: 'Kontakt', p: 'Telefon: +49 (0)000 000000\nE-Mail: kontakt@ballina.de' },
       { h: 'Registereintrag', p: 'Eintragung im Handelsregister.\nRegistergericht: Amtsgericht Musterstadt\nRegisternummer: HRB 00000' },

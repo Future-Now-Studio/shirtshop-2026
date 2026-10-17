@@ -2,15 +2,16 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ArrowLeft, Check, Download, FileText, Loader2, X } from 'lucide-react'
-import { adminAttachInvoice, adminGetOrder, adminUpdateOrder } from '@/lib/adminApi'
+import { adminAttachInvoice, adminConfirmOrderPrices, adminGetOrder, adminUpdateOrder } from '@/lib/adminApi'
 import { invoiceHref } from '@/lib/invoices'
-import { formatDate, formatEUR, ITEM_PLACEHOLDER } from '@/lib/utils'
+import { formatDate, formatEUR, ITEM_PLACEHOLDER, NEXT_STATUS, VAT_RATE } from '@/lib/utils'
 import { ORDER_STATUS_LABELS, type OrderStatus } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { StatusBadge } from '@/components/ui/badge'
 import { Input, Label } from '@/components/ui/input'
 import { OrderTimeline } from '@/components/OrderTimeline'
+import { ArtworkLink } from '@/components/ArtworkLink'
 
 const STATUSES: OrderStatus[] = ['offen', 'in_bearbeitung', 'versendet', 'abgeschlossen', 'storniert']
 
@@ -27,6 +28,8 @@ export default function AdminOrderDetail() {
   const [trackingNumber, setTrackingNumber] = useState('')
   const [trackingUrl, setTrackingUrl] = useState('')
   const [saved, setSaved] = useState(false)
+  // Provisional prices (customer order without a confirmed price source).
+  const [prices, setPrices] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (order) {
@@ -34,8 +37,26 @@ export default function AdminOrderDetail() {
       setCarrier(order.trackingCarrier ?? '')
       setTrackingNumber(order.trackingNumber ?? '')
       setTrackingUrl(order.trackingUrl ?? '')
+      setPrices(Object.fromEntries(order.items.map((it) => [it.id, String(it.unitPrice)])))
     }
   }, [order])
+
+  const confirmPrices = useMutation({
+    mutationFn: () => {
+      const parsed: Record<string, number> = {}
+      for (const [itemId, raw] of Object.entries(prices)) {
+        const n = Number(raw.replace(',', '.'))
+        if (!Number.isFinite(n) || n < 0) throw new Error('Ungültiger Preis.')
+        parsed[itemId] = Math.round(n * 100) / 100
+      }
+      return adminConfirmOrderPrices(id, parsed)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'order', id] })
+      queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] })
+      queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] })
+    },
+  })
 
   const save = useMutation({
     mutationFn: () =>
@@ -120,18 +141,61 @@ export default function AdminOrderDetail() {
         </div>
       )}
 
+      {order.priceConfirmed === false && (
+        <Card className="mt-5 border-amber-300 p-4">
+          <p className="flex items-center gap-2 text-sm font-medium">
+            <AlertTriangle className="size-4 text-amber-600" /> Preise unbestätigt
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Diese Kundenbestellung enthält Artikel ohne bestätigten Preis (neuer Artikel, andere
+            Variante oder kleinere Menge als zuvor). Netto-Einzelpreise prüfen und bestätigen.
+          </p>
+          <div className="mt-3 space-y-2">
+            {order.items.map((it) => (
+              <div key={it.id} className="flex items-center gap-3 text-sm">
+                <span className="min-w-0 flex-1 truncate">
+                  {it.productName} · {it.color} · {it.size} · {it.quantity}×
+                </span>
+                <Input
+                  className="h-8 w-28 text-right"
+                  inputMode="decimal"
+                  value={prices[it.id] ?? ''}
+                  onChange={(e) => setPrices((p) => ({ ...p, [it.id]: e.target.value }))}
+                  aria-label={`Einzelpreis ${it.productName}`}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex items-center gap-3">
+            <Button variant="brand" size="sm" onClick={() => confirmPrices.mutate()} disabled={confirmPrices.isPending}>
+              {confirmPrices.isPending && <Loader2 className="size-4 animate-spin" />}
+              Preise bestätigen
+            </Button>
+            {confirmPrices.isError && (
+              <span className="text-sm text-destructive">{(confirmPrices.error as Error).message}</span>
+            )}
+          </div>
+        </Card>
+      )}
+
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         {/* Items */}
         <Card className="overflow-hidden lg:col-span-2">
           <div className="divide-y divide-border">
             {order.items.map((it) => (
-              <div key={it.id} className="flex items-center gap-3 px-5 py-4">
+              <div key={it.id} className="flex flex-wrap items-center gap-3 px-5 py-4">
                 <img src={it.imageUrl || ITEM_PLACEHOLDER} alt="" className="size-12 rounded-md border border-border object-cover" />
-                <div className="flex-1">
+                <div className="min-w-[10rem] flex-1">
                   <p className="font-medium">{it.productName}</p>
                   <p className="text-sm text-muted-foreground">
                     {it.color} · Größe {it.size}
+                    {it.printPosition ? ` · Druck: ${it.printPosition}` : ''}
                   </p>
+                  {it.artworkPath ? (
+                    <ArtworkLink path={it.artworkPath} name={it.artworkName} />
+                  ) : it.artworkName ? (
+                    <p className="text-xs text-muted-foreground">Datei (nicht hochgeladen): {it.artworkName}</p>
+                  ) : null}
                 </div>
                 <span className="text-sm text-muted-foreground">
                   {it.quantity} × {formatEUR(it.unitPrice)}
@@ -143,7 +207,10 @@ export default function AdminOrderDetail() {
             ))}
           </div>
           <div className="border-t border-border bg-muted/30 px-5 py-3 text-right text-sm">
-            Gesamt (netto): <span className="font-semibold">{formatEUR(order.total)}</span>
+            Warenwert (netto): <span className="font-semibold">{formatEUR(order.total)}</span>
+            {' · '}Versand: <span className="font-semibold">{order.shipping ? formatEUR(order.shipping) : 'kostenlos'}</span>
+            {' · '}Gesamt (brutto):{' '}
+            <span className="font-semibold">{formatEUR((order.total + (order.shipping ?? 0)) * (1 + VAT_RATE))}</span>
           </div>
         </Card>
 
@@ -161,12 +228,16 @@ export default function AdminOrderDetail() {
           <Card className="p-5">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Status</p>
             <div className="mt-3 flex flex-wrap gap-2">
-              {STATUSES.map((s) => (
+              {STATUSES.map((s) => {
+                const allowed = s === order.status || (NEXT_STATUS[order.status] ?? []).includes(s)
+                return (
                 <button
                   key={s}
                   onClick={() => setStatus(s)}
+                  disabled={!allowed}
+                  title={allowed ? undefined : 'Dieser Statuswechsel ist nicht möglich'}
                   className={
-                    'rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ' +
+                    'rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-35 ' +
                     (status === s
                       ? 'border-brand bg-brand-muted text-brand'
                       : 'border-border text-muted-foreground hover:bg-muted')
@@ -174,7 +245,8 @@ export default function AdminOrderDetail() {
                 >
                   {ORDER_STATUS_LABELS[s]}
                 </button>
-              ))}
+                )
+              })}
             </div>
 
             <div className="mt-5 space-y-3">
@@ -205,8 +277,13 @@ export default function AdminOrderDetail() {
               ) : null}
               {saved ? 'Gespeichert' : 'Änderungen speichern'}
             </Button>
+            {save.error && (
+              <p role="alert" className="mt-2 text-center text-xs text-destructive">
+                {save.error instanceof Error ? save.error.message : 'Speichern fehlgeschlagen.'}
+              </p>
+            )}
             <p className="mt-2 text-center text-xs text-muted-foreground">
-              Statuswechsel wird dem Kunden im Verlauf angezeigt.
+              Statuswechsel wird dem Kunden im Verlauf angezeigt; bei „Versendet“ und „Storniert“ erhält er eine E-Mail.
             </p>
           </Card>
 

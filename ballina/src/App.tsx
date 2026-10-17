@@ -1,5 +1,6 @@
-import { lazy, Suspense } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { lazy, Suspense, useEffect } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { AUTH_LINK_TYPE } from '@/lib/supabase'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from '@/lib/auth'
 import { OrderFlowProvider } from '@/lib/orderFlow'
@@ -18,6 +19,7 @@ import { CookieConsent } from '@/components/CookieConsent'
 // Split off less-frequent / admin-only screens so customers never download the
 // back-office bundle and the initial payload stays small.
 const Legal = lazy(() => import('@/pages/Legal'))
+const SetPassword = lazy(() => import('@/pages/SetPassword'))
 const AdminDashboard = lazy(() => import('@/pages/admin/AdminDashboard'))
 const Customers = lazy(() => import('@/pages/admin/Customers'))
 const AdminOrders = lazy(() => import('@/pages/admin/AdminOrders'))
@@ -35,6 +37,17 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false } },
 })
 
+/** Invite / reset links may point at the site root: send them to /passwort-setzen. */
+function AuthLinkRedirect() {
+  const navigate = useNavigate()
+  const { pathname } = useLocation()
+  useEffect(() => {
+    if (AUTH_LINK_TYPE && pathname !== '/passwort-setzen') navigate('/passwort-setzen', { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  return null
+}
+
 function PageFallback() {
   return (
     <div className="grid min-h-[40vh] place-items-center">
@@ -49,10 +62,12 @@ export default function App() {
       <AuthProvider>
         <BrowserRouter>
           <OrderFlowProvider>
+          <AuthLinkRedirect />
           <Suspense fallback={<PageFallback />}>
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/passwort-setzen" element={<SetPassword />} />
             <Route path="/impressum" element={<Legal doc="impressum" />} />
             <Route path="/datenschutz" element={<Legal doc="datenschutz" />} />
             <Route path="/agb" element={<Legal doc="agb" />} />

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { CheckCircle2, Loader2 } from 'lucide-react'
 import { formatEUR } from '@/lib/utils'
 import { createInquiry } from '@/lib/api'
+import { ARTWORK_ACCEPT, artworkProblem } from '@/lib/artwork'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input, Label, Textarea } from '@/components/ui/input'
@@ -15,6 +16,7 @@ export default function Inquiry({ embedded = false }: { embedded?: boolean }) {
   const [quantity, setQuantity] = useState('')
   const [deadline, setDeadline] = useState('')
   const [message, setMessage] = useState('')
+  const [artwork, setArtwork] = useState<File | null>(null)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -26,12 +28,14 @@ export default function Inquiry({ embedded = false }: { embedded?: boolean }) {
         quantity: Number(quantity) || 0,
         deadline: deadline || undefined,
         message: message || undefined,
+        artworkFile: artwork ?? undefined,
       })
       setSent(true)
       setProductType('')
       setQuantity('')
       setDeadline('')
       setMessage('')
+      setArtwork(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Anfrage fehlgeschlagen.')
     } finally {
@@ -115,6 +119,22 @@ export default function Inquiry({ embedded = false }: { embedded?: boolean }) {
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
               />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="artwork">Logo / Druckdatei (optional)</Label>
+              <Input
+                id="artwork"
+                type="file"
+                accept={ARTWORK_ACCEPT}
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null
+                  const problem = f ? artworkProblem(f) : null
+                  if (problem) { setError(problem); e.target.value = ''; setArtwork(null); return }
+                  setError('')
+                  setArtwork(f)
+                }}
+              />
+              <p className="text-xs text-muted-foreground">PDF, AI, EPS, SVG, PNG, JPG oder TIF · max. 25 MB</p>
             </div>
             {error && (
               <div className="rounded-lg bg-destructive/10 px-3 py-2.5 text-sm text-destructive">

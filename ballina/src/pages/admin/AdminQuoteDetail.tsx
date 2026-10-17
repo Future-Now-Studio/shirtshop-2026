@@ -1,6 +1,7 @@
 import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Loader2 } from 'lucide-react'
+import { ArrowLeft, Loader2, Printer } from 'lucide-react'
+import { openQuoteDocument } from '@/lib/documents'
 import { adminGetQuote } from '@/lib/adminApi'
 import { formatDate, formatEUR } from '@/lib/utils'
 import { QUOTE_STATUS_LABELS, type Quote } from '@/lib/types'
@@ -56,6 +57,16 @@ export default function AdminQuoteDetail() {
             {quote.quoteNumber} · {quote.companyName} · vom {formatDate(quote.createdAt)} · gültig bis{' '}
             {formatDate(quote.validUntil)}
           </p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          {quote.orderId && (
+            <Link to={`/admin/bestellung/${quote.orderId}`}>
+              <Button variant="outline" size="sm">Zur Bestellung</Button>
+            </Link>
+          )}
+          <Button variant="outline" size="sm" onClick={() => openQuoteDocument(quote, quote.companyName)}>
+            <Printer className="size-4" /> Als PDF / Drucken
+          </Button>
         </div>
       </div>
 

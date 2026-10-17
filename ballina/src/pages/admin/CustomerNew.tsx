@@ -82,6 +82,9 @@ export default function CustomerNew() {
           {create.isPending && <Loader2 className="size-4 animate-spin" />}
           Kunde anlegen
         </Button>
+        {create.isError && (
+          <p className="mt-2 text-sm text-destructive">{(create.error as Error).message}</p>
+        )}
         <p className="mt-2 text-xs text-muted-foreground">
           Legt Kd-Nr. &amp; Konditionen an. Bei aktivem Mailserver erhält die E-Mail-Adresse eine
           Einladung zum Passwort setzen und kann sich anschließend einloggen.

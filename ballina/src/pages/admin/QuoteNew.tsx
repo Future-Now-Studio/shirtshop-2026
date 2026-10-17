@@ -99,28 +99,28 @@ export default function QuoteNew() {
             <h3 className="text-sm font-semibold">Positionen</h3>
             <div className="mt-3 space-y-3">
               {rows.map((r, i) => (
-                <div key={i} className="grid grid-cols-12 items-end gap-2">
-                  <div className="col-span-12 sm:col-span-4">
-                    {i === 0 && <Label>Artikel</Label>}
+                <div key={i} className="grid grid-cols-12 items-end gap-2 border-b border-border pb-3 last:border-0 xl:border-0 xl:pb-0">
+                  <div className="col-span-12 xl:col-span-3">
+                    <Label className={i === 0 ? '' : 'xl:hidden'}>Artikel</Label>
                     <Input value={r.productName} onChange={(e) => setRow(i, { productName: e.target.value })} placeholder="z. B. Softshell-Jacke" />
                   </div>
-                  <div className="col-span-4 sm:col-span-2">
-                    {i === 0 && <Label>Farbe</Label>}
+                  <div className="col-span-6 sm:col-span-3 xl:col-span-2">
+                    <Label className={i === 0 ? '' : 'xl:hidden'}>Farbe</Label>
                     <Input value={r.color} onChange={(e) => setRow(i, { color: e.target.value })} placeholder="Schwarz" />
                   </div>
-                  <div className="col-span-3 sm:col-span-2">
-                    {i === 0 && <Label>Größe</Label>}
+                  <div className="col-span-6 sm:col-span-3 xl:col-span-2">
+                    <Label className={i === 0 ? '' : 'xl:hidden'}>Größe</Label>
                     <Input value={r.size} onChange={(e) => setRow(i, { size: e.target.value })} placeholder="L" />
                   </div>
-                  <div className="col-span-2 sm:col-span-1">
-                    {i === 0 && <Label>Menge</Label>}
+                  <div className="col-span-5 sm:col-span-2 xl:col-span-2">
+                    <Label className={i === 0 ? '' : 'xl:hidden'}>Menge</Label>
                     <Input type="number" min={1} value={r.quantity} onChange={(e) => setRow(i, { quantity: Number(e.target.value) || 0 })} />
                   </div>
-                  <div className="col-span-2 sm:col-span-2">
-                    {i === 0 && <Label>€/Stück</Label>}
+                  <div className="col-span-5 sm:col-span-3 xl:col-span-2">
+                    <Label className={i === 0 ? '' : 'xl:hidden'}>€/Stück</Label>
                     <Input type="number" min={0} step="0.01" value={r.unitPrice} onChange={(e) => setRow(i, { unitPrice: Number(e.target.value) || 0 })} />
                   </div>
-                  <div className="col-span-1 flex justify-end">
+                  <div className="col-span-2 flex justify-end sm:col-span-1">
                     <button
                       onClick={() => setRows((rs) => (rs.length > 1 ? rs.filter((_, idx) => idx !== i) : rs))}
                       className="grid size-9 place-items-center text-muted-foreground hover:text-destructive"

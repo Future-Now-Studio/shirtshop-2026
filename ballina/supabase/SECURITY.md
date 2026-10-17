@@ -15,6 +15,24 @@ Model: **one customer = one account** (no roles, no team, no approval workflow).
 - **Status history** — order status changes are captured automatically into
   `b2b_order_events` (tamper-evident timeline).
 
+## Hardening (`007_security_hardening.sql`)
+
+- `seed_auth_user()` removed (was a public password-reset backdoor); no
+  passwords in any migration.
+- Customers have **read-only** table access. All customer writes go through
+  `SECURITY DEFINER` RPCs that check ownership + state:
+  `create_order` (prices derived server-side from the company's confirmed
+  order history; otherwise `price_confirmed = false` for back-office review),
+  `accept_quote` (atomic, checks status + `valid_until`), `decline_quote`,
+  `cancel_order` (only while `offen`), `reclaim_order`, `expire_quotes`.
+  Admin-only: `admin_confirm_order_prices`.
+- Profiles cannot be inserted/re-pointed by customers (policy + trigger on
+  `user_id`/`company_id`/`email`).
+- Audit entries for customer actions are written by the RPCs; customers cannot
+  insert audit rows.
+- Order/quote/customer numbers come from DB sequences; UNIQUE constraints.
+- Private `invoices` bucket: admins full access, customers read `<company_id>/…`.
+
 ## Configure in the Supabase dashboard (cannot be done in SQL)
 
 1. **Disable public sign-ups** → Authentication → Providers → Email →
@@ -37,6 +55,6 @@ Model: **one customer = one account** (no roles, no team, no approval workflow).
 ## Apply
 
 ```bash
-# once the project is ACTIVE and reachable (IPv4 pooler string from dashboard):
+# existing project (003–006 live) → applies 007 only; add --fresh for a new project
 ./supabase/apply.sh "postgresql://postgres.<ref>:<pw>@aws-0-<region>.pooler.supabase.com:5432/postgres"
 ```

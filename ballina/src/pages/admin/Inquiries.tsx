@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/PageHeader'
+import { ArtworkLink } from '@/components/ArtworkLink'
 
 const STATUS_LABELS: Record<AdminInquiry['status'], string> = {
   neu: 'Neu',
@@ -69,6 +70,11 @@ export default function Inquiries() {
                     {i.deadline ? ` · bis ${formatDate(i.deadline)}` : ''}
                     {i.message ? ` · „${i.message}"` : ''}
                   </p>
+                  {i.artworkPath && (
+                    <div className="mt-1.5">
+                      <ArtworkLink path={i.artworkPath} name={i.artworkName} />
+                    </div>
+                  )}
                 </div>
                 <div className="flex shrink-0 gap-2">
                   {i.status !== 'abgeschlossen' && (

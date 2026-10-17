@@ -2,7 +2,7 @@ import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { CheckCircle2, Loader2 } from 'lucide-react'
 import { getOrder } from '@/lib/api'
-import { formatEUR } from '@/lib/utils'
+import { formatEUR, VAT_RATE } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 
@@ -41,9 +41,22 @@ export default function OrderSuccess() {
             <span className="font-medium">{order.items.length}</span>
           </div>
           <div className="mt-2 flex justify-between text-sm">
-            <span className="text-muted-foreground">Gesamt (netto)</span>
-            <span className="font-semibold">{formatEUR(order.total)}</span>
+            <span className="text-muted-foreground">Warenwert (netto)</span>
+            <span>{formatEUR(order.total)}</span>
           </div>
+          <div className="mt-2 flex justify-between text-sm">
+            <span className="text-muted-foreground">Versand (netto)</span>
+            <span>{order.shipping ? formatEUR(order.shipping) : 'kostenlos'}</span>
+          </div>
+          <div className="mt-2 flex justify-between border-t border-border pt-2 text-sm">
+            <span className="text-muted-foreground">Gesamt (brutto, inkl. {Math.round(VAT_RATE * 100)} % USt.)</span>
+            <span className="font-semibold">{formatEUR((order.total + (order.shipping ?? 0)) * (1 + VAT_RATE))}</span>
+          </div>
+          {order.priceConfirmed === false && (
+            <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Vorläufige Preise – unser Team bestätigt die Preise in Kürze.
+            </p>
+          )}
         </Card>
       )}
 

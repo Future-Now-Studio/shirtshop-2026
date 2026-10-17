@@ -2,11 +2,15 @@ import { supabase, USE_MOCK } from './supabase'
 import { uploadInvoice } from './invoices'
 import { ADMIN_CUSTOMERS, ADMIN_INQUIRIES, ADMIN_ORDERS, ADMIN_QUOTES } from './adminMock'
 import { MOCK_ORDERS } from './mockData'
+import { sendOrderEmail } from './api'
+import { berlinYearRange, budgetSpent } from './utils'
 import type {
   AdminInquiry,
   AdminOrder,
+  AdminOrderListItem,
   AdminQuote,
   AuditEntry,
+  Page,
   Company,
   OrderItem,
   OrderStatus,
@@ -14,6 +18,19 @@ import type {
 
 const REAL = !USE_MOCK && !!supabase
 const delay = (ms = 200) => new Promise((r) => setTimeout(r, ms))
+
+/** Page sizes for the "Mehr laden" lists. */
+export const ORDERS_PAGE_SIZE = 50
+export const CUSTOMERS_PAGE_SIZE = 50
+export const AUDIT_PAGE_SIZE = 100
+
+/**
+ * Make free text safe for a PostgREST `or=(…)` ilike filter: drop the
+ * characters that carry syntax there (, . ( ) " \ * %) and collapse spaces.
+ */
+function searchTerm(raw: string): string {
+  return raw.replace(/[,.()"\\*%:#]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80)
+}
 
 // ---------------------------------------------------------------------------
 // localStorage-backed mock helpers
@@ -86,6 +103,7 @@ function mapItems(rows: any[]): OrderItem[] {
     unitPrice: Number(it.unit_price ?? 0),
     printPosition: it.print_position ?? undefined,
     artworkName: it.artwork_name ?? undefined,
+      artworkPath: it.artwork_path ?? undefined,
   }))
 }
 
@@ -100,6 +118,8 @@ function mapAdminOrder(r: any): AdminOrder {
     orderNumber: r.order_number,
     status: r.status,
     total: Number(r.total ?? 0),
+    shipping: Number(r.shipping ?? 0),
+    priceConfirmed: r.price_confirmed ?? true,
     note: r.note ?? undefined,
     createdAt: r.created_at,
     trackingCarrier: r.tracking_carrier ?? undefined,
@@ -119,6 +139,7 @@ function mapAdminQuote(r: any): AdminQuote {
     companyId: r.company_id,
     companyName: r.b2b_companies?.name ?? '—',
     quoteNumber: r.quote_number,
+    orderId: r.order_id ?? undefined,
     title: r.title,
     createdAt: r.created_at,
     validUntil: r.valid_until,
@@ -160,6 +181,63 @@ export async function adminGetCustomers(): Promise<Company[]> {
   return load(K_CUST, ADMIN_CUSTOMERS)
 }
 
+/** Paged + server-side searched customer list (Kunden page). */
+export async function adminGetCustomersPage(search: string, offset: number): Promise<Page<Company>> {
+  const term = searchTerm(search)
+  const limit = CUSTOMERS_PAGE_SIZE
+  if (REAL) {
+    let query = supabase!
+      .from('b2b_companies')
+      .select('*, b2b_profiles(name,email,phone)', { count: 'exact' })
+      .order('name')
+      .order('id')
+      .range(offset, offset + limit - 1)
+    if (term) {
+      // Contact name / e-mail live on the profile → resolve matching companies first.
+      const { data: profs, error: pErr } = await supabase!
+        .from('b2b_profiles')
+        .select('company_id')
+        .or(`name.ilike.*${term}*,email.ilike.*${term}*`)
+        .limit(200)
+      if (pErr) throw pErr
+      const ids = [...new Set((profs ?? []).map((p: any) => p.company_id as string))]
+      const ors = [`name.ilike.*${term}*`, `customer_number.ilike.*${term}*`, `billing_city.ilike.*${term}*`]
+      if (ids.length) ors.push(`id.in.(${ids.join(',')})`)
+      query = query.or(ors.join(','))
+    }
+    const { data, error, count } = await query
+    if (error) throw error
+    const rows = (data ?? []).map(mapCompany)
+    return { rows, total: count ?? undefined, hasMore: count != null ? offset + rows.length < count : rows.length === limit }
+  }
+  await delay()
+  const t = term.toLowerCase()
+  const all = load(K_CUST, ADMIN_CUSTOMERS)
+    .filter((c) => !t || [c.company, c.customerNumber, c.contactPerson, c.email, c.billingAddress?.city]
+      .some((v) => (v ?? '').toLowerCase().includes(t)))
+    .sort((a, b) => a.company.localeCompare(b.company, 'de'))
+  const rows = all.slice(offset, offset + limit)
+  return { rows, total: all.length, hasMore: offset + rows.length < all.length }
+}
+
+/** Net total of a company's non-cancelled orders in a Berlin calendar year. */
+export async function adminGetBudgetSpent(companyId: string, year: number): Promise<number> {
+  if (REAL) {
+    const { from, to } = berlinYearRange(year)
+    const { data, error } = await supabase!
+      .from('b2b_orders')
+      .select('total')
+      .eq('company_id', companyId)
+      .neq('status', 'storniert')
+      .gte('created_at', from)
+      .lt('created_at', to)
+    if (error) throw error
+    return Math.round((data ?? []).reduce((s: number, r: any) => s + Number(r.total ?? 0), 0) * 100) / 100
+  }
+  await delay()
+  return budgetSpent(load(K_ORDERS, ADMIN_ORDERS).filter((o) => o.companyId === companyId), year)
+}
+
 export async function adminGetCustomer(id: string): Promise<Company | null> {
   if (REAL) {
     const { data, error } = await supabase!
@@ -178,9 +256,19 @@ export async function adminUpdateCustomer(id: string, patch: Partial<Company>): 
   if (REAL) {
     const row: Record<string, unknown> = {}
     if (patch.discountPercent !== undefined) row.discount_percent = patch.discountPercent
-    if (patch.annualBudget !== undefined) row.annual_budget = patch.annualBudget ?? null
+    // An explicit `annualBudget: undefined` clears the budget.
+    if ('annualBudget' in patch) row.annual_budget = patch.annualBudget ?? null
     if (patch.paymentTerms !== undefined) row.payment_terms = patch.paymentTerms
     if (patch.company !== undefined) row.name = patch.company
+    if (patch.vatId !== undefined) row.vat_id = patch.vatId || null
+    for (const [key, prefix] of [['billingAddress', 'billing'], ['deliveryAddress', 'delivery']] as const) {
+      const a = patch[key]
+      if (a === undefined) continue
+      row[`${prefix}_line1`] = a?.line1 || null
+      row[`${prefix}_zip`] = a?.zip || null
+      row[`${prefix}_city`] = a?.city || null
+      row[`${prefix}_country`] = a?.country || 'DE'
+    }
     if (Object.keys(row).length) {
       const { error: compErr } = await supabase!.from('b2b_companies').update(row).eq('id', id)
       if (compErr) throw compErr
@@ -224,13 +312,11 @@ export interface NewCustomerInput {
 }
 export async function adminCreateCustomer(input: NewCustomerInput): Promise<Company> {
   if (REAL) {
-    const { count } = await supabase!.from('b2b_companies').select('id', { count: 'exact', head: true })
-    const num = 10700 + (count ?? 0)
+    // customer_number comes from the DB sequence (b2b_customer_seq).
     const { data, error } = await supabase!
       .from('b2b_companies')
       .insert({
         name: input.company,
-        customer_number: `B2B-${num}`,
         discount_percent: input.discountPercent ?? 0,
         annual_budget: input.annualBudget ?? null,
         payment_terms: input.paymentTerms ?? '14 Tage netto',
@@ -238,25 +324,38 @@ export async function adminCreateCustomer(input: NewCustomerInput): Promise<Comp
       .select('*')
       .single()
     if (error) throw error
-    await logAuditReal('kunde.angelegt', data.name, `Neukunde ${data.customer_number}`, data.id)
-    // Create the login account + send invite via the serverless function
-    // (uses service_role; a browser cannot create auth users safely). Best-effort:
-    // the company exists regardless; the invite works once the function is deployed.
+
+    // Create the login account + send the invite via the serverless function
+    // (uses service_role; a browser cannot create auth users safely). If that
+    // fails, remove the company again and surface the error to the admin, so
+    // no customer is left without a working login and a retry is possible.
+    let inviteError: string | null = null
     try {
       const { data: sess } = await supabase!.auth.getSession()
       const token = sess.session?.access_token
-      if (token) {
+      if (!token) {
+        inviteError = 'Keine gültige Sitzung – bitte neu anmelden.'
+      } else {
         const res = await fetch('/api/admin-create-user', {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ companyId: data.id, email: input.email, name: input.contactPerson, phone: input.phone }),
         })
-        if (!res.ok) console.warn('[admin] Invite fehlgeschlagen:', await res.text())
+        if (!res.ok) {
+          const body = await res.json().catch(() => null)
+          inviteError = body?.error ?? `HTTP ${res.status}`
+        }
       }
-    } catch (e) {
-      console.warn('[admin] Invite-Function nicht erreichbar (Deploy nötig):', e)
+    } catch {
+      inviteError = 'Invite-Function nicht erreichbar (ist sie auf Netlify deployed?).'
     }
-    return mapCompany(data)
+    if (inviteError) {
+      await supabase!.from('b2b_companies').delete().eq('id', data.id)
+      throw new Error(`Kunde nicht angelegt – Einladung fehlgeschlagen: ${inviteError}`)
+    }
+
+    await logAuditReal('kunde.angelegt', data.name, `Neukunde ${data.customer_number}, Einladung an ${input.email} versendet`, data.id)
+    return mapCompany({ ...data, b2b_profiles: [{ name: input.contactPerson, email: input.email, phone: input.phone }] })
   }
   await delay(350)
   const list = load(K_CUST, ADMIN_CUSTOMERS)
@@ -285,26 +384,61 @@ const AUDIT_SEED: AuditEntry[] = [
   { id: 'as2', at: '2026-08-29T10:12:00Z', actor: 'admin@ballina.de', action: 'angebot.gesendet', entity: 'AN-2026-0088', detail: 'An Brauhaus Lindental GmbH' },
   { id: 'as3', at: '2026-08-27T09:31:00Z', actor: 'admin@ballina.de', action: 'kunde.angelegt', entity: 'Alpenblick Hotel & Resort', detail: 'B2B-10517' },
 ]
-export async function adminGetAudit(): Promise<AuditEntry[]> {
+export interface AuditCursor { at: string; id: string }
+
+function mapAudit(r: any): AuditEntry {
+  return {
+    id: String(r.id),
+    at: r.at,
+    actor: r.actor ?? '',
+    actorEmail: r.actor_email ?? undefined,
+    companyName: r.company_name ?? undefined,
+    action: r.action,
+    entity: r.entity ?? '',
+    detail: r.meta?.detail ?? '',
+  }
+}
+
+/**
+ * One page of the audit log, newest first (keyset pagination on at/id).
+ * Uses the admin-only RPC admin_audit_log (migration 011) which resolves the
+ * actor's e-mail from auth.users — b2b_admins is not readable across admins
+ * under RLS. Falls back to the plain table (no e-mails) if 011 is missing.
+ */
+export async function adminGetAudit(cursor?: AuditCursor): Promise<Page<AuditEntry>> {
+  const limit = AUDIT_PAGE_SIZE
   if (REAL) {
-    const { data, error } = await supabase!
+    const rpc = await supabase!.rpc('admin_audit_log', {
+      p_limit: limit,
+      p_before_at: cursor?.at ?? null,
+      p_before_id: cursor ? Number(cursor.id) : null,
+    })
+    if (!rpc.error) {
+      const rows = (rpc.data ?? []).map(mapAudit)
+      return { rows, hasMore: rows.length === limit }
+    }
+    // PGRST202 = function not found (011 not applied yet) → degrade gracefully.
+    if (rpc.error.code !== 'PGRST202') throw rpc.error
+    let query = supabase!
       .from('b2b_audit_log')
       .select('*')
       .order('at', { ascending: false })
-      .limit(200)
+      .order('id', { ascending: false })
+      .limit(limit)
+    if (cursor) query = query.or(`at.lt."${cursor.at}",and(at.eq."${cursor.at}",id.lt.${Number(cursor.id)})`)
+    const { data, error } = await query
     if (error) throw error
-    return (data ?? []).map((r: any) => ({
-      id: String(r.id),
-      at: r.at,
-      actor: r.actor ?? '—',
-      action: r.action,
-      entity: r.entity ?? '',
-      detail: r.meta?.detail ?? '',
-    }))
+    const rows = (data ?? []).map(mapAudit)
+    return { rows, hasMore: rows.length === limit }
   }
   await delay()
   const live = load<AuditEntry>(K_AUDIT, [])
-  return [...live, ...AUDIT_SEED].sort((a, b) => b.at.localeCompare(a.at))
+  const all = [...live, ...AUDIT_SEED]
+    .map((e) => ({ ...e, actorEmail: e.actorEmail ?? (e.actor.includes('@') ? e.actor : undefined) }))
+    .sort((a, b) => b.at.localeCompare(a.at))
+  const start = cursor ? all.findIndex((e) => e.id === cursor.id) + 1 : 0
+  const rows = all.slice(start, start + limit)
+  return { rows, hasMore: start + rows.length < all.length }
 }
 
 // ===========================================================================
@@ -318,6 +452,82 @@ export async function adminGetOrders(): Promise<AdminOrder[]> {
   }
   await delay()
   return load(K_ORDERS, ADMIN_ORDERS).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+}
+
+export type OrderFilter = OrderStatus | 'alle'
+
+function toListItem(o: AdminOrder, itemCount: number): AdminOrderListItem {
+  const rest: Partial<AdminOrder> = { ...o }
+  delete rest.items
+  delete rest.statusHistory
+  return { ...(rest as Omit<AdminOrder, 'items' | 'statusHistory'>), itemCount }
+}
+
+function mapAdminOrderListItem(r: any): AdminOrderListItem {
+  // b2b_order_items(count) comes back as [{ count: n }]
+  const agg = Array.isArray(r.b2b_order_items) ? r.b2b_order_items[0] : r.b2b_order_items
+  return toListItem(mapAdminOrder({ ...r, b2b_order_items: [], b2b_order_events: [] }), Number(agg?.count ?? 0))
+}
+
+/**
+ * Paged back-office order list, newest first. `search` matches the order
+ * number or the company name. Items are only counted, not loaded.
+ */
+export async function adminGetOrdersPage(
+  filter: OrderFilter,
+  search: string,
+  offset: number,
+): Promise<Page<AdminOrderListItem>> {
+  const term = searchTerm(search)
+  const limit = ORDERS_PAGE_SIZE
+  if (REAL) {
+    let query = supabase!
+      .from('b2b_orders')
+      .select('*, b2b_order_items(count), b2b_companies(name)', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(offset, offset + limit - 1)
+    if (filter !== 'alle') query = query.eq('status', filter)
+    if (term) {
+      const { data: comps, error: cErr } = await supabase!
+        .from('b2b_companies')
+        .select('id')
+        .ilike('name', `%${term}%`)
+        .limit(200)
+      if (cErr) throw cErr
+      const ors = [`order_number.ilike.*${term}*`]
+      const ids = (comps ?? []).map((c: any) => c.id as string)
+      if (ids.length) ors.push(`company_id.in.(${ids.join(',')})`)
+      query = query.or(ors.join(','))
+    }
+    const { data, error, count } = await query
+    if (error) throw error
+    const rows = (data ?? []).map(mapAdminOrderListItem)
+    return { rows, total: count ?? undefined, hasMore: count != null ? offset + rows.length < count : rows.length === limit }
+  }
+  await delay()
+  const t = term.toLowerCase().replace(/^#/, '')
+  const all = load(K_ORDERS, ADMIN_ORDERS)
+    .filter((o) => filter === 'alle' || o.status === filter)
+    .filter((o) => !t || o.orderNumber.toLowerCase().includes(t) || o.companyName.toLowerCase().includes(t))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  const rows = all.slice(offset, offset + limit).map((o) => toListItem(o, o.items.length))
+  return { rows, total: all.length, hasMore: offset + rows.length < all.length }
+}
+
+/** Number of orders per status (for the filter chips) — head-only count queries. */
+export async function adminGetOrderStatusCounts(): Promise<Record<OrderStatus, number>> {
+  const statuses: OrderStatus[] = ['offen', 'in_bearbeitung', 'versendet', 'abgeschlossen', 'storniert']
+  if (REAL) {
+    const res = await Promise.all(
+      statuses.map((st) => supabase!.from('b2b_orders').select('id', { count: 'exact', head: true }).eq('status', st)),
+    )
+    const err = res.find((r) => r.error)?.error
+    if (err) throw err
+    return Object.fromEntries(statuses.map((st, i) => [st, res[i].count ?? 0])) as Record<OrderStatus, number>
+  }
+  const all = load(K_ORDERS, ADMIN_ORDERS)
+  return Object.fromEntries(statuses.map((st) => [st, all.filter((o) => o.status === st).length])) as Record<OrderStatus, number>
 }
 
 export async function adminGetOrder(id: string): Promise<AdminOrder | null> {
@@ -387,7 +597,7 @@ export async function adminCreateManualOrder(input: NewOrderInput): Promise<Admi
     id: `ao_${Date.now()}`,
     companyId: customer.id,
     companyName: customer.company,
-    orderNumber: `2026-${String(seq).padStart(4, '0')}`,
+    orderNumber: `${new Date().getFullYear()}-${String(seq).padStart(4, '0')}`,
     status: input.status,
     total,
     note: input.note,
@@ -440,6 +650,28 @@ export async function adminAttachInvoice(id: string, name: string, dataUrl: stri
   return orders[idx]
 }
 
+/**
+ * Confirm (and optionally correct) the unit prices of an order whose prices
+ * are provisional (price_confirmed = false, see create_order()).
+ * `prices` maps order item id → net unit price.
+ */
+export async function adminConfirmOrderPrices(id: string, prices: Record<string, number>): Promise<AdminOrder> {
+  if (REAL) {
+    const { error } = await supabase!.rpc('admin_confirm_order_prices', { p_order_id: id, p_prices: prices })
+    if (error) throw new Error(error.message)
+    return (await adminGetOrder(id))!
+  }
+  await delay(300)
+  const orders = load(K_ORDERS, ADMIN_ORDERS)
+  const idx = orders.findIndex((o) => o.id === id)
+  if (idx < 0) throw new Error('Bestellung nicht gefunden.')
+  const items = orders[idx].items.map((it) => (prices[it.id] !== undefined ? { ...it, unitPrice: prices[it.id] } : it))
+  orders[idx] = { ...orders[idx], items, priceConfirmed: true, total: items.reduce((s, it) => s + it.unitPrice * it.quantity, 0) }
+  save(K_ORDERS, orders)
+  logAuditMock('bestellung.preise_bestaetigt', `#${orders[idx].orderNumber}`, 'Preise bestätigt')
+  return orders[idx]
+}
+
 export interface OrderUpdate {
   status?: OrderStatus
   note?: string
@@ -457,6 +689,9 @@ export async function adminUpdateOrder(id: string, patch: OrderUpdate): Promise<
     const { data, error } = await supabase!.from('b2b_orders').update(row).eq('id', id).select('order_number, company_id, status').single()
     if (error) throw error
     if (patch.status) await logAuditReal('bestellung.status', `#${data.order_number}`, `Status → ${patch.status}`, data.company_id)
+    if (patch.status === 'versendet' || patch.status === 'storniert') {
+      void sendOrderEmail(id, patch.status === 'versendet' ? 'shipped' : 'cancelled')
+    }
     return (await adminGetOrder(id))!
   }
   await delay(300)
@@ -483,6 +718,10 @@ export async function adminUpdateOrder(id: string, patch: OrderUpdate): Promise<
 // ===========================================================================
 export async function adminGetQuotes(): Promise<AdminQuote[]> {
   if (REAL) {
+    await supabase!.rpc('expire_quotes').then(
+      () => undefined,
+      () => undefined,
+    )
     const { data, error } = await supabase!.from('b2b_quotes').select(QUOTE_SELECT).order('created_at', { ascending: false })
     if (error) throw error
     return (data ?? []).map(mapAdminQuote)
@@ -511,11 +750,10 @@ export interface NewQuoteInput {
 export async function adminCreateQuote(input: NewQuoteInput): Promise<AdminQuote> {
   const total = input.items.reduce((s, it) => s + it.unitPrice * it.quantity, 0)
   if (REAL) {
-    const { count } = await supabase!.from('b2b_quotes').select('id', { count: 'exact', head: true })
-    const quoteNumber = `AN-2026-${String(89 + (count ?? 0)).padStart(4, '0')}`
+    // quote_number comes from the DB sequence (b2b_quote_seq).
     const { data: q, error } = await supabase!
       .from('b2b_quotes')
-      .insert({ company_id: input.companyId, quote_number: quoteNumber, title: input.title, status: 'offen', total, note: input.note, valid_until: input.validUntil })
+      .insert({ company_id: input.companyId, title: input.title, status: 'offen', total, note: input.note, valid_until: input.validUntil })
       .select('id, quote_number')
       .single()
     if (error) throw error
@@ -564,6 +802,8 @@ export async function adminGetInquiries(): Promise<AdminInquiry[]> {
       quantity: r.quantity ?? 0,
       deadline: r.deadline ?? undefined,
       message: r.message ?? undefined,
+      artworkName: r.artwork_name ?? undefined,
+      artworkPath: r.artwork_path ?? undefined,
       status: r.status,
       createdAt: r.created_at,
     }))
