@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { CheckCircle2, Loader2 } from 'lucide-react'
-import { formatEUR } from '@/lib/utils'
+import { useQueryClient } from '@tanstack/react-query'
+import { berlinDate } from '@/lib/utils'
 import { createInquiry } from '@/lib/api'
 import { ARTWORK_ACCEPT, artworkProblem } from '@/lib/artwork'
 import { Button } from '@/components/ui/button'
@@ -8,7 +9,15 @@ import { Card } from '@/components/ui/card'
 import { Input, Label, Textarea } from '@/components/ui/input'
 import { PageHeader } from '@/components/PageHeader'
 
-export default function Inquiry({ embedded = false }: { embedded?: boolean }) {
+export default function Inquiry({
+  embedded = false,
+  onShowInquiries,
+}: {
+  embedded?: boolean
+  /** Switches to the "Meine Anfragen" list (Angebote page). */
+  onShowInquiries?: () => void
+}) {
+  const queryClient = useQueryClient()
   const [sent, setSent] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -30,6 +39,7 @@ export default function Inquiry({ embedded = false }: { embedded?: boolean }) {
         message: message || undefined,
         artworkFile: artwork ?? undefined,
       })
+      queryClient.invalidateQueries({ queryKey: ['inquiries'] })
       setSent(true)
       setProductType('')
       setQuantity('')
@@ -54,12 +64,20 @@ export default function Inquiry({ embedded = false }: { embedded?: boolean }) {
           <div>
             <p className="text-lg font-semibold">Anfrage gesendet</p>
             <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-              Danke! Wir erstellen Ihnen ein individuelles Angebot und melden uns kurzfristig.
+              Danke! Wir erstellen Ihnen ein individuelles Angebot. Den Stand Ihrer Anfrage sehen Sie
+              unter „Meine Anfragen“; das Angebot erscheint unter „Angebote“.
             </p>
           </div>
-          <Button variant="outline" onClick={() => setSent(false)}>
-            Weitere Anfrage
-          </Button>
+          <div className="flex flex-wrap justify-center gap-2">
+            {onShowInquiries && (
+              <Button variant="brand" onClick={onShowInquiries}>
+                Meine Anfragen
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setSent(false)}>
+              Weitere Anfrage
+            </Button>
+          </div>
         </Card>
       </div>
     )
@@ -94,6 +112,7 @@ export default function Inquiry({ embedded = false }: { embedded?: boolean }) {
                   id="qty"
                   type="number"
                   min={1}
+                  max={100000}
                   placeholder="z. B. 250"
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
@@ -105,6 +124,7 @@ export default function Inquiry({ embedded = false }: { embedded?: boolean }) {
                 <Input
                   id="dl"
                   type="date"
+                  min={berlinDate()}
                   value={deadline}
                   onChange={(e) => setDeadline(e.target.value)}
                 />
@@ -149,21 +169,21 @@ export default function Inquiry({ embedded = false }: { embedded?: boolean }) {
         </Card>
 
         <Card className="h-fit bg-muted/40 p-5">
-          <h3 className="font-semibold tracking-tight">Ihre Vorteile</h3>
-          <ul className="mt-3 space-y-2.5 text-sm text-muted-foreground">
+          <h3 className="font-semibold tracking-tight">So geht es weiter</h3>
+          <ol className="mt-3 space-y-2.5 text-sm text-muted-foreground">
             <li className="flex gap-2">
               <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-brand" />
-              Staffelpreise ab {formatEUR(9.9)} pro Stück
+              Wir prüfen Ihre Anfrage und melden uns bei Rückfragen persönlich.
             </li>
             <li className="flex gap-2">
               <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-brand" />
-              Persönlicher Ansprechpartner
+              Sie erhalten ein individuelles Angebot zu Ihren Mengen – hier unter „Angebote“.
             </li>
             <li className="flex gap-2">
               <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-brand" />
-              Angebot innerhalb von 24 h
+              Angebot im Portal prüfen und verbindlich annehmen.
             </li>
-          </ul>
+          </ol>
         </Card>
       </div>
     </div>

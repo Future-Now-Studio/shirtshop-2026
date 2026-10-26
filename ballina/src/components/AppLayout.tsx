@@ -1,17 +1,26 @@
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ShoppingBag, FileCheck2, LogOut, Menu, X } from 'lucide-react'
+import { ShoppingBag, FileCheck2, LogOut, Menu, UserRound, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { getCompany } from '@/lib/api'
 import { BrandMark } from './BrandMark'
+import { RouteErrorBoundary } from './ErrorBoundary'
+import { LoadingState } from './ui/load-state'
 
 // `match` keeps the item active on the singular detail routes too
 // (/bestellung/:id) which don't share the plural nav prefix.
 const NAV = [
   { to: '/bestellungen', label: 'Bestellungen', icon: ShoppingBag, match: ['/bestellungen', '/bestellung'] },
   { to: '/angebote', label: 'Angebote & Anfragen', icon: FileCheck2, match: ['/angebote', '/anfrage'] },
+  { to: '/konto', label: 'Mein Konto', icon: UserRound, match: ['/konto'] },
+]
+
+const LEGAL_LINKS = [
+  ['/impressum', 'Impressum'],
+  ['/datenschutz', 'Datenschutz'],
+  ['/agb', 'AGB'],
 ]
 
 /** Active when the path equals a prefix or is a sub-route of it. */
@@ -73,14 +82,18 @@ export function AppLayout() {
         </nav>
 
         <div className="border-t border-border p-3">
-          <div className="rounded-lg bg-muted/60 px-3 py-2.5">
+          <Link
+            to="/konto"
+            onClick={() => setMobileOpen(false)}
+            className="block rounded-lg bg-muted/60 px-3 py-2.5 hover:bg-muted"
+          >
             <p className="truncate text-sm font-medium">{company?.company ?? 'Ballina B2B'}</p>
             {company?.customerNumber && (
               <p className="truncate text-xs text-muted-foreground">
                 Kd-Nr. {company.customerNumber}
               </p>
             )}
-          </div>
+          </Link>
           <button
             onClick={handleLogout}
             className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -88,6 +101,13 @@ export function AppLayout() {
             <LogOut className="size-4.5" />
             Abmelden
           </button>
+          <nav className="mt-2 flex flex-wrap gap-x-3 gap-y-1 px-3 text-xs text-muted-foreground" aria-label="Rechtliches">
+            {LEGAL_LINKS.map(([to, label]) => (
+              <Link key={to} to={to} className="hover:text-foreground">
+                {label}
+              </Link>
+            ))}
+          </nav>
         </div>
       </aside>
 
@@ -116,7 +136,13 @@ export function AppLayout() {
         </header>
 
         <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-          <Outlet />
+          {/* A broken page keeps the navigation usable. */}
+          <RouteErrorBoundary>
+            {/* Lazy pages (Konto) load inside the layout, the sidebar stays. */}
+            <Suspense fallback={<LoadingState />}>
+              <Outlet />
+            </Suspense>
+          </RouteErrorBoundary>
         </main>
       </div>
     </div>

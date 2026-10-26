@@ -1,23 +1,40 @@
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { useCart, unitPrice } from "@/stores/cart";
-import { fetchDiscountData, computeTotals, vatLabel } from "@/lib/pricing";
+import { designExpired, useCart, unitPrice } from "@/stores/cart";
+import { fetchDiscountData, computeTotals, nextVolumeTier, vatLabel } from "@/lib/pricing";
 import { Button } from "@/components/ui/button";
+import { DeliveryTime } from "@/components/DeliveryTime";
 import { eur } from "@/lib/utils";
 
-/** Sizes selectable per variant, with availability + stock. */
+/**
+ * Sizes selectable per variant (only sizes the product still offers), with
+ * availability + stock, and the variants (colours) that no longer exist — a
+ * persisted cart can outlive catalogue changes, and checkout would reject it.
+ */
 async function fetchSizeOptions(variantIds: string[]) {
-  if (!variantIds.length) return {} as Record<string, SizeOpt[]>;
-  const { data, error } = await supabase
-    .from("variant_size_availability")
-    .select("variant_id, size_id, available, stock, sizes(name, sort_order)")
-    .in("variant_id", variantIds);
-  if (error) throw error;
-  const map: Record<string, SizeOpt[]> = {};
-  for (const r of data ?? []) {
-    (map[r.variant_id] ??= []).push({
+  const opts: Record<string, SizeOpt[]> = {};
+  const gone = new Set<string>();
+  if (!variantIds.length) return { opts, gone };
+  const [avail, vars] = await Promise.all([
+    supabase
+      .from("variant_size_availability")
+      .select("variant_id, size_id, available, stock, sizes(name, sort_order)")
+      .in("variant_id", variantIds),
+    supabase.from("variants").select("id, products(product_sizes(size_id))").in("id", variantIds),
+  ]);
+  if (avail.error) throw avail.error;
+  if (vars.error) throw vars.error;
+  const offered = new Map<string, Set<string>>();
+  for (const v of vars.data ?? []) {
+    offered.set(v.id, new Set(((v as any).products?.product_sizes ?? []).map((ps: any) => ps.size_id)));
+  }
+  for (const id of variantIds) if (!offered.has(id)) gone.add(id);
+  for (const r of avail.data ?? []) {
+    if (!offered.get(r.variant_id)?.has(r.size_id)) continue;
+    (opts[r.variant_id] ??= []).push({
       sizeId: r.size_id,
       name: (r as any).sizes?.name ?? "—",
       sort: (r as any).sizes?.sort_order ?? 0,
@@ -25,16 +42,16 @@ async function fetchSizeOptions(variantIds: string[]) {
       stock: r.stock ?? 0,
     });
   }
-  for (const k of Object.keys(map)) map[k].sort((a, b) => a.sort - b.sort);
-  return map;
+  for (const k of Object.keys(opts)) opts[k].sort((a, b) => a.sort - b.sort);
+  return { opts, gone };
 }
 type SizeOpt = { sizeId: string; name: string; sort: number; available: boolean; stock: number };
 
 export default function Cart() {
-  const { items, remove, setQty, setSize } = useCart();
+  const { items, remove, setQty, setSize, syncPrices } = useCart();
   const productIds = [...new Set(items.map((i) => i.productId))];
   const variantIds = [...new Set(items.map((i) => i.variantId))];
-  const { data } = useQuery({
+  const { data, isError, refetch } = useQuery({
     queryKey: ["cart-discounts", productIds.join(",")],
     queryFn: () => fetchDiscountData(productIds),
   });
@@ -42,6 +59,12 @@ export default function Cart() {
     queryKey: ["cart-sizes", variantIds.join(",")],
     queryFn: () => fetchSizeOptions(variantIds),
   });
+  // Prices are stored with the cart line; bring them up to date with the
+  // catalogue (the checkout charges current prices) and say so.
+  const [pricesChanged, setPricesChanged] = useState(false);
+  useEffect(() => {
+    if (data && syncPrices(data.prices)) setPricesChanged(true);
+  }, [data, syncPrices]);
 
   if (items.length === 0)
     return (
@@ -54,6 +77,21 @@ export default function Cart() {
     );
 
   const totals = data ? computeTotals(items, data.discounts, data.excluded, data.cfg) : null;
+  const nextTier = data && totals && totals.eligibleQty > 0 ? nextVolumeTier(totals.eligibleQty, data.discounts) : null;
+  const unavailable = (i: (typeof items)[number]) =>
+    (!!data && !data.prices[i.productId]) || !!sizeOpts?.gone.has(i.variantId);
+  // No size chosen, or the chosen size was removed from the product.
+  const missingSize = (i: (typeof items)[number]) => {
+    const opts = sizeOpts?.opts[i.variantId] ?? [];
+    return opts.length > 0 && !opts.some((o) => o.sizeId === i.sizeId);
+  };
+  const blocker = items.some(unavailable)
+    ? "Bitte entferne Artikel, die nicht mehr erhältlich sind."
+    : items.some(designExpired)
+      ? "Ein Design ist älter als 4 Wochen und nicht mehr gespeichert. Bitte entferne die Position und gestalte sie neu."
+    : items.some(missingSize)
+      ? "Bitte wähle für jede Position eine Größe."
+      : null;
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -75,18 +113,21 @@ export default function Cart() {
                 {i.designElementCount > 0 && ` · ${i.designElementCount} Design-Element(e)`}
               </p>
               <p className="text-xs tabular-nums text-muted-foreground">{eur(unitPrice(i))} / Stück</p>
+              {unavailable(i) && <p className="text-xs font-medium text-destructive">Nicht mehr erhältlich</p>}
+              {designExpired(i) && <p className="text-xs font-medium text-destructive">Design abgelaufen – bitte neu gestalten</p>}
             </div>
 
             {/* Controls: eigene Zeile auf Mobile */}
             <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-nowrap">
             {/* Größe */}
             {(() => {
-              const opts = sizeOpts?.[i.variantId] ?? [];
+              const opts = sizeOpts?.opts[i.variantId] ?? [];
+              const known = opts.some((o) => o.sizeId === i.sizeId);
               if (opts.length === 0)
                 return <span className="w-16 text-center text-xs text-muted-foreground">{i.sizeName ?? "—"}</span>;
               return (
                 <select
-                  value={i.sizeId ?? ""}
+                  value={known ? i.sizeId! : ""}
                   onChange={(e) => {
                     const o = opts.find((x) => x.sizeId === e.target.value);
                     if (o) setSize(i.key, o.sizeId, o.name);
@@ -94,6 +135,7 @@ export default function Cart() {
                   className="h-9 w-20 shrink-0 rounded-md border border-input bg-background px-2 text-sm"
                   aria-label="Größe"
                 >
+                  {!known && <option value="" disabled>Größe</option>}
                   {opts.map((o) => (
                     <option key={o.sizeId} value={o.sizeId} disabled={!o.available}>
                       {o.name}{!o.available ? " (aus)" : ""}
@@ -105,7 +147,7 @@ export default function Cart() {
 
             {/* Menge */}
             {(() => {
-              const opt = (sizeOpts?.[i.variantId] ?? []).find((o) => o.sizeId === i.sizeId);
+              const opt = (sizeOpts?.opts[i.variantId] ?? []).find((o) => o.sizeId === i.sizeId);
               const max = opt?.stock ?? 999;
               const set = (n: number) => setQty(i.key, Math.max(1, Math.min(max, n)));
               return (
@@ -113,7 +155,7 @@ export default function Cart() {
                   <button onClick={() => set(i.qty - 1)} disabled={i.qty <= 1}
                     className="flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent disabled:opacity-30">−</button>
                   <input type="number" min={1} max={max} value={i.qty}
-                    onChange={(e) => set(Number(e.target.value))}
+                    onChange={(e) => set(Math.trunc(Number(e.target.value)) || 0)}
                     className="h-9 w-12 rounded-md border border-input bg-background text-center text-sm" />
                   <button onClick={() => set(i.qty + 1)} disabled={i.qty >= max}
                     className="flex h-8 w-8 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent disabled:opacity-30">+</button>
@@ -130,7 +172,19 @@ export default function Cart() {
         ))}
       </ul>
 
+      {pricesChanged && (
+        <p role="status" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          Die Preise einiger Artikel haben sich seit dem Hinzufügen geändert. Dein Warenkorb zeigt die aktuellen Preise.
+        </p>
+      )}
+
       <div className="mt-6 ml-auto max-w-sm rounded-2xl border bg-card p-6 shadow-card">
+        {isError && (
+          <p role="alert" className="mb-3 text-sm text-destructive">
+            Die Preise konnten nicht geladen werden.{" "}
+            <button type="button" className="underline" onClick={() => refetch()}>Erneut versuchen</button>
+          </p>
+        )}
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Zwischensumme</span>
@@ -141,6 +195,11 @@ export default function Cart() {
               <span>Mengenrabatt ({totals.pct}%)</span>
               <span className="tabular-nums">−{eur(totals.discount)}</span>
             </div>
+          )}
+          {nextTier && (
+            <p className="text-xs text-muted-foreground">
+              Noch {nextTier.missing} Stück bis {nextTier.pct} % Mengenrabatt.
+            </p>
           )}
           <div className="flex justify-between">
             <span className="text-muted-foreground">Versand</span>
@@ -159,9 +218,15 @@ export default function Cart() {
             <p className="text-right text-xs text-muted-foreground">inkl. {eur(totals.vat)} MwSt ({vatLabel(totals.cfg)})</p>
           )}
         </div>
-        <Link to="/kasse" className="mt-4 block">
-          <Button className="w-full" size="lg">Zur Kasse</Button>
-        </Link>
+        <DeliveryTime className="mt-4" />
+        {blocker && <p className="mt-3 text-sm text-destructive">{blocker}</p>}
+        {totals && !blocker ? (
+          <Link to="/kasse" className="mt-4 block">
+            <Button className="w-full" size="lg">Zur Kasse</Button>
+          </Link>
+        ) : (
+          <Button className="mt-4 w-full" size="lg" disabled>Zur Kasse</Button>
+        )}
       </div>
     </div>
   );

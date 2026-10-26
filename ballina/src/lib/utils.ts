@@ -22,15 +22,15 @@ export function formatDate(iso: string): string {
   }).format(new Date(iso))
 }
 
-/** #3 Company conditions — apply the customer's hinterlegten Rabatt to a list price. */
-export function netPrice(basePrice: number, discountPercent = 0): number {
-  const net = basePrice * (1 - discountPercent / 100)
-  return Math.round(net * 100) / 100
+/** Calendar date (YYYY-MM-DD) in the business time zone. */
+export function berlinDate(d: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' }).format(d)
 }
 
-/** Calendar date (YYYY-MM-DD) in the business time zone. */
-function berlinDate(d: Date): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' }).format(d)
+/** A date-only value (YYYY-MM-DD) as dd.mm.yyyy — no time-zone shift. */
+export function formatDay(day: string): string {
+  const [y, m, d] = day.split('-')
+  return d && m && y ? `${d}.${m}.${y}` : day
 }
 
 /**
@@ -58,34 +58,17 @@ export function shippingFor(netSubtotal: number): number {
   return netSubtotal >= FREE_SHIPPING_FROM || netSubtotal === 0 ? 0 : FLAT_SHIPPING
 }
 
+// VAT is rounded once, in cents, and gross = net + VAT — the same rule in the
+// dialog, order pages, documents and mails (send-order-email.mjs mirrors it).
+const toCents = (n: number) => Math.round(n * 100 + 1e-9)
+
+/** VAT on a net amount, rounded to cents. */
+export function vatFrom(net: number): number {
+  return Math.round(toCents(net) * VAT_RATE + 1e-9) / 100
+}
+
 export function grossFrom(net: number): number {
-  return Math.round(net * (1 + VAT_RATE) * 100) / 100
-}
-
-// #10 Staffelpreise — resolve the list unit price for a quantity, then apply the
-// company discount. Falls back to the product base price when no tier matches.
-import type { CartLine, Product } from './types'
-export function tierListPrice(product: Product, qty: number): number {
-  const tiers = product.priceTiers ?? []
-  const match = tiers
-    .filter((t) => qty >= t.minQty)
-    .sort((a, b) => b.minQty - a.minQty)[0]
-  return match ? match.unitPrice : product.basePrice
-}
-export function tierNetPrice(product: Product, qty: number, discountPercent = 0): number {
-  return netPrice(tierListPrice(product, qty), discountPercent)
-}
-
-/**
- * Re-resolve a cart line's unit price against the current catalogue + company
- * discount, so quantity changes always hit the right Staffel. Lines whose
- * product is not in the catalogue (e.g. quote items with negotiated prices)
- * keep their stored price.
- */
-export function repriceLine(line: CartLine, products: Product[], discountPercent = 0): CartLine {
-  const product = products.find((p) => p.id === line.productId)
-  if (!product) return line
-  return { ...line, unitPrice: tierNetPrice(product, line.quantity, discountPercent) }
+  return (toCents(net) + Math.round(toCents(net) * VAT_RATE + 1e-9)) / 100
 }
 
 /** Allowed order status transitions — mirrors 010_order_status_rules.sql. */
@@ -122,4 +105,70 @@ export function budgetSpent(
     .filter((o) => o.status !== 'storniert' && berlinYear(new Date(o.createdAt)) === year)
     .reduce((s, o) => s + o.total, 0)
   return Math.round(sum * 100) / 100
+}
+
+/** Non-cancelled orders of the year whose prices are still provisional (not fully in the budget yet). */
+export function budgetPending(
+  orders: { status: string; createdAt: string; priceConfirmed?: boolean }[],
+  year = berlinYear(),
+): number {
+  return orders.filter(
+    (o) => o.status !== 'storniert' && o.priceConfirmed === false && berlinYear(new Date(o.createdAt)) === year,
+  ).length
+}
+
+/**
+ * Open a link that first has to be resolved asynchronously (signed storage
+ * URL) in a new tab. The tab is opened synchronously inside the click so
+ * Safari's popup blocker allows it, then pointed at the URL. Returns false
+ * when the URL could not be resolved (the empty tab is closed again).
+ */
+export async function openInNewTab(resolve: () => Promise<string | null | undefined>): Promise<boolean> {
+  const w = window.open('', '_blank')
+  if (w) {
+    try {
+      w.document.title = 'Dokument wird geladen…'
+      w.document.body.style.fontFamily = 'system-ui, sans-serif'
+      w.document.body.textContent = 'Dokument wird geladen…'
+    } catch {
+      /* ignore */
+    }
+  }
+  let url: string | null | undefined
+  try {
+    url = await resolve()
+  } catch {
+    url = null
+  }
+  if (!url) {
+    w?.close()
+    return false
+  }
+  if (w) {
+    w.opener = null
+    w.location.href = url
+  } else {
+    // Popup blocked anyway → open in the current tab instead of doing nothing.
+    window.location.href = url
+  }
+  return true
+}
+
+/** Build a CSV (semicolon, German Excel) and download it. Cells starting with =+-@ are quoted against formula injection. */
+export function downloadCsv(filename: string, rows: (string | number | null | undefined)[][]): void {
+  const cell = (v: string | number | null | undefined) => {
+    if (typeof v === 'number') return v.toLocaleString('de-DE', { maximumFractionDigits: 2, useGrouping: false })
+    let s = v ?? ''
+    if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`
+    return /[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const csv = '\uFEFF' + rows.map((r) => r.map(cell).join(';')).join('\r\n')
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }

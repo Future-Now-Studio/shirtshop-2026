@@ -27,6 +27,7 @@ export type Database = {
       };
       bulk_inquiries: {
         Row: {
+          notified_at: string | null;
           anrede: string | null;
           bemerkungen: string | null;
           created_at: string;
@@ -46,6 +47,7 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          notified_at?: string | null;
           anrede?: string | null;
           bemerkungen?: string | null;
           created_at?: string;
@@ -64,6 +66,7 @@ export type Database = {
           vorname?: string | null;
         };
         Update: {
+          notified_at?: string | null;
           anrede?: string | null;
           bemerkungen?: string | null;
           created_at?: string;
@@ -85,23 +88,38 @@ export type Database = {
       };
       checkout_carts: {
         Row: {
+          coupon_id: string | null;
           created_at: string;
           customer: NonNullable<Json>;
+          failure_alerted_at: string | null;
           items: NonNullable<Json>;
           payment_intent_id: string;
+          prices: Json | null;
+          released_at: string | null;
+          secret_hash: string | null;
         };
         ComputedFields: never;
         Insert: {
+          coupon_id?: string | null;
           created_at?: string;
           customer: NonNullable<Json>;
+          failure_alerted_at?: string | null;
           items: NonNullable<Json>;
           payment_intent_id: string;
+          prices?: Json | null;
+          released_at?: string | null;
+          secret_hash?: string | null;
         };
         Update: {
+          coupon_id?: string | null;
           created_at?: string;
           customer?: NonNullable<Json>;
+          failure_alerted_at?: string | null;
           items?: NonNullable<Json>;
           payment_intent_id?: string;
+          prices?: Json | null;
+          released_at?: string | null;
+          secret_hash?: string | null;
         };
         Relationships: [];
       };
@@ -132,6 +150,7 @@ export type Database = {
       };
       contact_messages: {
         Row: {
+          notified_at: string | null;
           created_at: string;
           email: string;
           handled: boolean;
@@ -141,6 +160,7 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          notified_at?: string | null;
           created_at?: string;
           email: string;
           handled?: boolean;
@@ -149,6 +169,7 @@ export type Database = {
           name: string;
         };
         Update: {
+          notified_at?: string | null;
           created_at?: string;
           email?: string;
           handled?: boolean;
@@ -203,17 +224,26 @@ export type Database = {
       };
       invoices: {
         Row: {
+          emailed_at: string | null;
+          pdf_path: string | null;
+          vat_rate: number | null;
           invoice_number: string;
           issued_at: string;
           order_id: string;
         };
         ComputedFields: never;
         Insert: {
+          emailed_at?: string | null;
+          pdf_path?: string | null;
+          vat_rate?: number | null;
           invoice_number: string;
           issued_at?: string;
           order_id: string;
         };
         Update: {
+          emailed_at?: string | null;
+          pdf_path?: string | null;
+          vat_rate?: number | null;
           invoice_number?: string;
           issued_at?: string;
           order_id?: string;
@@ -263,8 +293,10 @@ export type Database = {
           id: string;
           order_id: string;
           product_id: string | null;
+          product_name: string | null;
           qty: number;
           size_id: string | null;
+          stock_taken: number | null;
           unit_price: number;
           variant_id: string | null;
         };
@@ -275,8 +307,10 @@ export type Database = {
           id?: string;
           order_id: string;
           product_id?: string | null;
+          product_name?: string | null;
           qty: number;
           size_id?: string | null;
+          stock_taken?: number | null;
           unit_price: number;
           variant_id?: string | null;
         };
@@ -286,8 +320,10 @@ export type Database = {
           id?: string;
           order_id?: string;
           product_id?: string | null;
+          product_name?: string | null;
           qty?: number;
           size_id?: string | null;
+          stock_taken?: number | null;
           unit_price?: number;
           variant_id?: string | null;
         };
@@ -322,8 +358,65 @@ export type Database = {
           },
         ];
       };
+      order_refunds: {
+        Row: {
+          amount: number;
+          created_at: string;
+          created_by: string | null;
+          credit_note_issued_at: string | null;
+          credit_note_number: string | null;
+          credit_note_pdf_path: string | null;
+          full_refund: boolean;
+          id: string;
+          order_id: string;
+          reason: string | null;
+          stripe_refund_id: string | null;
+        };
+        ComputedFields: never;
+        Insert: {
+          amount: number;
+          created_at?: string;
+          created_by?: string | null;
+          credit_note_issued_at?: string | null;
+          credit_note_number?: string | null;
+          credit_note_pdf_path?: string | null;
+          full_refund?: boolean;
+          id: string;
+          order_id: string;
+          reason?: string | null;
+          stripe_refund_id?: string | null;
+        };
+        Update: {
+          amount?: number;
+          created_at?: string;
+          created_by?: string | null;
+          credit_note_issued_at?: string | null;
+          credit_note_number?: string | null;
+          credit_note_pdf_path?: string | null;
+          full_refund?: boolean;
+          id?: string;
+          order_id?: string;
+          reason?: string | null;
+          stripe_refund_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "order_refunds_order_id_fkey";
+            columns: ["order_id"];
+            isOneToOne: false;
+            referencedRelation: "orders";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       orders: {
         Row: {
+          anonymized_at: string | null;
+          internal_note: string | null;
+          refunded_amount: number;
+          ship_email_sent_at: string | null;
+          order_number: string | null;
+          review_reason: string | null;
           coupon_code: string | null;
           created_at: string;
           customer_address: Json | null;
@@ -342,6 +435,12 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          anonymized_at?: string | null;
+          internal_note?: string | null;
+          refunded_amount?: number;
+          ship_email_sent_at?: string | null;
+          order_number?: string | null;
+          review_reason?: string | null;
           coupon_code?: string | null;
           created_at?: string;
           customer_address?: Json | null;
@@ -359,6 +458,12 @@ export type Database = {
           volume_discount_amount?: number;
         };
         Update: {
+          anonymized_at?: string | null;
+          internal_note?: string | null;
+          refunded_amount?: number;
+          ship_email_sent_at?: string | null;
+          order_number?: string | null;
+          review_reason?: string | null;
           coupon_code?: string | null;
           created_at?: string;
           customer_address?: Json | null;
@@ -498,6 +603,7 @@ export type Database = {
       };
       reviews: {
         Row: {
+          notified_at: string | null;
           approved: boolean;
           created_at: string;
           id: string;
@@ -508,6 +614,7 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          notified_at?: string | null;
           approved?: boolean;
           created_at?: string;
           id?: string;
@@ -517,6 +624,7 @@ export type Database = {
           text: string;
         };
         Update: {
+          notified_at?: string | null;
           approved?: boolean;
           created_at?: string;
           id?: string;
@@ -537,6 +645,8 @@ export type Database = {
       };
       settings: {
         Row: {
+          delivery_time: string;
+          low_stock_threshold: number;
           design_element_price: number;
           free_shipping_threshold: number;
           id: number;
@@ -547,6 +657,8 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          delivery_time?: string;
+          low_stock_threshold?: number;
           design_element_price?: number;
           free_shipping_threshold?: number;
           id?: number;
@@ -556,6 +668,8 @@ export type Database = {
           vat_rate?: number;
         };
         Update: {
+          delivery_time?: string;
+          low_stock_threshold?: number;
           design_element_price?: number;
           free_shipping_threshold?: number;
           id?: number;
@@ -722,9 +836,28 @@ export type Database = {
       };
     };
     Views: {
-      [_ in never]: never;
+      low_stock: {
+        Row: {
+          available: boolean;
+          color_name: string;
+          product_id: string;
+          product_name: string;
+          product_status: string;
+          size_id: string;
+          size_name: string;
+          size_sort: number;
+          stock: number;
+          threshold: number;
+          variant_id: string;
+          variant_sort: number;
+        };
+        Relationships: [];
+      };
     };
     Functions: {
+      admin_order_stats: { Args: Record<PropertyKey, never>; Returns: Json };
+      anonymize_order: { Args: { p_order_id: string }; Returns: Json };
+      duplicate_product: { Args: { p_id: string; p_name?: string | null }; Returns: Json };
       is_admin: { Args: Record<PropertyKey, never>; Returns: boolean };
       issue_invoice: {
         Args: { p_order_id: string };
@@ -740,9 +873,24 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      issue_credit_note: { Args: { p_refund_id: string }; Returns: Json };
       mark_order_refunded: { Args: { p_order_id: string }; Returns: boolean };
+      order_confirmation: { Args: { p_order_id: string }; Returns: Json };
       place_order: {
         Args: { p_coupon_id: string; p_items: Json; p_order: Json };
+        Returns: Json;
+      };
+      purge_checkout_carts: { Args: { p_retention?: unknown }; Returns: number };
+      record_order_refund: {
+        Args: {
+          p_actor: string | null;
+          p_amount: number;
+          p_full: boolean;
+          p_order_id: string;
+          p_reason: string | null;
+          p_refund_id: string;
+          p_stripe_refund_id: string | null;
+        };
         Returns: Json;
       };
       shop_config: { Args: Record<PropertyKey, never>; Returns: Json };

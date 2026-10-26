@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Label } from '@/components/ui/input'
@@ -8,9 +8,24 @@ import { useAuth } from '@/lib/auth'
 import { MOCK_LOGINS } from '@/lib/mockData'
 import { supabase, USE_MOCK } from '@/lib/supabase'
 
+/**
+ * Where to go after login: the page that sent the user here (ProtectedRoute
+ * passes state.from, e.g. a mail link to /bestellung/<id>) if it fits the
+ * role, otherwise the start page of portal or back office.
+ */
+function targetFor(isAdmin: boolean, from?: { pathname?: string; search?: string }): string {
+  const path = from?.pathname ?? ''
+  const home = isAdmin ? '/admin' : '/bestellungen'
+  if (!path.startsWith('/') || path.startsWith('//') || path === '/' || path === '/login' || path === '/passwort-setzen') return home
+  if (path.startsWith('/admin') !== isAdmin) return home
+  return path + (from?.search ?? '')
+}
+
 export default function Login() {
-  const { signIn } = useAuth()
+  const { signIn, user, loading: authLoading } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const from = (location.state as { from?: { pathname?: string; search?: string } } | null)?.from
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -37,13 +52,16 @@ export default function Login() {
     setLoading(true)
     try {
       const { isAdmin } = await signIn(email, password)
-      navigate(isAdmin ? '/admin' : '/bestellungen')
+      navigate(targetFor(isAdmin, from), { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Anmeldung fehlgeschlagen.')
     } finally {
       setLoading(false)
     }
   }
+
+  // Already signed in (e.g. bookmark on /login) → straight to the portal.
+  if (!authLoading && user && !loading) return <Navigate to={targetFor(!!user.isAdmin, from)} replace />
 
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
@@ -53,8 +71,9 @@ export default function Login() {
         <div className="relative flex h-full flex-col justify-between p-12 text-background">
           <BrandMark invert className="h-10" />
           <div>
+            {/* No testimonial-style quote: only state what the portal does. */}
             <p className="text-2xl font-semibold leading-snug">
-              „Nachbestellen dauert bei uns keine zwei Minuten mehr."
+              Anfragen, Angebote und Nachbestellungen – an einem Ort.
             </p>
             <p className="mt-4 text-sm text-background/60">
               Ihr zentrales Portal für Textilbeschaffung – Bestellungen, Status und Konditionen an

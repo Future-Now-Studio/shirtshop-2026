@@ -2,7 +2,7 @@
   <h2 style="color:#e6007e;margin:0 0 12px">Private Shirt</h2>
   <h3 style="margin:0 0 8px">Einladung zum Admin-Bereich</h3>
   <p>Du wurdest zum Admin-Bereich des Private-Shirt-Shops eingeladen. Lege über den Button dein Passwort fest.</p>
-  <p><a href="{{ .ConfirmationURL }}" style="display:inline-block;background:#e6007e;color:#fff;padding:10px 18px;border-radius:999px;text-decoration:none">Einladung annehmen</a></p>
-  <p style="font-size:12px;color:#666">Falls der Button nicht funktioniert, kopiere diesen Link in deinen Browser:<br>{{ .ConfirmationURL }}</p>
+  <p><a href="{{ .SiteURL }}/admin/passwort-setzen?token_hash={{ .TokenHash }}&amp;type=invite" style="display:inline-block;background:#e6007e;color:#fff;padding:10px 18px;border-radius:999px;text-decoration:none">Einladung annehmen</a></p>
+  <p style="font-size:12px;color:#666">Falls der Button nicht funktioniert, kopiere diesen Link in deinen Browser:<br>{{ .SiteURL }}/admin/passwort-setzen?token_hash={{ .TokenHash }}&amp;type=invite</p>
   <p style="font-size:12px;color:#666">Du hast diese E-Mail nicht angefordert? Dann kannst du sie ignorieren.</p>
 </div>

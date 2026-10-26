@@ -8,6 +8,7 @@ import {
   FileText,
   FileCheck2,
   ScrollText,
+  BookOpen,
   LogOut,
   Menu,
   X,
@@ -28,6 +29,7 @@ const NAV = [
   { to: '/admin/anfragen', label: 'Anfragen', icon: FileText, match: ['/admin/anfragen'] },
   { to: '/admin/angebote', label: 'Angebote', icon: FileCheck2, match: ['/admin/angebote', '/admin/angebot'] },
   { to: '/admin/audit', label: 'Audit-Log', icon: ScrollText, match: ['/admin/audit'] },
+  { to: '/admin/anleitung', label: 'Anleitung', icon: BookOpen, match: ['/admin/anleitung'] },
 ]
 
 /** Active when the path equals a prefix or is a sub-route of it (`end` = exact only). */
@@ -42,8 +44,10 @@ export function AdminLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const { data: stats } = useQuery({ queryKey: ['admin', 'stats'], queryFn: adminGetStats })
 
+  // Things that need the back office: new inquiries, unconfirmed prices, open reclamations.
   const badges: Record<string, number | undefined> = {
     '/admin/anfragen': stats?.openInquiries,
+    '/admin/bestellungen': stats ? stats.unconfirmedOrders + stats.openReclamations : undefined,
   }
 
   async function handleLogout() {

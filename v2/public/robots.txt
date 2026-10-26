@@ -4,5 +4,6 @@ Disallow: /admin
 Disallow: /warenkorb
 Disallow: /kasse
 Disallow: /bestellung/
+Disallow: /newsletter/
 
 Sitemap: https://private-shirt.de/sitemap.xml

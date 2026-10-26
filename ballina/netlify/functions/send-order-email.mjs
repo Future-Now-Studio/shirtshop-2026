@@ -1,4 +1,4 @@
-// Netlify Function V2 — send an order confirmation email.
+// Netlify Function V2 — portal e-mails (orders, quotes, inquiries).
 // Uses Resend (https://resend.com) so only an API key is needed (no SMTP libs).
 //
 // Required Netlify env vars:
@@ -6,38 +6,62 @@
 //   ORDER_MAIL_FROM       — verified sender, e.g. "Ballina <bestellung@ballina.de>"
 //   SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
 // Optional:
-//   ORDER_NOTIFY_TO       — back-office inbox(es), comma separated: copy of new
-//                           orders, cancellations and reclamations
+//   ORDER_NOTIFY_TO       — back-office inbox(es), comma separated: new orders,
+//                           cancellations and reclamations by customers, new
+//                           inquiries. Default: the e-mails in b2b_admins.
+//   PORTAL_URL            — base URL for links in mails (default: site URL)
 //
-// Body: { orderId, event?: 'created' | 'shipped' | 'cancelled' | 'reclaimed' }
+// Body (one of):
+//   { event: 'created' | 'shipped' | 'cancelled' | 'reclaimed' | 'prices_confirmed' | 'tracking_updated', orderId }
+//   { event: 'quote_created', quoteId }
+//   { event: 'inquiry_created', inquiryId }
+//   { orderId } alone means 'created' (older clients).
+//
 // Security model (this endpoint used to be an open mail relay):
 //   * the caller must send a valid Supabase session (Authorization: Bearer <jwt>);
-//   * the request body only names an order id — recipient, order number, items
-//     and total are loaded server-side from the database;
-//   * the caller must be an admin (b2b_admins) or the account of the company
-//     that owns the order; the mail only goes to that company's account e-mail(s);
+//   * the body only names a row id — recipients, numbers, items and totals are
+//     loaded server-side; recipients are never accepted from the caller;
+//   * per event: who may trigger it and which state the row must be in
+//     (customers: own company only, and only for fresh orders/inquiries);
+//   * every event is sent at most once per row (b2b_mail_log, migration 014);
+//     a repeat answers 200 { ok: true, duplicate: true } and sends nothing.
+//     Exception tracking_updated: once per distinct carrier + tracking number
+//     (keyed claim, migration 015), the key is built from the DB row;
 //   * every interpolated value is HTML-escaped.
 //
-// Called best-effort by the app after an order is placed; failures never block
-// the order.
+// Called best-effort by the app; failures never block the order/quote itself.
 
-const json = (status, body) =>
-  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+import {
+  json,
+  UUID_RE,
+  esc,
+  eur,
+  grossFrom,
+  berlinDate,
+  isEmail,
+  portalUrl,
+  itemRows,
+  layout,
+  mailer,
+  serviceDb,
+  claimMail,
+  finishMail,
+  companyRecipients,
+  backofficeRecipients,
+  quoteMailHtml,
+} from './_lib/mail.mjs'
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const ORDER_EVENTS = ['created', 'shipped', 'cancelled', 'reclaimed', 'prices_confirmed', 'tracking_updated']
+// Admin-only order events.
+const ADMIN_EVENTS = ['shipped', 'prices_confirmed', 'tracking_updated']
+// Customers may only announce orders / inquiries created within the last hour.
+const FRESH_MS = 60 * 60 * 1000
+// Back-office inquiry mails per company and hour (flood guard).
+const MAX_INQUIRY_MAILS_PER_HOUR = 10
 
-const esc = (v) =>
-  String(v ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
+const fail = (status, error) => ({ status, error })
 
-// Keep header values (subject) on one line.
-const oneLine = (v) => String(v ?? '').replace(/[\r\n]+/g, ' ').slice(0, 200)
-
-export default async (req) => {
+export default async (req, context) => {
   if (req.method !== 'POST') return json(405, { error: 'Method not allowed' })
   const KEY = process.env.RESEND_API_KEY
   const FROM = process.env.ORDER_MAIL_FROM
@@ -55,139 +79,252 @@ export default async (req) => {
   })
   if (!meRes.ok) return json(401, { error: 'Invalid session' })
   const me = await meRes.json()
-  if (!me?.id) return json(401, { error: 'Invalid session' })
+  if (!me?.id || !UUID_RE.test(me.id)) return json(401, { error: 'Invalid session' })
 
-  // 2) Input: order id (+ optional event); recipients are never accepted.
+  // 2) Input: event + the id of the row it is about.
   let body
   try {
     body = await req.json()
   } catch {
     return json(400, { error: 'Invalid JSON' })
   }
-  const orderId = body?.orderId
-  if (typeof orderId !== 'string' || !UUID_RE.test(orderId)) {
-    return json(400, { error: 'orderId erforderlich' })
-  }
-  // Which notification: new order (default), shipped (admin only), cancelled.
-  const event = ['created', 'shipped', 'cancelled', 'reclaimed'].includes(body?.event) ? body.event : 'created'
+  const event = body?.event ?? (body?.orderId ? 'created' : null)
+  const refId = ORDER_EVENTS.includes(event)
+    ? body?.orderId
+    : event === 'quote_created'
+      ? body?.quoteId
+      : event === 'inquiry_created'
+        ? body?.inquiryId
+        : undefined
+  if (refId === undefined) return json(400, { error: 'Unbekanntes Mail-Ereignis' })
+  if (typeof refId !== 'string' || !UUID_RE.test(refId)) return json(400, { error: 'Gültige ID erforderlich' })
 
-  const svc = { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` }
-  const get = async (path) => {
-    const r = await fetch(`${URL_}/rest/v1/${path}`, { headers: svc })
-    return r.ok ? r.json() : null
+  const db = serviceDb(URL_, SERVICE)
+  const base = portalUrl(context)
+
+  // 3) Caller role (service_role → bypasses RLS).
+  const [admins, ownProfiles] = await Promise.all([
+    db.get(`b2b_admins?user_id=eq.${me.id}&select=user_id`),
+    db.get(`b2b_profiles?user_id=eq.${me.id}&select=company_id`),
+  ])
+  const caller = {
+    isAdmin: Array.isArray(admins) && admins.length > 0,
+    companyId: Array.isArray(ownProfiles) ? (ownProfiles[0]?.company_id ?? null) : null,
   }
 
-  // 3) Load the order server-side (service_role → bypasses RLS).
-  const orders = await get(
-    `b2b_orders?id=eq.${orderId}&select=id,company_id,order_number,status,total,shipping,price_confirmed,reclamation,` +
-      'tracking_carrier,tracking_number,tracking_url,b2b_companies(name),' +
+  // 4) Load the row, authorise, check its state and build the mail.
+  const mail = ORDER_EVENTS.includes(event)
+    ? await orderMail(db, event, refId, caller, base)
+    : event === 'quote_created'
+      ? await quoteMail(db, refId, caller, base)
+      : await inquiryMail(db, refId, caller, base)
+  if (mail.error) return json(mail.status, { error: mail.error })
+
+  // 5) At most once per event and row (per event, row and key for keyed mails).
+  const claimed = await claimMail(db, event, refId, me.id, mail.key)
+  if (claimed === null) return json(503, { error: 'Mail-Protokoll nicht verfügbar (Migration 014/015 fehlt?)' })
+  if (!claimed) return json(200, { ok: true, duplicate: true })
+
+  const send = mailer(KEY, FROM)
+  const ok = await send(mail.to, mail.subject, mail.html)
+  await finishMail(db, event, refId, ok)
+
+  // Back-office copy: its own mail-log event, so it goes out even when the
+  // customer's mail bounced, and a retry never duplicates it.
+  if (mail.copy?.to.length && (await claimMail(db, `${event}_bo`, refId, me.id))) {
+    const copyOk = await send(mail.copy.to, mail.copy.subject, mail.copy.html)
+    await finishMail(db, `${event}_bo`, refId, copyOk)
+  }
+  if (!ok) return json(502, { error: 'Mailversand fehlgeschlagen' })
+  return json(200, { ok: true })
+}
+
+// --- Orders ----------------------------------------------------------------
+async function orderMail(db, event, orderId, caller, base) {
+  const rows = await db.get(
+    `b2b_orders?id=eq.${orderId}&select=*,b2b_companies(name),` +
       'b2b_order_items(product_name,color,size,quantity,unit_price)',
   )
-  const order = Array.isArray(orders) ? orders[0] : null
-  if (!order) return json(404, { error: 'Bestellung nicht gefunden' })
+  const order = Array.isArray(rows) ? rows[0] : null
+  if (!order) return fail(404, 'Bestellung nicht gefunden')
 
-  // 4) Authorise: admin, or the account of the owning company.
-  const [admins, ownProfiles] = await Promise.all([
-    get(`b2b_admins?user_id=eq.${encodeURIComponent(me.id)}&select=user_id`),
-    get(`b2b_profiles?user_id=eq.${encodeURIComponent(me.id)}&company_id=eq.${order.company_id}&select=user_id`),
-  ])
-  const isAdmin = Array.isArray(admins) && admins.length > 0
-  const isOwner = Array.isArray(ownProfiles) && ownProfiles.length > 0
-  if (!isAdmin && !isOwner) return json(403, { error: 'Forbidden' })
-  // The event must match the order's real state (no fake "shipped" mails).
-  if (event === 'shipped' && (!isAdmin || order.status !== 'versendet')) return json(409, { error: 'Bestellung ist nicht versendet' })
-  if (event === 'cancelled' && order.status !== 'storniert') return json(409, { error: 'Bestellung ist nicht storniert' })
-  if (event === 'reclaimed' && !order.reclamation) return json(409, { error: 'Keine Reklamation vorhanden' })
+  const isOwner = !!caller.companyId && caller.companyId === order.company_id
+  if (!caller.isAdmin && !isOwner) return fail(403, 'Forbidden')
+  // The event must match the order's real state (no fake mails).
+  if (event === 'created' && !caller.isAdmin && Date.now() - Date.parse(order.created_at) > FRESH_MS) {
+    return fail(409, 'Bestellbestätigung nur direkt nach der Bestellung')
+  }
+  if (ADMIN_EVENTS.includes(event) && !caller.isAdmin) return fail(403, 'Forbidden')
+  if ((event === 'shipped' || event === 'tracking_updated') && order.status !== 'versendet') {
+    return fail(409, 'Bestellung ist nicht versendet')
+  }
+  if (event === 'cancelled' && order.status !== 'storniert') return fail(409, 'Bestellung ist nicht storniert')
+  if (event === 'reclaimed' && !order.reclamation) return fail(409, 'Keine Reklamation vorhanden')
+  if (event === 'prices_confirmed' && (!order.price_confirmed || order.status === 'storniert')) {
+    return fail(409, 'Preise sind nicht bestätigt')
+  }
+  // Tracking update: only with a tracking number, and only after the customer
+  // got the shipped mail (that one already carries the tracking data it was
+  // sent with; 'historic' = shipped before the mail log existed, see 014).
+  const trackingNumber = String(order.tracking_number ?? '').trim()
+  const trackingCarrier = String(order.tracking_carrier ?? '').trim()
+  if (event === 'tracking_updated') {
+    if (!trackingNumber) return fail(409, 'Keine Sendungsnummer hinterlegt')
+    const shipped = await db.get(`b2b_mail_log?event=eq.shipped&ref_id=eq.${order.id}&status=in.(sent,historic)&select=id`)
+    if (!shipped?.length) return fail(409, 'Versand-Mail wurde noch nicht verschickt')
+  }
 
-  // 5) Recipient(s): the company's account e-mail(s), never caller-supplied.
-  const profiles = await get(`b2b_profiles?company_id=eq.${order.company_id}&select=email`)
-  const to = [...new Set((profiles ?? []).map((p) => p.email).filter(Boolean))]
-  if (!to.length) return json(422, { error: 'Keine Empfängeradresse für diese Firma hinterlegt' })
+  // Recipient(s): the company's account e-mail(s), never caller-supplied.
+  const to = await companyRecipients(db, order.company_id)
+  if (!to.length) return fail(422, 'Keine Empfängeradresse für diese Firma hinterlegt')
 
+  const num = esc(order.order_number)
   const items = Array.isArray(order.b2b_order_items) ? order.b2b_order_items : []
-  const rows = items
-    .map(
-      (it) =>
-        `<tr><td style="padding:6px 0">${esc(it.product_name)} · ${esc(it.color)} · ${esc(it.size)}</td>` +
-        `<td align="right">${esc(Number(it.quantity) || 0)}×</td></tr>`,
-    )
-    .join('')
-  const eur = (n) => `${(Number(n) || 0).toFixed(2).replace('.', ',')} €`
-  const orderNumber = esc(order.order_number)
   const net = Number(order.total || 0) + Number(order.shipping || 0)
-  const totalLine = order.price_confirmed
-    ? `Warenwert ${eur(order.total)} · Versand ${Number(order.shipping) ? eur(order.shipping) : 'kostenlos'} · ` +
-      `Gesamt ${eur(net * 1.19)} brutto (inkl. 19 % USt.)`
-    : 'Die Preise werden von unserem Team geprüft und Ihnen bestätigt.'
+  const totals =
+    `Warenwert ${eur(order.total)} · Versand ${Number(order.shipping) ? eur(order.shipping) : 'kostenlos'} · ` +
+    `Gesamt ${eur(grossFrom(net))} brutto (inkl. 19 % USt.)`
+  const totalLine = (text) =>
+    `<p style="border-top:2px solid #111;margin-top:12px;padding-top:8px;font-weight:700">${esc(text)}</p>`
+  const reference = order.po_number ? `<br>Ihr Zeichen: ${esc(order.po_number)}` : ''
+  const cta = base ? { href: `${base}/bestellung/${order.id}`, label: 'Bestellung im Portal ansehen' } : null
+  const tracking = trackingNumber
+    ? `<br>Sendungsnummer: <b>${esc(trackingCarrier)} ${esc(trackingNumber)}</b>` +
+      (/^https:\/\/[^\s"'<>]+$/.test(order.tracking_url ?? '') ? ` · <a href="${esc(order.tracking_url)}">Sendung verfolgen</a>` : '')
+    : ''
 
   const copy = {
     created: {
       subject: `Bestellbestätigung #${order.order_number}`,
       title: 'Bestellbestätigung',
-      intro: `Ihre Bestellung <b>#${orderNumber}</b> ist bei uns eingegangen.`,
+      intro: `Ihre Bestellung <b>#${num}</b> ist bei uns eingegangen.${reference}`,
+      rows: itemRows(items),
+      after: totalLine(order.price_confirmed ? totals : 'Die Preise werden von unserem Team geprüft und Ihnen bestätigt.'),
     },
     shipped: {
       subject: `Ihre Bestellung #${order.order_number} ist unterwegs`,
       title: 'Ihre Bestellung wurde versendet',
-      intro:
-        `Ihre Bestellung <b>#${orderNumber}</b> hat unser Haus verlassen.` +
-        (order.tracking_number
-          ? `<br>Sendungsnummer: <b>${esc(order.tracking_carrier ?? '')} ${esc(order.tracking_number)}</b>` +
-            (/^https:\/\//.test(order.tracking_url ?? '') ? ` · <a href="${esc(order.tracking_url)}">Sendung verfolgen</a>` : '')
-          : ''),
+      intro: `Ihre Bestellung <b>#${num}</b> hat unser Haus verlassen.${reference}${tracking}`,
+      rows: itemRows(items),
+      after: '',
+    },
+    tracking_updated: {
+      subject: `Sendungsverfolgung aktualisiert – Bestellung #${order.order_number}`,
+      title: 'Sendungsverfolgung aktualisiert',
+      intro: `Für Ihre Bestellung <b>#${num}</b> gibt es neue Sendungsdaten.${reference}${tracking}`,
+      rows: '',
+      after: '',
     },
     cancelled: {
       subject: `Bestellung #${order.order_number} storniert`,
       title: 'Bestellung storniert',
-      intro: `Ihre Bestellung <b>#${orderNumber}</b> wurde storniert.`,
+      intro: `Ihre Bestellung <b>#${num}</b> wurde storniert.${reference}`,
+      rows: itemRows(items),
+      after: '',
     },
     reclaimed: {
       subject: `Ihre Reklamation zu Bestellung #${order.order_number}`,
       title: 'Reklamation eingegangen',
-      intro: `Wir haben Ihre Reklamation zu Bestellung <b>#${orderNumber}</b> erhalten und melden uns kurzfristig.<br>„${esc(order.reclamation)}“`,
+      intro: `Wir haben Ihre Reklamation zu Bestellung <b>#${num}</b> erhalten und melden uns kurzfristig.<br>„${esc(order.reclamation)}“`,
+      rows: itemRows(items),
+      after: '',
+    },
+    prices_confirmed: {
+      subject: `Preise bestätigt – Bestellung #${order.order_number}`,
+      title: 'Preise bestätigt',
+      intro: `Wir haben die Preise Ihrer Bestellung <b>#${num}</b> geprüft und bestätigt.${reference}`,
+      rows: itemRows(items, true),
+      after: totalLine(totals),
     },
   }[event]
 
-  const html = `
-    <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1c1c1c;max-width:560px">
-      <h2 style="margin:0 0 4px">${copy.title}</h2>
-      <p style="color:#6b7280;margin:0 0 16px">${copy.intro}</p>
-      <table style="width:100%;border-collapse:collapse;font-size:14px">${rows}</table>
-      ${event === 'created' ? `<p style="border-top:2px solid #111;margin-top:12px;padding-top:8px;font-weight:700">${totalLine}</p>` : ''}
-      <p style="color:#6b7280;font-size:12px;margin-top:24px">Ballina · B2B Textildruck</p>
-    </div>`
+  const mail = { to, subject: copy.subject, html: layout({ ...copy, cta }) }
+  // One tracking mail per distinct carrier + number (keyed claim, migration 015).
+  if (event === 'tracking_updated') mail.key = `${trackingCarrier.toLowerCase()}\n${trackingNumber}`
 
-  const send = async (recipients, subject, bodyHtml) => {
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: FROM, to: recipients, subject: oneLine(subject), html: bodyHtml }),
-    })
-    if (!res.ok) console.error('[send-order-email] resend failed', res.status, await res.text())
-    return res.ok
-  }
-
-  const ok = await send(to, copy.subject, html)
-
-  // Back-office notice for new orders and cancellations (ORDER_NOTIFY_TO,
-  // comma separated). Best effort.
-  const notify = (process.env.ORDER_NOTIFY_TO ?? '').split(',').map((x) => x.trim()).filter(Boolean)
-  if (notify.length && event !== 'shipped') {
-    const company = esc(order.b2b_companies?.name ?? 'Kunde')
+  // Back office: new orders, cancellations and reclamations made by customers.
+  if (!caller.isAdmin && ['created', 'cancelled', 'reclaimed'].includes(event)) {
+    const company = order.b2b_companies?.name ?? 'Kunde'
     const label = { created: 'Neue Bestellung', cancelled: 'Storno', reclaimed: 'Reklamation' }[event]
     const verb = { created: 'aufgegeben', cancelled: 'storniert', reclaimed: 'reklamiert' }[event]
-    await send(
-      notify,
-      `${label} #${order.order_number} – ${order.b2b_companies?.name ?? ''}`,
-      `<p><b>${company}</b> hat Bestellung <b>#${orderNumber}</b> ${verb}.</p>
-       ${event === 'reclaimed' ? `<p>„${esc(order.reclamation)}“</p>` : ''}
-       <table style="font-size:14px">${rows}</table>
-       ${event === 'created' ? `<p>${order.price_confirmed ? totalLine : 'Preise noch zu bestätigen.'}</p>` : ''}`,
-    )
+    mail.copy = {
+      to: await backofficeRecipients(db),
+      subject: `${label} #${order.order_number} – ${company}`,
+      html: layout({
+        title: `${label} #${order.order_number}`,
+        intro: `<b>${esc(company)}</b> hat Bestellung <b>#${num}</b> ${verb}.` +
+          (event === 'reclaimed' ? `<br>„${esc(order.reclamation)}“` : '') +
+          (order.po_number ? `<br>Zeichen des Kunden: ${esc(order.po_number)}` : ''),
+        rows: itemRows(items),
+        after: event === 'created' ? totalLine(order.price_confirmed ? totals : 'Preise noch zu bestätigen.') : '',
+        cta: base ? { href: `${base}/admin/bestellung/${order.id}`, label: 'Im Backoffice öffnen' } : null,
+      }),
+    }
   }
+  return mail
+}
 
-  if (!ok) return json(502, { error: 'Mailversand fehlgeschlagen' })
-  return json(200, { ok: true })
+// --- Quotes ----------------------------------------------------------------
+async function quoteMail(db, quoteId, caller, base) {
+  if (!caller.isAdmin) return fail(403, 'Forbidden')
+  const rows = await db.get(
+    `b2b_quotes?id=eq.${quoteId}&select=*,b2b_quote_items(product_name,color,size,quantity,unit_price)`,
+  )
+  const quote = Array.isArray(rows) ? rows[0] : null
+  if (!quote) return fail(404, 'Angebot nicht gefunden')
+  if (quote.status !== 'offen' || quote.withdrawn_at) return fail(409, 'Angebot ist nicht mehr offen')
+
+  const to = await companyRecipients(db, quote.company_id)
+  if (!to.length) return fail(422, 'Keine Empfängeradresse für diese Firma hinterlegt')
+  return {
+    to,
+    subject: `Neues Angebot ${quote.quote_number}: ${quote.title}`,
+    html: quoteMailHtml(quote, base),
+  }
+}
+
+// --- Inquiries (to the back office) ----------------------------------------
+async function inquiryMail(db, inquiryId, caller, base) {
+  const rows = await db.get(`b2b_inquiries?id=eq.${inquiryId}&select=*,b2b_companies(name,customer_number)`)
+  const inq = Array.isArray(rows) ? rows[0] : null
+  if (!inq) return fail(404, 'Anfrage nicht gefunden')
+  if (!caller.companyId || caller.companyId !== inq.company_id) return fail(403, 'Forbidden')
+  if (Date.now() - Date.parse(inq.created_at) > FRESH_MS) return fail(409, 'Anfrage ist nicht neu')
+
+  const since = new Date(Date.now() - FRESH_MS).toISOString()
+  const recent = await db.get(`b2b_inquiries?company_id=eq.${inq.company_id}&created_at=gte.${encodeURIComponent(since)}&select=id`)
+  if ((recent?.length ?? 0) > MAX_INQUIRY_MAILS_PER_HOUR) return fail(429, 'Zu viele Anfragen in kurzer Zeit')
+
+  const to = await backofficeRecipients(db)
+  if (!to.length) return fail(422, 'Kein Backoffice-Postfach konfiguriert (ORDER_NOTIFY_TO)')
+
+  const company = inq.b2b_companies?.name ?? 'Kunde'
+  const field = (label, html) =>
+    html
+      ? `<tr><td style="padding:4px 12px 4px 0;color:#6b7280;vertical-align:top;white-space:nowrap">${esc(label)}</td>` +
+        `<td style="padding:4px 0;white-space:pre-line">${html}</td></tr>`
+      : ''
+  const email = String(inq.email ?? '').trim()
+  const rowsHtml =
+    field('Kunde', esc(company) + (inq.b2b_companies?.customer_number ? ` (${esc(inq.b2b_companies.customer_number)})` : '')) +
+    field('Ansprechpartner', esc(inq.contact_person ?? '')) +
+    field('E-Mail', isEmail(email) ? `<a href="mailto:${esc(email)}">${esc(email)}</a>` : esc(email)) +
+    field('Artikel', esc(inq.product_type ?? '')) +
+    field('Menge', inq.quantity ? `${esc(inq.quantity)} Stück` : '') +
+    field('Wunschtermin', inq.deadline ? esc(berlinDate(`${inq.deadline}T12:00:00Z`)) : '') +
+    field('Nachricht', esc(inq.message ?? '')) +
+    field('Druckdatei', inq.artwork_name ? `${esc(inq.artwork_name)} (im Backoffice abrufbar)` : '')
+
+  return {
+    to,
+    subject: `Neue Großanfrage – ${company}: ${inq.product_type ?? ''}`,
+    html: layout({
+      title: 'Neue Großanfrage',
+      intro: `<b>${esc(company)}</b> hat im Portal eine Großanfrage gestellt.`,
+      rows: rowsHtml,
+      cta: base ? { href: `${base}/admin/anfragen`, label: 'Im Backoffice öffnen' } : null,
+    }),
+  }
 }
 
 export const config = { path: '/api/send-order-email' }

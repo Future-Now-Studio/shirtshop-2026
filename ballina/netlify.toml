@@ -1,17 +1,46 @@
+# Netlify site for the Ballina B2B portal. In the Netlify UI set
+# "Base directory" to ballina (see DEPLOY.md).
 [build]
   command = "npm run build"
   publish = "dist"
   functions = "netlify/functions"
 
+[build.environment]
+  # vite 8 / TypeScript 6 need Node >= 20.19 / 22.12.
+  NODE_VERSION = "22"
+
 [dev]
   framework = "vite"
   targetPort = 5173
 
-# WooCommerce catalogue proxy (/api/wc/*) is served by the V2 function
-# netlify/functions/wc-proxy.mjs via its own config.path — no redirect needed.
+# WooCommerce catalogue proxy (/api/wc/*), /api/send-order-email and
+# /api/admin-create-user are V2 functions with their own config.path; the daily
+# quote reminder (quote-reminders) runs on its config.schedule — no redirects needed.
 
 # SPA fallback for client-side routing (must stay last).
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+
+# Security headers. The enforced CSP only carries directives that cannot break
+# the app (no framing = no clickjacking, no plugins, no <base>/form hijacking).
+# The full policy runs as Report-Only first: check the browser console for
+# violations, then move it to Content-Security-Policy (see supabase/SECURITY.md).
+# img-src allows any https host: product images come from WooCommerce / quote lines.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
+    Content-Security-Policy-Report-Only = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-src 'self' blob: https://*.supabase.co; worker-src 'self' blob:; manifest-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    Strict-Transport-Security = "max-age=31536000"
+
+# Hashed build assets never change — cache them for a year.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

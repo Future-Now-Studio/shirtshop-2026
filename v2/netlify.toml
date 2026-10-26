@@ -1,8 +1,128 @@
 # Netlify site for the v2 shop. In the Netlify UI set "Base directory" to v2.
 # Backend runs on Supabase (Edge Functions), so no Netlify functions here.
+# Go-live steps (domain, keys, Stripe, DNS): docs/GO-LIVE.md
 [build]
   command = "npm run build"
   publish = "dist"
+
+[build.environment]
+  # Pin the Node major instead of relying on Netlify's default build image.
+  NODE_VERSION = "22"
+
+# --- Old URLs → v2 (301) -----------------------------------------------------
+# From the old private-shirt.de (WordPress, wp-sitemap.xml as of 2026-10) and
+# the legacy React shop. Pages that keep their path (/produkte/, /impressum/,
+# /datenschutz/, /agb/, /leistungen/, …) need no rule: React Router ignores the
+# trailing slash. Netlify matches "/x" and "/x/" alike, and the first matching
+# rule wins, so all of these must stay above the SPA fallback.
+[[redirects]]
+  from = "/anfrage"            # "kostenloses Angebot" request form
+  to = "/grossbestellung"
+  status = 301
+
+[[redirects]]
+  from = "/designer"           # old WordPress designer and legacy /designer
+  to = "/selbst-gestalten"
+  status = 301
+
+[[redirects]]
+  from = "/produkt"            # old product page without slug (/produkt/?product=<id>)
+  to = "/produkte"
+  status = 301
+
+[[redirects]]
+  from = "/checkout"
+  to = "/warenkorb"
+  status = 301
+
+[[redirects]]
+  from = "/checkout/*"         # legacy /checkout/success, WooCommerce order-received
+  to = "/warenkorb"
+  status = 301
+
+[[redirects]]
+  from = "/shop"
+  to = "/produkte"
+  status = 301
+
+[[redirects]]
+  from = "/shop/*"
+  to = "/produkte"
+  status = 301
+
+[[redirects]]
+  from = "/produkt-kategorie/*"
+  to = "/produkte"
+  status = 301
+
+# Customer accounts do not exist in v2 (guest checkout only).
+[[redirects]]
+  from = "/mein-konto"
+  to = "/"
+  status = 301
+
+[[redirects]]
+  from = "/mein-konto/*"
+  to = "/"
+  status = 301
+
+[[redirects]]
+  from = "/registrieren"
+  to = "/"
+  status = 301
+
+[[redirects]]
+  from = "/passwort-vergessen"
+  to = "/"
+  status = 301
+
+# WordPress archive pages (sample post "hallo-welt", category, author).
+[[redirects]]
+  from = "/2020/*"
+  to = "/"
+  status = 301
+
+[[redirects]]
+  from = "/category/*"
+  to = "/"
+  status = 301
+
+[[redirects]]
+  from = "/author/*"
+  to = "/"
+  status = 301
+
+# WordPress system paths are gone for good: real 404 (the SPA renders its
+# not-found page) instead of a soft 404 with status 200.
+[[redirects]]
+  from = "/wp-admin/*"
+  to = "/index.html"
+  status = 404
+
+[[redirects]]
+  from = "/wp-content/*"
+  to = "/index.html"
+  status = 404
+
+[[redirects]]
+  from = "/wp-includes/*"
+  to = "/index.html"
+  status = 404
+
+[[redirects]]
+  from = "/wp-json/*"
+  to = "/index.html"
+  status = 404
+
+[[redirects]]
+  from = "/wp-login.php"
+  to = "/index.html"
+  status = 404
+
+[[redirects]]
+  from = "/xmlrpc.php"
+  to = "/index.html"
+  status = 404
 
 # SPA fallback: deep links like /produkt/xyz or /admin must serve index.html.
 [[redirects]]
@@ -17,6 +137,29 @@
     X-Frame-Options = "SAMEORIGIN"
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    # Enforced: only directives that cannot break Stripe, Supabase or the maps.
+    Content-Security-Policy = "frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
+    # Full policy, report-only until it has been checked in the browser (home
+    # with video, designer upload + export, checkout incl. 3-D Secure / PayPal,
+    # Filialen map after consent, admin). Then move it to Content-Security-Policy.
+    # The sha256 is the inline noindex script in index.html — update it when
+    # that script changes. Supabase/Stripe hosts: see docs/GO-LIVE.md.
+    Content-Security-Policy-Report-Only = """\
+      default-src 'self'; \
+      script-src 'self' 'sha256-CaQuIlfXtdQDqvOm8Az71pSh2Ja1RuAuI9Yx/yeUL1E=' https://js.stripe.com https://*.js.stripe.com; \
+      style-src 'self' 'unsafe-inline'; \
+      img-src 'self' data: blob: https://*.supabase.co https://*.stripe.com; \
+      font-src 'self' data:; \
+      media-src 'self' blob:; \
+      connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.stripe.com https://*.stripe.com blob: data:; \
+      frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com https://www.google.com https://maps.google.com; \
+      worker-src 'self' blob:; \
+      manifest-src 'self'; \
+      object-src 'none'; \
+      base-uri 'self'; \
+      form-action 'self'; \
+      frame-ancestors 'none'\
+      """
 
 # Hashed build assets never change — cache them for a year.
 [[headers]]

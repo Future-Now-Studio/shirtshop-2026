@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { Mail, Phone, MapPin, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { invokeFn } from "@/lib/functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Honeypot, isBot } from "@/components/Honeypot";
+import { PrivacyNote } from "@/components/PrivacyNote";
 
 export default function Kontakt() {
   const [form, setForm] = useState({ name: "", email: "", message: "" });
@@ -17,14 +19,19 @@ export default function Kontakt() {
     if (isBot(e.currentTarget as HTMLFormElement)) { setSent(true); return; }
     setBusy(true);
     setError(null);
+    // id generated here: anon may insert but not read back; notify-admin needs it
+    const id = crypto.randomUUID();
     const { error } = await supabase.from("contact_messages").insert({
+      id,
       name: form.name,
       email: form.email,
       message: form.message,
     });
     setBusy(false);
-    if (error) setError((error.code === "P0001" ? error.message : "Senden fehlgeschlagen. Bitte versuche es später erneut."));
-    else setSent(true);
+    if (error) { setError(error.code === "P0001" ? error.message : "Senden fehlgeschlagen. Bitte versuche es später erneut."); return; }
+    // best-effort owner mail; never blocks or fails the form
+    void invokeFn("notify-admin", { kind: "contact", id }).catch(() => {});
+    setSent(true);
   }
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
@@ -84,6 +91,7 @@ export default function Kontakt() {
               <Button type="submit" className="w-full" disabled={busy}>
                 {busy ? "Senden…" : "Nachricht senden"}
               </Button>
+              <PrivacyNote />
             </form>
           )}
         </div>

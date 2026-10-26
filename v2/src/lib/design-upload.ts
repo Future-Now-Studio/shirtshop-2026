@@ -2,7 +2,7 @@ import { supabase } from "@/lib/supabase";
 
 const BUCKET = "order-designs";
 
-function dataUrlToBlob(dataUrl: string): Blob {
+export function dataUrlToBlob(dataUrl: string): Blob {
   const [head, b64] = dataUrl.split(",");
   const mime = head.match(/data:(.*?);/)?.[1] ?? "image/png";
   const bin = atob(b64);
@@ -24,6 +24,11 @@ async function upload(path: string, body: Blob, contentType: string): Promise<st
 /** Uploads one design file (dataURL) under the design folder. Throws on failure. */
 export function uploadDesignFile(designId: string, name: string, dataUrl: string): Promise<string> {
   return upload(`${designId}/${name}`, dataUrlToBlob(dataUrl), "image/png");
+}
+
+/** Uploads a binary design file (print PNG, customer original). Throws on failure. */
+export function uploadDesignBlob(designId: string, name: string, blob: Blob, contentType: string): Promise<string> {
+  return upload(`${designId}/${name}`, blob, contentType);
 }
 
 export function uploadDesignJson(designId: string, json: unknown): Promise<string> {

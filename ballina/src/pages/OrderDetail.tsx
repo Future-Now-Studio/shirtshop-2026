@@ -2,27 +2,30 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ArrowLeft, Ban, FileText, Loader2, MoreHorizontal, RefreshCw, Truck } from 'lucide-react'
-import { cancelOrder, getOrder, reclaimOrder } from '@/lib/api'
-import { formatDate, formatEUR, ITEM_PLACEHOLDER, VAT_RATE } from '@/lib/utils'
+import { cancelOrder, getCompany, getOrder, reclaimOrder } from '@/lib/api'
+import { formatDate, formatDay, formatEUR, ITEM_PLACEHOLDER, grossFrom, openInNewTab, VAT_RATE, vatFrom } from '@/lib/utils'
 import { invoiceHref } from '@/lib/invoices'
 import { useReorder } from '@/lib/useReorder'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/input'
 import { StatusBadge } from '@/components/ui/badge'
+import { LoadError, LoadingState } from '@/components/ui/load-state'
 import { OrderTimeline } from '@/components/OrderTimeline'
 
 export default function OrderDetail() {
   const { id = '' } = useParams()
   const queryClient = useQueryClient()
-  const { data: order, isLoading } = useQuery({
+  const { data: order, isLoading, isError, refetch } = useQuery({
     queryKey: ['order', id],
     queryFn: () => getOrder(id),
   })
-  const { quickReorder, isReordering } = useReorder()
+  const { data: company } = useQuery({ queryKey: ['company'], queryFn: getCompany })
+  const { quickReorder } = useReorder()
   const [reclaimOpen, setReclaimOpen] = useState(false)
   const [reclaimText, setReclaimText] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [docError, setDocError] = useState(false)
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['order', id] })
@@ -37,13 +40,8 @@ export default function OrderDetail() {
     },
   })
 
-  if (isLoading) {
-    return (
-      <div className="grid place-items-center py-16">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
+  if (isLoading) return <LoadingState />
+  if (isError) return <LoadError what="Die Bestelldaten" onRetry={() => refetch()} />
 
   if (!order) {
     return (
@@ -63,6 +61,8 @@ export default function OrderDetail() {
   const canCancel = order.status === 'offen'
   const canReclaim =
     (order.status === 'versendet' || order.status === 'abgeschlossen') && !order.reclamation
+  // No address stored on the order → it goes to the company default.
+  const delivery = order.deliveryAddress ?? company?.deliveryAddress ?? company?.billingAddress
 
   return (
     <div>
@@ -126,17 +126,8 @@ export default function OrderDetail() {
               )}
             </div>
           ) : null}
-          <Button
-            variant="brand"
-            size="lg"
-            onClick={() => quickReorder(order)}
-            disabled={isReordering}
-          >
-            {isReordering ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <RefreshCw className="size-4" />
-            )}
+          <Button variant="brand" size="lg" onClick={() => quickReorder(order)}>
+            <RefreshCw className="size-4" />
             Nachbestellen
           </Button>
         </div>
@@ -253,24 +244,51 @@ export default function OrderDetail() {
             </div>
             <div className="flex justify-between text-muted-foreground">
               <span>zzgl. {Math.round(VAT_RATE * 100)} % USt.</span>
-              <span>{formatEUR(netTotal * VAT_RATE)}</span>
+              <span>{formatEUR(vatFrom(netTotal))}</span>
             </div>
             <div className="flex justify-between border-t border-border pt-1.5 text-base font-semibold">
               <span>Gesamt (brutto)</span>
-              <span>{formatEUR(netTotal * (1 + VAT_RATE))}</span>
+              <span>{formatEUR(grossFrom(netTotal))}</span>
             </div>
           </div>
         </div>
       </Card>
 
-      {order.note && (
-        <Card className="mt-4 p-5">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Anmerkung
-          </p>
-          <p className="mt-1.5 text-sm">{order.note}</p>
-        </Card>
-      )}
+      {/* Order details: PO, Wunschtermin, delivery address, note */}
+      <Card className="mt-4 grid gap-5 p-5 sm:grid-cols-2">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Lieferanschrift</p>
+          {delivery ? (
+            <p className="mt-1.5 text-sm">
+              {delivery.name && <>{delivery.name}<br /></>}
+              {delivery.line1}<br />
+              {delivery.zip} {delivery.city}
+              {delivery.country && <><br />{delivery.country}</>}
+            </p>
+          ) : (
+            <p className="mt-1.5 text-sm text-muted-foreground">Standard-Lieferadresse Ihres Kundenkontos</p>
+          )}
+          {!order.deliveryAddress && delivery && (
+            <p className="mt-1 text-xs text-muted-foreground">Standard-Lieferadresse Ihres Kundenkontos</p>
+          )}
+        </div>
+        <dl className="space-y-3 text-sm">
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Bestellzeichen / Kostenstelle</dt>
+            <dd className="mt-1">{order.poNumber ?? '—'}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Wunschtermin</dt>
+            <dd className="mt-1">{order.requestedDate ? `${formatDay(order.requestedDate)} (unverbindlich)` : '—'}</dd>
+          </div>
+        </dl>
+        {order.note && (
+          <div className="sm:col-span-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Anmerkung</p>
+            <p className="mt-1.5 whitespace-pre-line text-sm">{order.note}</p>
+          </div>
+        )}
+      </Card>
       </div>
 
       {/* Aside: tracking, timeline, documents */}
@@ -311,13 +329,20 @@ export default function OrderDetail() {
                 size="sm"
                 className="w-full justify-start"
                 onClick={async () => {
-                  const href = await invoiceHref(order.invoiceDataUrl!)
-                  window.open(href, '_blank')
+                  setDocError(false)
+                  // Tab opens inside the click (Safari), URL is signed afterwards.
+                  const ok = await openInNewTab(() => invoiceHref(order.invoiceDataUrl!))
+                  if (!ok) setDocError(true)
                 }}
               >
                 <FileText className="size-4" />
                 {order.invoiceName || 'Dokument (PDF)'}
               </Button>
+              {docError && (
+                <p role="alert" className="text-xs text-destructive">
+                  Das Dokument konnte nicht geöffnet werden. Bitte erneut versuchen.
+                </p>
+              )}
             </div>
           </Card>
         )}

@@ -12,9 +12,12 @@ export function ArtworkLink({ path, name }: { path: string; name?: string }) {
       onClick={async () => {
         setBusy(true)
         setFailed(false)
-        const url = await artworkHref(path)
+        const url = await artworkHref(path).catch(() => null)
         setBusy(false)
-        if (url) window.open(url, '_blank', 'noopener')
+        // The signed URL is a download (Content-Disposition: attachment): the
+        // browser saves the file and the page stays. No new tab, so neither a
+        // popup blocker (Safari) nor an empty leftover tab gets in the way.
+        if (url) window.location.assign(url)
         else setFailed(true)
       }}
       className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline"

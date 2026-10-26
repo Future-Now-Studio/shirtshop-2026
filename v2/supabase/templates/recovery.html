@@ -2,7 +2,7 @@
   <h2 style="color:#e6007e;margin:0 0 12px">Private Shirt</h2>
   <h3 style="margin:0 0 8px">Passwort zurücksetzen</h3>
   <p>Über den Button kannst du ein neues Passwort für den Admin-Bereich festlegen. Der Link ist nur kurze Zeit gültig.</p>
-  <p><a href="{{ .ConfirmationURL }}" style="display:inline-block;background:#e6007e;color:#fff;padding:10px 18px;border-radius:999px;text-decoration:none">Neues Passwort festlegen</a></p>
-  <p style="font-size:12px;color:#666">Falls der Button nicht funktioniert, kopiere diesen Link in deinen Browser:<br>{{ .ConfirmationURL }}</p>
+  <p><a href="{{ .SiteURL }}/admin/passwort-setzen?token_hash={{ .TokenHash }}&amp;type=recovery" style="display:inline-block;background:#e6007e;color:#fff;padding:10px 18px;border-radius:999px;text-decoration:none">Neues Passwort festlegen</a></p>
+  <p style="font-size:12px;color:#666">Falls der Button nicht funktioniert, kopiere diesen Link in deinen Browser:<br>{{ .SiteURL }}/admin/passwort-setzen?token_hash={{ .TokenHash }}&amp;type=recovery</p>
   <p style="font-size:12px;color:#666">Du hast diese E-Mail nicht angefordert? Dann kannst du sie ignorieren.</p>
 </div>

@@ -1,10 +1,16 @@
 import { ReactNode, useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, MapPin, Mail, Phone, ArrowRight, Printer, Truck, Shirt, Sparkles, Scissors, Percent, Zap, Users, Package } from "lucide-react";
+import { Check, MapPin, Mail, Phone, ArrowRight, Printer, Truck, Shirt, Sparkles, Scissors, Percent, Zap, Users, Package, CreditCard, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LinkButton } from "@/components/LinkButton";
+import { PrivacyNote } from "@/components/PrivacyNote";
+import { useVolumeTiers, percentLabel } from "@/components/VolumeTiers";
 import { supabase } from "@/lib/supabase";
+import { invokeFn } from "@/lib/functions";
+import { useShopConfig } from "@/lib/pricing";
+import { eur } from "@/lib/utils";
 import agbRaw from "@/data/agb.txt?raw";
 import datenschutzRaw from "@/data/datenschutz.txt?raw";
 import hamburgImage from "@/assets/hamburg-city.jpg";
@@ -60,9 +66,7 @@ export function Unternehmen() {
             individuellen dienstleistungen? dann legst du bei der außendarstellung sicher auch hohen
             wert auf qualität — genau da kommen wir ins spiel.
           </p>
-          <Link to="/produkte" className="mt-7 inline-block">
-            <Button size="lg">produkte entdecken <ArrowRight className="ml-2 h-4 w-4" /></Button>
-          </Link>
+          <LinkButton to="/produkte" size="lg" className="mt-7">produkte entdecken <ArrowRight className="ml-2 h-4 w-4" /></LinkButton>
         </div>
         <div className="relative">
           <img loading="lazy" decoding="async" src={hamburgImage} alt="Hamburg" className="aspect-[4/5] w-full rounded-[2rem] object-cover shadow-card sm:aspect-square" />
@@ -105,7 +109,7 @@ export function Unternehmen() {
       <div className="mt-20">
         <div className="mx-auto mb-10 max-w-2xl text-center">
           <h2 className="text-3xl font-black lowercase sm:text-4xl">
-            unser name steht für textilveredelung, die seit zehn jahren mit <span className="italic text-secondary">qualität & service</span> überzeugt.
+            unser name steht für textilveredelung, die seit über zehn jahren mit <span className="italic text-secondary">qualität & service</span> überzeugt.
           </h2>
         </div>
         <div className="grid gap-5 sm:grid-cols-2">
@@ -126,8 +130,8 @@ export function Unternehmen() {
           in unseren filialen in hamburg oder direkt online.
         </p>
         <div className="mt-7 flex flex-wrap justify-center gap-3">
-          <Link to="/kontakt"><Button size="lg" variant="secondary">kontakt aufnehmen</Button></Link>
-          <Link to="/filialen"><Button size="lg" variant="outline" className="border-primary-foreground/40 bg-transparent text-primary-foreground hover:bg-primary-foreground/10">filialen ansehen</Button></Link>
+          <LinkButton to="/kontakt" size="lg" variant="secondary">kontakt aufnehmen</LinkButton>
+          <LinkButton to="/filialen" size="lg" variant="outline" className="border-primary-foreground/40 bg-transparent text-primary-foreground hover:bg-primary-foreground/10">filialen ansehen</LinkButton>
         </div>
       </div>
     </div>
@@ -238,7 +242,7 @@ const STITCH_METHODS: Method[] = [
   },
   {
     name: "patches / aufnäher",
-    desc: "Gestickte Aufnäher nach eurem Motiv und in beliebigen Formen — ob mit Klettverschluss oder Schmelzkleber. Wir liefern bereits ab einer Mindestmenge von 30 Stück.",
+    desc: "Gestickte Aufnäher nach deinem Motiv und in beliebigen Formen — ob mit Klettverschluss oder Schmelzkleber. Wir liefern bereits ab einer Mindestmenge von 30 Stück.",
     fields: [
       ["Stückzahl", "Ab 30 Stück"],
       ["Garnfarben", "Nahezu unbegrenzte Farbauswahl"],
@@ -324,9 +328,7 @@ export function Leistungen() {
       <div className="mt-20 rounded-3xl bg-primary px-8 py-12 text-center text-primary-foreground">
         <h2 className="text-3xl font-extrabold lowercase">dein motiv, unser handwerk.</h2>
         <p className="mx-auto mt-2 max-w-lg text-primary-foreground/90">nicht sicher, welches verfahren passt? wir beraten dich persönlich.</p>
-        <Link to="/kontakt" className="mt-6 inline-block">
-          <Button size="lg" variant="secondary">beratung anfragen <ArrowRight className="ml-2 h-4 w-4" /></Button>
-        </Link>
+        <LinkButton to="/kontakt" size="lg" variant="secondary" className="mt-6">beratung anfragen <ArrowRight className="ml-2 h-4 w-4" /></LinkButton>
       </div>
     </div>
   );
@@ -378,7 +380,7 @@ export function Filialen() {
 
 /* ---------- Großbestellung ---------- */
 const BULK_BENEFITS = [
-  { icon: Package, value: "ab 25 stück", title: "mengenrabatte", desc: "schon ab kleinen auflagen attraktive konditionen." },
+  { icon: Package, value: "individuelles angebot", title: "mengenrabatte", desc: "schon ab kleinen auflagen attraktive konditionen." },
   { icon: Percent, value: "bis 50 % sparen", title: "günstiger pro stück", desc: "je größer die menge, desto niedriger der stückpreis." },
   { icon: Zap, value: "express möglich", title: "schnelle lieferung", desc: "auf anfrage auch besonders kurzfristig." },
   { icon: Users, value: "persönlich", title: "feste ansprechpartner", desc: "beratung von der auswahl bis zur veredelung." },
@@ -409,16 +411,19 @@ function BulkForm() {
     setBusy(true);
     setError(null);
     try {
+      // id generated here: anon may insert but not read back; notify-admin needs it
+      const id = crypto.randomUUID();
       let motivPath: string | null = null;
       if (file) {
         if (file.size > 25 * 1024 * 1024) throw new Error("Das Motiv ist größer als 25 MB.");
         const safeName = file.name.normalize("NFKD").replace(/[^\w.-]+/g, "_").slice(-100);
-        const path = `bulk/${crypto.randomUUID()}/${safeName}`;
+        const path = `bulk/${id}/${safeName}`;
         const { error: upErr } = await supabase.storage.from("order-designs").upload(path, file, { upsert: false });
         if (upErr) throw upErr;
         motivPath = path;
       }
       const { error: insErr } = await supabase.from("bulk_inquiries").insert({
+        id,
         filiale: f.filiale || null,
         textil_art: f.textilArt || null,
         qualitaet: f.qualitaet || null,
@@ -434,11 +439,17 @@ function BulkForm() {
         motiv_path: motivPath,
       });
       if (insErr) throw insErr;
+      // best-effort owner mail; never blocks or fails the form
+      void invokeFn("notify-admin", { kind: "bulk", id }).catch(() => {});
       setDone(true);
     } catch (err) {
-      const er = err as { code?: string; message?: string };
+      const er = err as { code?: string; message?: string; name?: string };
       // our own messages (size check, rate limit) are German; hide raw DB/storage errors
-      setError(er.code === "P0001" || !er.code ? er.message ?? "Fehler beim Senden." : "Senden fehlgeschlagen. Bitte versuche es später erneut.");
+      // (storage errors carry no `code`, only name "StorageApiError"/"StorageUnknownError")
+      if (er.code === "P0001" || (!er.code && er.name === "Error")) setError(er.message ?? "Fehler beim Senden.");
+      else if (er.name?.startsWith("Storage"))
+        setError("Das Motiv konnte nicht hochgeladen werden. Bitte versuche es später erneut oder schick es uns per E-Mail an info@private-shirt.de.");
+      else setError("Senden fehlgeschlagen. Bitte versuche es später erneut.");
     } finally {
       setBusy(false);
     }
@@ -510,7 +521,7 @@ function BulkForm() {
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-2 file:text-sm file:font-medium file:text-primary"
             />
-            <p className="text-xs text-muted-foreground">.jpg, .png, .eps, .ai, .pdf — max. 10 MB</p>
+            <p className="text-xs text-muted-foreground">.jpg, .png, .svg, .eps, .ai, .pdf — max. 25 MB</p>
           </div>
         </div>
       </fieldset>
@@ -554,14 +565,20 @@ function BulkForm() {
       </fieldset>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
-      <Button type="submit" size="lg" className="w-full sm:w-auto" disabled={busy}>
-        {busy ? "wird gesendet…" : "anfrage abschicken"}
-      </Button>
+      <div className="space-y-3">
+        <Button type="submit" size="lg" className="w-full sm:w-auto" disabled={busy}>
+          {busy ? "wird gesendet…" : "anfrage abschicken"}
+        </Button>
+        <PrivacyNote>Wir verwenden deine Angaben und ein hochgeladenes Motiv nur, um deine Anfrage zu bearbeiten und dir ein Angebot zu erstellen.</PrivacyNote>
+      </div>
     </form>
   );
 }
 
 export function Grossbestellung() {
+  const tiers = useVolumeTiers();
+  // first tile shows the real online tiers (Admin → Mengenrabatte)
+  const benefits = BULK_BENEFITS.map((b, i) => (i === 0 && tiers[0] ? { ...b, value: `ab ${tiers[0].minQty} stück` } : b));
   return (
     <div>
       {/* Hero */}
@@ -580,12 +597,14 @@ export function Grossbestellung() {
             </p>
             <p>
               bei bedruckung, bestickung oder anderer gestaltung stehen wir dir mit über 10 jahren erfahrung zur
-              seite. ab 30 teilen bieten wir attraktive konditionen bei top-qualität.
+              seite.{" "}
+              {tiers.length > 0 && (
+                <>im shop gibt es automatisch mengenrabatt ({tiers.map((t) => `ab ${t.minQty} stück −${percentLabel(t.percent)}`).join(", ")}). </>
+              )}
+              für größere auflagen erstellen wir dir ein individuelles angebot.
             </p>
           </div>
-          <a href="#anfrage" className="mt-7 inline-block">
-            <Button size="lg">jetzt anfragen <ArrowRight className="ml-2 h-4 w-4" /></Button>
-          </a>
+          <LinkButton href="#anfrage" size="lg" className="mt-7">jetzt anfragen <ArrowRight className="ml-2 h-4 w-4" /></LinkButton>
         </div>
         <img loading="lazy" decoding="async" src={bulkImage} alt="Großbestellung" className="aspect-[4/3] w-full rounded-[2rem] object-cover shadow-card" />
       </div>
@@ -594,7 +613,7 @@ export function Grossbestellung() {
       <div className="mt-20">
         <h2 className="mb-8 text-center text-3xl font-black lowercase sm:text-4xl">deine vorteile bei <span className="italic text-secondary">großbestellungen</span></h2>
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {BULK_BENEFITS.map((b) => (
+          {benefits.map((b) => (
             <div key={b.title} className="hover-lift rounded-2xl border border-border/60 bg-card p-6 shadow-card">
               <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary"><b.icon className="h-6 w-6" /></div>
               <p className="text-lg font-black text-primary">{b.value}</p>
@@ -643,6 +662,14 @@ export function Impressum() {
 }
 
 /* ---------- Legal long-text ---------- */
+// "[label](/path)" inside the legal texts becomes an internal link.
+function withLinks(text: string): ReactNode[] {
+  return text.split(/(\[[^\]]+\]\(\/[^)\s]*\))/).map((part, i) => {
+    const m = part.match(/^\[([^\]]+)\]\((\/[^)\s]*)\)$/);
+    return m ? <Link key={i} to={m[2]} className="text-primary hover:underline">{m[1]}</Link> : part;
+  });
+}
+
 function LegalText({ raw }: { raw: string }) {
   const blocks = raw.split("\n").filter(Boolean);
   return (
@@ -651,7 +678,7 @@ function LegalText({ raw }: { raw: string }) {
         const [tag, ...rest] = line.split("|");
         const text = rest.join("|");
         if (tag === "H") return <h2 key={i} className="pt-4 text-lg font-bold text-foreground">{text}</h2>;
-        return <p key={i}>{text}</p>;
+        return <p key={i}>{withLinks(text)}</p>;
       })}
     </div>
   );
@@ -671,6 +698,47 @@ export function Datenschutz() {
     <div>
       <PageHero pre="rechtliches" head="datenschutz" gold="." />
       <LegalText raw={datenschutzRaw} />
+    </div>
+  );
+}
+
+/* ---------- Versand & Lieferung ---------- */
+function InfoCard({ icon: Icon, title, children }: { icon: typeof Truck; title: string; children: ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-border/60 bg-card p-6 shadow-card">
+      <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary"><Icon className="h-5 w-5" /></div>
+      <h2 className="text-lg font-bold lowercase">{title}</h2>
+      <div className="mt-1 space-y-2 text-sm text-muted-foreground">{children}</div>
+    </div>
+  );
+}
+
+// Values come from Admin → Einstellungen (shop_config), the same ones the checkout charges.
+export function Versand() {
+  const cfg = useShopConfig();
+  return (
+    <div>
+      <PageHero pre="service" head="versand &" gold="lieferung." lead="versandkosten, lieferzeit und liefergebiet auf einen blick." />
+      <div className="grid max-w-4xl gap-5 sm:grid-cols-2">
+        <InfoCard icon={MapPin} title="liefergebiet">
+          <p>Wir liefern derzeit nur an Adressen innerhalb Deutschlands.</p>
+        </InfoCard>
+        <InfoCard icon={Clock} title="lieferzeit">
+          <p><strong className="text-foreground">{cfg.deliveryTime}</strong></p>
+          <p>Bei Großbestellungen stimmen wir die Lieferzeit individuell mit dir ab.</p>
+        </InfoCard>
+        <InfoCard icon={Truck} title="versandkosten">
+          <p>{eur(cfg.shippingFlat)} pro Bestellung. Ab einem Warenwert von {eur(cfg.freeShippingThreshold)} (nach Abzug von Rabatten und Gutscheinen) ist der Versand kostenlos.</p>
+          <p>Wir versenden mit einem Versanddienstleister unserer Wahl.</p>
+        </InfoCard>
+        <InfoCard icon={CreditCard} title="bezahlung">
+          <p>Du bezahlst sicher über unseren Zahlungsdienstleister Stripe. Welche Zahlungsarten verfügbar sind, siehst du an der Kasse.</p>
+        </InfoCard>
+      </div>
+      <p className="mt-8 max-w-3xl text-sm text-muted-foreground">
+        Alle Preise inkl. MwSt. Fragen zu deiner Lieferung? <Link to="/kontakt" className="text-primary hover:underline">Schreib uns</Link>.
+        Informationen zum Widerrufsrecht findest du in der <Link to="/widerruf" className="text-primary hover:underline">Widerrufsbelehrung</Link>.
+      </p>
     </div>
   );
 }
@@ -723,6 +791,11 @@ export function Widerruf() {
           Zeitpunkt ist. Sie haben die Waren unverzüglich und in jedem Fall spätestens binnen vierzehn Tagen ab
           dem Tag, an dem Sie uns über den Widerruf dieses Vertrags unterrichten, an uns zurückzusenden. Sie
           tragen die unmittelbaren Kosten der Rücksendung der Waren.
+        </p>
+        <p>
+          Sie müssen für einen etwaigen Wertverlust der Waren nur aufkommen, wenn dieser Wertverlust auf einen
+          zur Prüfung der Beschaffenheit, Eigenschaften und Funktionsweise der Waren nicht notwendigen Umgang
+          mit ihnen zurückzuführen ist.
         </p>
 
         <h3 className="pt-2 font-semibold text-foreground">Ausschluss des Widerrufsrechts</h3>

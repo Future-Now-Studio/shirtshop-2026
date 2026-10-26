@@ -23,7 +23,6 @@ export const MOCK_COMPANY: Company = {
     country: 'Deutschland',
   },
   paymentTerms: '14 Tage netto, auf Rechnung',
-  discountPercent: 12, // #3 hinterlegte Firmenkondition
   annualBudget: 12000, // #10 Textilbudget pro Jahr
 }
 

@@ -20,7 +20,9 @@ export async function uploadArtwork(companyId: string, file: File): Promise<stri
   if (!supabase) throw new Error('Upload im Demo-Modus nicht verfügbar.')
   const problem = artworkProblem(file)
   if (problem) throw new Error(problem)
-  const safe = file.name.normalize('NFKD').replace(/[^\w.-]+/g, '_').slice(-80)
+  // Plain file name only ([A-Za-z0-9_.-], no '..'): create_order and the
+  // inquiry trigger reject anything else (see 012_customer_flow.sql).
+  const safe = file.name.normalize('NFKD').replace(/[^\w.-]+/g, '_').replace(/\.{2,}/g, '.').slice(-80)
   const path = `${companyId}/${crypto.randomUUID()}-${safe}`
   const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
     contentType: file.type || 'application/octet-stream',

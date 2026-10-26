@@ -1,36 +1,42 @@
-import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/PageHeader'
 import Quotes from '@/pages/Quotes'
 import Inquiry from '@/pages/Inquiry'
+import MyInquiries from '@/pages/MyInquiries'
 
-type Tab = 'angebote' | 'anfrage'
+type Tab = 'angebote' | 'anfragen' | 'anfrage'
 
-/** Combined "Angebote & Anfragen" area — the two customer touchpoints for quotes. */
+const TABS: [Tab, string][] = [
+  ['angebote', 'Angebote'],
+  ['anfragen', 'Meine Anfragen'],
+  ['anfrage', 'Neue Anfrage'],
+]
+
+/** Combined "Angebote & Anfragen" area — the customer touchpoints for quotes. */
 export default function Angebote() {
-  const [params] = useSearchParams()
-  const [tab, setTab] = useState<Tab>(params.get('tab') === 'anfrage' ? 'anfrage' : 'angebote')
+  // The tab lives in the URL (?tab=…) so links and the back button work.
+  const [params, setParams] = useSearchParams()
+  const raw = params.get('tab')
+  const tab: Tab = raw === 'anfrage' || raw === 'anfragen' ? raw : 'angebote'
+  const setTab = (t: Tab) => setParams(t === 'angebote' ? {} : { tab: t }, { replace: true })
 
   return (
     <div>
       <PageHeader
         title="Angebote & Anfragen"
-        description="Erhaltene Angebote annehmen oder eine neue Großanfrage stellen."
+        description="Angebote prüfen und annehmen, den Stand Ihrer Anfragen verfolgen oder eine neue Anfrage stellen."
       />
 
-      <div className="mb-6 inline-flex rounded-lg border border-border bg-muted/40 p-1">
-        {(
-          [
-            ['angebote', 'Angebote'],
-            ['anfrage', 'Neue Anfrage'],
-          ] as [Tab, string][]
-        ).map(([key, label]) => (
+      <div className="mb-6 inline-flex max-w-full overflow-x-auto rounded-lg border border-border bg-muted/40 p-1" role="tablist">
+        {TABS.map(([key, label]) => (
           <button
             key={key}
+            role="tab"
+            aria-selected={tab === key}
             onClick={() => setTab(key)}
             className={cn(
-              'rounded-md px-4 py-1.5 text-sm font-medium transition-colors',
+              'whitespace-nowrap rounded-md px-4 py-1.5 text-sm font-medium transition-colors',
               tab === key ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
             )}
           >
@@ -39,7 +45,9 @@ export default function Angebote() {
         ))}
       </div>
 
-      {tab === 'angebote' ? <Quotes embedded /> : <Inquiry embedded />}
+      {tab === 'angebote' && <Quotes embedded />}
+      {tab === 'anfragen' && <MyInquiries onNew={() => setTab('anfrage')} />}
+      {tab === 'anfrage' && <Inquiry embedded onShowInquiries={() => setTab('anfragen')} />}
     </div>
   )
 }

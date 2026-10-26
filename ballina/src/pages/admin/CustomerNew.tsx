@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input, Label } from '@/components/ui/input'
 import { PageHeader } from '@/components/PageHeader'
+import { parseDecimal } from './adminFormat'
 
 export default function CustomerNew() {
   const navigate = useNavigate()
@@ -19,15 +20,19 @@ export default function CustomerNew() {
   const [discount, setDiscount] = useState('')
   const [terms, setTerms] = useState('14 Tage netto')
 
+  const discountValue = discount.trim() ? parseDecimal(discount) : 0
+  const discountInvalid = !Number.isFinite(discountValue) || discountValue < 0 || discountValue > 100
+  const emailInvalid = !!email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+
   const create = useMutation({
     mutationFn: () =>
       adminCreateCustomer({
-        company,
-        contactPerson: contact,
-        email,
-        phone: phone || undefined,
-        discountPercent: discount ? Number(discount) : 0,
-        paymentTerms: terms,
+        company: company.trim(),
+        contactPerson: contact.trim(),
+        email: email.trim(),
+        phone: phone.trim() || undefined,
+        discountPercent: Math.round(discountValue * 100) / 100,
+        paymentTerms: terms.trim(),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'customers'] })
@@ -65,12 +70,20 @@ export default function CustomerNew() {
           </div>
           <div>
             <Label htmlFor="em">E-Mail (Login)</Label>
-            <Input id="em" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="einkauf@muster.de" />
+            <Input id="em" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="einkauf@muster.de" aria-invalid={emailInvalid || undefined} />
+            {emailInvalid && <p className="mt-1 text-xs text-destructive">Bitte eine gültige E-Mail-Adresse eingeben.</p>}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label htmlFor="di">Rabatt (%)</Label>
-              <Input id="di" type="number" min={0} value={discount} onChange={(e) => setDiscount(e.target.value)} />
+              <Label htmlFor="di">Rabatt (%) – Richtwert</Label>
+              <Input id="di" inputMode="decimal" value={discount} onChange={(e) => setDiscount(e.target.value)} placeholder="0" aria-invalid={discountInvalid || undefined} aria-describedby="di-hint" />
+              {discountInvalid ? (
+                <p className="mt-1 text-xs text-destructive">0 bis 100 %</p>
+              ) : (
+                <p id="di-hint" className="mt-1 text-xs text-muted-foreground">
+                  Interner Richtwert für Angebote – wird nicht automatisch abgezogen.
+                </p>
+              )}
             </div>
             <div>
               <Label htmlFor="te">Zahlungsziel</Label>
@@ -78,12 +91,12 @@ export default function CustomerNew() {
             </div>
           </div>
         </div>
-        <Button variant="brand" className="mt-5 w-full" onClick={() => create.mutate()} disabled={!company || !contact || !email || create.isPending}>
+        <Button variant="brand" className="mt-5 w-full" onClick={() => create.mutate()} disabled={!company.trim() || !contact.trim() || !email.trim() || emailInvalid || discountInvalid || create.isPending}>
           {create.isPending && <Loader2 className="size-4 animate-spin" />}
           Kunde anlegen
         </Button>
         {create.isError && (
-          <p className="mt-2 text-sm text-destructive">{(create.error as Error).message}</p>
+          <p role="alert" className="mt-2 text-sm text-destructive">{(create.error as Error).message}</p>
         )}
         <p className="mt-2 text-xs text-muted-foreground">
           Legt Kd-Nr. &amp; Konditionen an. Bei aktivem Mailserver erhält die E-Mail-Adresse eine

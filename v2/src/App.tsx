@@ -1,10 +1,10 @@
-import { Routes, Route, Link, useLocation } from "react-router-dom";
+import { Routes, Route, Link, useLocation, useNavigationType } from "react-router-dom";
 import Home from "@/pages/Home";
 import ProductDetail from "@/pages/ProductDetail";
 import Cart from "@/pages/Cart";
 import OrderSuccess from "@/pages/OrderSuccess";
 import Footer from "@/components/layout/Footer";
-import { Unternehmen, Leistungen, Filialen, Grossbestellung, Impressum, AGB, Datenschutz, Widerruf } from "@/pages/marketing";
+import { Unternehmen, Leistungen, Filialen, Grossbestellung, Impressum, AGB, Datenschutz, Widerruf, Versand } from "@/pages/marketing";
 import Kontakt from "@/pages/Kontakt";
 import Produkte from "@/pages/Produkte";
 import Wunschliste from "@/pages/Wunschliste";
@@ -36,6 +36,8 @@ const Inquiries = lazy(() => import("@/pages/admin/Inquiries"));
 const Settings = lazy(() => import("@/pages/admin/Settings"));
 const Coupons = lazy(() => import("@/pages/admin/Coupons"));
 const AdminReviews = lazy(() => import("@/pages/admin/Reviews"));
+const SetPassword = lazy(() => import("@/pages/admin/SetPassword"));
+const Guide = lazy(() => import("@/pages/admin/Guide"));
 
 const TITLES: Record<string, string> = {
   "/": "Private Shirt | Sei du selbst. Sei einzigartig.",
@@ -53,7 +55,14 @@ const TITLES: Record<string, string> = {
   "/impressum": "Impressum | Private Shirt",
   "/agb": "AGB | Private Shirt",
   "/datenschutz": "Datenschutz | Private Shirt",
+  "/versand": "Versand & Lieferung | Private Shirt",
+  "/kasse/abschluss": "Bestellabschluss | Private Shirt",
+  "/newsletter/bestaetigen": "Newsletter bestätigen | Private Shirt",
+  "/newsletter/abmelden": "Newsletter abmelden | Private Shirt",
 };
+
+// Private pages (cart, checkout, order, newsletter links, admin) are never indexed.
+const NOINDEX = ["/warenkorb", "/wunschliste", "/kasse", "/bestellung/", "/newsletter/", "/admin"];
 
 const DESCRIPTIONS: Record<string, string> = {
   "/": "T-Shirts, Hoodies und mehr selbst gestalten und in Hamburg bedrucken lassen – online oder in unseren Filialen.",
@@ -64,18 +73,25 @@ const DESCRIPTIONS: Record<string, string> = {
   "/filialen": "Besuch uns in Hamburg: Europa Passage und Mercado Altona.",
   "/grossbestellung": "Großbestellungen für Firmen, Vereine und Events – individuelles Angebot anfragen.",
   "/kontakt": "Fragen, Sonderwünsche oder Großbestellung? Schreib uns.",
+  "/versand": "Versandkosten, Lieferzeit und Liefergebiet von Private Shirt.",
 };
 
 export default function App() {
-  const { pathname } = useLocation();
+  const { pathname, hash } = useLocation();
+  const navType = useNavigationType();
+  useEffect(() => {
+    // new page → start at the top; back/forward keeps the browser's position, #anchors scroll themselves
+    if (navType !== "POP" && !hash) window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [pathname, navType]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     // product and designer pages set their own meta once the product loaded
     if (pathname.startsWith("/produkt/") || pathname.startsWith("/gestalten/")) return;
-    setPageMeta({
-      title: TITLES[pathname] ?? (pathname.startsWith("/admin") ? "Admin | Private Shirt" : "Private Shirt"),
-      description: DESCRIPTIONS[pathname],
-      path: pathname,
-    });
+    const path = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
+    const title = TITLES[path]
+      ?? (path.startsWith("/admin") ? "Admin | Private Shirt" : path.startsWith("/bestellung/") ? "Bestellung | Private Shirt" : null);
+    if (!title) return; // unknown URL: <NotFound /> sets its own meta (noindex)
+    setPageMeta({ title, description: DESCRIPTIONS[path], path, noindex: NOINDEX.some((p) => path.startsWith(p)) });
   }, [pathname]);
 
   return (
@@ -105,7 +121,9 @@ export default function App() {
           <Route path="/agb" element={<AGB />} />
           <Route path="/datenschutz" element={<Datenschutz />} />
           <Route path="/widerruf" element={<Widerruf />} />
+          <Route path="/versand" element={<Versand />} />
           <Route path="/kontakt" element={<Kontakt />} />
+          <Route path="/admin/passwort-setzen" element={<SetPassword />} />
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<Overview />} />
             <Route path="products" element={<Products />} />
@@ -120,6 +138,7 @@ export default function App() {
             <Route path="reviews" element={<AdminReviews />} />
             <Route path="discounts" element={<Discounts />} />
             <Route path="messages" element={<Messages />} />
+            <Route path="anleitung" element={<Guide />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -15,11 +15,13 @@ import OrderDetail from '@/pages/OrderDetail'
 import OrderSuccess from '@/pages/OrderSuccess'
 import Angebote from '@/pages/Angebote'
 import { CookieConsent } from '@/components/CookieConsent'
+import { RouteErrorBoundary } from '@/components/ErrorBoundary'
 
 // Split off less-frequent / admin-only screens so customers never download the
 // back-office bundle and the initial payload stays small.
 const Legal = lazy(() => import('@/pages/Legal'))
 const SetPassword = lazy(() => import('@/pages/SetPassword'))
+const Konto = lazy(() => import('@/pages/Konto'))
 const AdminDashboard = lazy(() => import('@/pages/admin/AdminDashboard'))
 const Customers = lazy(() => import('@/pages/admin/Customers'))
 const AdminOrders = lazy(() => import('@/pages/admin/AdminOrders'))
@@ -32,6 +34,7 @@ const QuoteNew = lazy(() => import('@/pages/admin/QuoteNew'))
 const AdminCustomerDetail = lazy(() => import('@/pages/admin/AdminCustomerDetail'))
 const CustomerNew = lazy(() => import('@/pages/admin/CustomerNew'))
 const AuditLog = lazy(() => import('@/pages/admin/AuditLog'))
+const AdminGuide = lazy(() => import('@/pages/admin/AdminGuide'))
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false } },
@@ -61,6 +64,8 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <BrowserRouter>
+          {/* Render errors show a message instead of a blank page; resets on navigation. */}
+          <RouteErrorBoundary>
           <OrderFlowProvider>
           <AuthLinkRedirect />
           <Suspense fallback={<PageFallback />}>
@@ -83,6 +88,7 @@ export default function App() {
               <Route path="/bestellung/:id" element={<OrderDetail />} />
               <Route path="/bestellung-erfolg/:id" element={<OrderSuccess />} />
               <Route path="/angebote" element={<Angebote />} />
+              <Route path="/konto" element={<Konto />} />
               <Route path="/anfrage" element={<Navigate to="/angebote?tab=anfrage" replace />} />
               {/* Entferntes Dashboard / ausgeblendeter Katalog → auf Bestellungen leiten. */}
               <Route path="/dashboard" element={<Navigate to="/bestellungen" replace />} />
@@ -110,7 +116,10 @@ export default function App() {
               <Route path="/admin/angebote" element={<AdminQuotes />} />
               <Route path="/admin/angebote/neu" element={<QuoteNew />} />
               <Route path="/admin/angebot/:id" element={<AdminQuoteDetail />} />
+              {/* Own key: switching between "neu" and "bearbeiten" remounts the form. */}
+              <Route path="/admin/angebot/:id/bearbeiten" element={<QuoteNew key="edit" />} />
               <Route path="/admin/audit" element={<AuditLog />} />
+              <Route path="/admin/anleitung" element={<AdminGuide />} />
             </Route>
 
             <Route path="*" element={<Navigate to="/" replace />} />
@@ -118,6 +127,7 @@ export default function App() {
           </Suspense>
           <CookieConsent />
           </OrderFlowProvider>
+          </RouteErrorBoundary>
         </BrowserRouter>
       </AuthProvider>
     </QueryClientProvider>

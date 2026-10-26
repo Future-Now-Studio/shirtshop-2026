@@ -6,6 +6,7 @@ import {
   MAX_ATTACHMENT_BYTES,
   cleanLine,
   cleanMultiline,
+  contactRecipient,
   escapeHtml,
   isHoneypotTriggered,
   isPlainEmail,
@@ -116,7 +117,7 @@ export default async (req) => {
 
     const info = await transporter.sendMail({
       from: `"Private Shirt Kontaktformular" <${process.env.SMTP_FROM || smtpUser}>`,
-      to: process.env.CONTACT_EMAIL_TO || 'timobeyer_@outlook.de',
+      to: contactRecipient(),
       replyTo: email,
       subject,
       html: `

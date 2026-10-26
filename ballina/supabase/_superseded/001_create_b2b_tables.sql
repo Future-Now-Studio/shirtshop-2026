@@ -1,3 +1,12 @@
+-- ===========================================================================
+-- !!! DO NOT RUN — SUPERSEDED, KEPT FOR HISTORY ONLY !!!
+-- Replaced by migrations/003_platform.sql … 014 (apply via ./supabase/apply.sh).
+-- On today's schema this file fails (b2b_orders has no user_id) or, run
+-- statement by statement, adds weak customer policies and updated_at
+-- triggers that break inquiry status changes. If that ever happened, run
+-- ./supabase/apply.sh "<conn>" once more (007 + 014 clean it up).
+-- ===========================================================================
+
 -- B2B Profiles Table
 CREATE TABLE IF NOT EXISTS b2b_profiles (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,

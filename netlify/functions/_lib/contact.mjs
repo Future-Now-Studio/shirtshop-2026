@@ -3,6 +3,11 @@
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB per file
 export const MAX_ATTACHMENTS = 5;
 
+/** Recipient of form mails: CONTACT_EMAIL_TO, else the company inbox from the Impressum. */
+export function contactRecipient(env = process.env) {
+  return env.CONTACT_EMAIL_TO || 'info@private-shirt.de';
+}
+
 const ALLOWED_ATTACHMENT_TYPES = new Map([
   ['image/jpeg', ['.jpg', '.jpeg']],
   ['image/png', ['.png']],

@@ -1,34 +1,40 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import { AlertTriangle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-const PAID = ["paid", "in_production", "shipped", "completed"];
+interface OrderStats {
+  order_count: number;
+  paid_count: number;
+  open_count: number;
+  review_count: number;
+  revenue: number;
+  revenue_30d: number;
+  top_products: { name: string; qty: number }[];
+}
 
 async function fetchDashboard() {
-  const [products, colors, sizes, orders, items] = await Promise.all([
+  // Order figures are computed in SQL over all orders (no 1000-row cap);
+  // cancelled and refunded orders do not count as sales.
+  const [products, colors, sizes, stats] = await Promise.all([
     supabase.from("products").select("*", { count: "exact", head: true }),
     supabase.from("colors").select("*", { count: "exact", head: true }),
     supabase.from("sizes").select("*", { count: "exact", head: true }),
-    supabase.from("orders").select("id, status, total, created_at"),
-    supabase.from("order_items").select("qty, products(name)"),
+    supabase.rpc("admin_order_stats"),
   ]);
-  const os = orders.data ?? [];
-  const paid = os.filter((o) => PAID.includes(o.status));
-  const revenue = paid.reduce((s, o) => s + Number(o.total ?? 0), 0);
-  const now = Date.now();
-  const rev30 = paid.filter((o) => now - new Date(o.created_at).getTime() < 30 * 864e5).reduce((s, o) => s + Number(o.total ?? 0), 0);
-
-  const byProduct: Record<string, number> = {};
-  for (const it of items.data ?? []) {
-    const name = (it as any).products?.name ?? "—";
-    byProduct[name] = (byProduct[name] ?? 0) + it.qty;
-  }
-  const top = Object.entries(byProduct).sort((a, b) => b[1] - a[1]).slice(0, 5);
-
+  if (stats.error) throw stats.error;
+  const s = stats.data as unknown as OrderStats;
+  const revenue = Number(s.revenue ?? 0);
   return {
-    counts: { products: products.count ?? 0, colors: colors.count ?? 0, sizes: sizes.count ?? 0, orders: orders.count ?? os.length },
-    revenue, rev30, paidCount: paid.length, avg: paid.length ? revenue / paid.length : 0, top,
+    counts: { products: products.count ?? 0, colors: colors.count ?? 0, sizes: sizes.count ?? 0, orders: s.order_count ?? 0 },
+    revenue,
+    rev30: Number(s.revenue_30d ?? 0),
+    paidCount: s.paid_count ?? 0,
+    openCount: s.open_count ?? 0,
+    reviewCount: s.review_count ?? 0,
+    avg: s.paid_count ? revenue / s.paid_count : 0,
+    top: (s.top_products ?? []).map((p) => [p.name, p.qty] as [string, number]),
   };
 }
 
@@ -42,18 +48,34 @@ const LINKS = [
 const eur = (n: number) => n.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
 
 export default function Overview() {
-  const { data } = useQuery({ queryKey: ["admin-dashboard"], queryFn: fetchDashboard });
+  const { data, error } = useQuery({ queryKey: ["admin-dashboard"], queryFn: fetchDashboard });
 
   return (
     <div>
       <h1 className="mb-6 text-2xl font-semibold">Übersicht</h1>
+      {error && <p className="mb-4 text-sm text-destructive">Kennzahlen konnten nicht geladen werden.</p>}
+
+      {data && (data.reviewCount > 0 || data.openCount > 0) && (
+        <div className="mb-6 flex flex-wrap gap-3 text-sm">
+          {data.reviewCount > 0 && (
+            <Link to="/admin/orders?status=review" className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900 hover:bg-amber-100">
+              <AlertTriangle className="h-4 w-4" /> {data.reviewCount} {data.reviewCount === 1 ? "Bestellung muss" : "Bestellungen müssen"} geprüft werden
+            </Link>
+          )}
+          {data.openCount > 0 && (
+            <Link to="/admin/orders" className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 hover:bg-accent">
+              {data.openCount} {data.openCount === 1 ? "Bestellung" : "Bestellungen"} in Bearbeitung (bezahlt, noch nicht versendet)
+            </Link>
+          )}
+        </div>
+      )}
 
       {/* KPIs */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi title="Umsatz (bezahlt)" value={data ? eur(data.revenue) : "—"} sub={data ? `${eur(data.rev30)} · 30 Tage` : ""} />
+        <Kpi title="Umsatz brutto (bezahlt)" value={data ? eur(data.revenue) : "—"} sub={data ? `${eur(data.rev30)} · 30 Tage · inkl. Versand, abzgl. Erstattungen` : ""} />
         <Kpi title="Bezahlte Bestellungen" value={data ? String(data.paidCount) : "—"} />
-        <Kpi title="Ø Bestellwert" value={data ? eur(data.avg) : "—"} />
-        <Kpi title="Bestellungen gesamt" value={data ? String(data.counts.orders) : "—"} />
+        <Kpi title="Ø Bestellwert (brutto)" value={data ? eur(data.avg) : "—"} />
+        <Kpi title="Bestellungen gesamt" value={data ? String(data.counts.orders) : "—"} sub="inkl. offener, stornierter und erstatteter" />
       </div>
 
       {/* Top products */}

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { dbErrorMessage } from "@/lib/utils";
 
 const STATUS = ["neu", "in_bearbeitung", "angebot_gesendet", "abgeschlossen"] as const;
 const STATUS_LABEL: Record<string, string> = {
@@ -21,8 +22,11 @@ async function fetchInquiries() {
   return data;
 }
 
+// Motifs are uploaded anonymously (SVG can contain scripts): always fetch
+// them as a download, never render them inline in the browser.
 async function motivUrl(path: string) {
-  const { data } = await supabase.storage.from("order-designs").createSignedUrl(path, 3600);
+  const name = path.split("/").pop() || "motiv";
+  const { data } = await supabase.storage.from("order-designs").createSignedUrl(path, 300, { download: name });
   return data?.signedUrl ?? null;
 }
 
@@ -30,14 +34,23 @@ export default function Inquiries() {
   const qc = useQueryClient();
   const { data, isLoading, error } = useQuery({ queryKey: ["admin-inquiries"], queryFn: fetchInquiries });
   const [open, setOpen] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   async function setStatus(id: string, status: string) {
-    await supabase.from("bulk_inquiries").update({ status }).eq("id", id);
+    setActionError(null);
+    const { error } = await supabase.from("bulk_inquiries").update({ status }).eq("id", id);
+    if (error) setActionError("Status konnte nicht gespeichert werden: " + dbErrorMessage(error));
     qc.invalidateQueries({ queryKey: ["admin-inquiries"] });
+    qc.invalidateQueries({ queryKey: ["admin-badges"] });
   }
-  async function openMotiv(path: string) {
+  async function downloadMotiv(path: string) {
+    setActionError(null);
     const url = await motivUrl(path);
-    if (url) window.open(url, "_blank");
+    if (!url) { setActionError("Motiv konnte nicht geladen werden."); return; }
+    const a = document.createElement("a");
+    a.href = url;
+    a.rel = "noopener";
+    a.click();
   }
 
   return (
@@ -45,7 +58,8 @@ export default function Inquiries() {
       <h1 className="mb-1 text-2xl font-semibold">Großbestellungs-Anfragen</h1>
       <p className="mb-6 text-sm text-muted-foreground">Angebotsanfragen aus dem Großbestellungs-Formular.</p>
 
-      {error && <p className="text-destructive">Tabelle fehlt? SETUP_ALL.sql ausführen. ({(error as Error).message})</p>}
+      {error && <p className="text-destructive">Anfragen konnten nicht geladen werden ({dbErrorMessage(error)}). Fehlen Datenbank-Migrationen? → <code>supabase db push</code></p>}
+      {actionError && <p role="alert" className="mb-4 text-sm text-destructive">{actionError}</p>}
       {isLoading ? (
         <p className="text-muted-foreground">Lade…</p>
       ) : (
@@ -74,8 +88,8 @@ export default function Inquiries() {
                   {q.bemerkungen && <p className="rounded-lg bg-muted/40 p-3 text-muted-foreground">{q.bemerkungen}</p>}
                   <div className="flex flex-wrap items-center gap-3 pt-1">
                     {q.motiv_path && (
-                      <button onClick={() => openMotiv(q.motiv_path)} className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm hover:bg-accent">
-                        <Download className="h-4 w-4" /> Motiv
+                      <button onClick={() => downloadMotiv(q.motiv_path)} className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm hover:bg-accent">
+                        <Download className="h-4 w-4" /> Motiv herunterladen
                       </button>
                     )}
                     <select value={q.status} onChange={(e) => setStatus(q.id, e.target.value)} className="h-9 rounded-md border border-input bg-background px-2 text-sm">

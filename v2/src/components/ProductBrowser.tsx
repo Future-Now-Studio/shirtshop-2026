@@ -58,11 +58,12 @@ export default function ProductBrowser() {
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
+            type="search" aria-label="Produkte durchsuchen"
             value={q} onChange={(e) => setQ(e.target.value)} placeholder="Produkt suchen…"
             className="h-10 w-full rounded-full border border-input bg-background pl-9 pr-4 text-sm"
           />
         </div>
-        <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} className="h-10 rounded-full border border-input bg-background px-4 text-sm">
+        <select aria-label="Sortierung" value={sort} onChange={(e) => setSort(e.target.value as Sort)} className="h-10 rounded-full border border-input bg-background px-4 text-sm">
           <option value="new">Neueste</option>
           <option value="price-asc">Preis aufsteigend</option>
           <option value="price-desc">Preis absteigend</option>
@@ -73,7 +74,7 @@ export default function ProductBrowser() {
       {categories.length > 2 && (
         <div className="mb-8 flex flex-wrap gap-2">
           {categories.map((c) => (
-            <button key={c} onClick={() => setCat(c)}
+            <button key={c} type="button" aria-pressed={cat === c} onClick={() => setCat(c)}
               className={"rounded-full px-4 py-1.5 text-sm font-medium capitalize transition-colors " +
                 (cat === c ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-accent")}>
               {c}
@@ -92,31 +93,34 @@ export default function ProductBrowser() {
           const url = img ? supabase.storage.from("product-images").getPublicUrl(img.storage_path).data.publicUrl : null;
           const soldOut = isSoldOut(p);
           return (
-            <Link key={p.id} to={`/produkt/${p.slug}`} className="hover-lift group relative overflow-hidden rounded-2xl border border-border/60 bg-card shadow-card">
+            // heart button sits beside the link: a button inside <a> is invalid HTML
+            <div key={p.id} className="hover-lift group relative overflow-hidden rounded-2xl border border-border/60 bg-card shadow-card">
               <div className="absolute right-3 top-3 z-10"><HeartButton id={p.id} /></div>
-              {soldOut && <span className="absolute left-3 top-3 z-10 rounded-full bg-neutral-900/85 px-2.5 py-1 text-xs font-medium text-white">ausverkauft</span>}
-              <div className="flex aspect-square items-center justify-center overflow-hidden bg-white">
-                {url ? (
-                  <img loading="lazy" decoding="async" src={url} alt={p.name} className={"h-full w-full object-contain p-3 " + (soldOut ? "opacity-60" : "")} />
-                ) : (p.variants ?? []).length > 0 ? (
-                  <div className="flex h-full w-full">
-                    {(p.variants ?? []).slice(0, 6).map((v: any) => (
-                      <div key={v.id} className="h-full flex-1" style={{ backgroundColor: v.hex ?? v.colors?.hex }} title={v.colors?.name} />
-                    ))}
-                  </div>
-                ) : <div className="h-full w-full bg-muted" />}
-              </div>
-              <div className="p-5">
-                <h3 className="text-lg font-bold leading-tight transition-colors group-hover:text-primary">{p.name}</h3>
-                {p.category && <span className="mt-1 inline-block rounded-full bg-accent px-2.5 py-0.5 text-xs font-medium text-accent-foreground">{p.category}</span>}
-                <div className="mt-4 flex items-center justify-between">
-                  <span className="text-lg font-bold text-primary">{eur(Number(p.base_price))}<span className="block text-[10px] font-normal text-muted-foreground">{PRICE_NOTE}</span></span>
-                  <span className="flex items-center gap-1 text-sm font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
-                    {soldOut ? "ansehen" : "gestalten"} <ArrowRight className="h-4 w-4" />
-                  </span>
+              <Link to={`/produkt/${p.slug}`} className="block">
+                {soldOut && <span className="absolute left-3 top-3 z-10 rounded-full bg-neutral-900/85 px-2.5 py-1 text-xs font-medium text-white">ausverkauft</span>}
+                <div className="flex aspect-square items-center justify-center overflow-hidden bg-white">
+                  {url ? (
+                    <img loading="lazy" decoding="async" src={url} alt={p.name} className={"h-full w-full object-contain p-3 " + (soldOut ? "opacity-60" : "")} />
+                  ) : (p.variants ?? []).length > 0 ? (
+                    <div className="flex h-full w-full">
+                      {(p.variants ?? []).slice(0, 6).map((v: any) => (
+                        <div key={v.id} className="h-full flex-1" style={{ backgroundColor: v.hex ?? v.colors?.hex }} title={v.colors?.name} />
+                      ))}
+                    </div>
+                  ) : <div className="h-full w-full bg-muted" />}
                 </div>
-              </div>
-            </Link>
+                <div className="p-5">
+                  <h3 className="text-lg font-bold leading-tight transition-colors group-hover:text-primary">{p.name}</h3>
+                  {p.category && <span className="mt-1 inline-block rounded-full bg-accent px-2.5 py-0.5 text-xs font-medium text-accent-foreground">{p.category}</span>}
+                  <div className="mt-4 flex items-center justify-between">
+                    <span className="text-lg font-bold text-primary">{eur(Number(p.base_price))}<span className="block text-[10px] font-normal text-muted-foreground">{PRICE_NOTE}</span></span>
+                    <span className="flex items-center gap-1 text-sm font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
+                      {soldOut ? "ansehen" : "gestalten"} <ArrowRight className="h-4 w-4" />
+                    </span>
+                  </div>
+                </div>
+              </Link>
+            </div>
           );
         })}
       </div>

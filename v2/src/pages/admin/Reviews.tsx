@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Star, Check, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { dbErrorMessage } from "@/lib/utils";
 
 async function fetchAll() {
   const { data, error } = await supabase.from("reviews").select("id, rating, name, text, approved, created_at, products(name)").order("created_at", { ascending: false });
@@ -11,16 +13,32 @@ async function fetchAll() {
 export default function Reviews() {
   const qc = useQueryClient();
   const { data, error } = useQuery({ queryKey: ["admin-reviews"], queryFn: fetchAll });
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["admin-reviews"] });
+  const [actionError, setActionError] = useState<string | null>(null);
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["admin-reviews"] });
+    qc.invalidateQueries({ queryKey: ["admin-badges"] });
+  };
 
-  async function approve(id: string, approved: boolean) { await supabase.from("reviews").update({ approved }).eq("id", id); invalidate(); }
-  async function remove(id: string) { await supabase.from("reviews").delete().eq("id", id); invalidate(); }
+  async function approve(id: string, approved: boolean) {
+    setActionError(null);
+    const { error } = await supabase.from("reviews").update({ approved }).eq("id", id);
+    if (error) setActionError("Ändern fehlgeschlagen: " + dbErrorMessage(error));
+    refresh();
+  }
+  async function remove(r: { id: string; name: string }) {
+    if (!confirm(`Bewertung von „${r.name}“ endgültig löschen?`)) return;
+    setActionError(null);
+    const { error } = await supabase.from("reviews").delete().eq("id", r.id);
+    if (error) setActionError("Löschen fehlgeschlagen: " + dbErrorMessage(error));
+    refresh();
+  }
 
   return (
     <div className="max-w-3xl">
       <h1 className="mb-1 text-2xl font-semibold">Bewertungen</h1>
       <p className="mb-6 text-sm text-muted-foreground">Neue Bewertungen freigeben oder löschen.</p>
-      {error && <p className="text-destructive">Tabelle fehlt? Reviews-SQL ausführen.</p>}
+      {error && <p className="text-destructive">Bewertungen konnten nicht geladen werden ({dbErrorMessage(error)}). Fehlen Datenbank-Migrationen? → <code>supabase db push</code></p>}
+      {actionError && <p role="alert" className="mb-4 text-sm text-destructive">{actionError}</p>}
       <ul className="space-y-3">
         {(data ?? []).map((r: any) => (
           <li key={r.id} className={"rounded-xl border p-4 " + (r.approved ? "" : "border-amber-300 bg-amber-50/50")}>
@@ -32,7 +50,7 @@ export default function Reviews() {
               <div className="ml-auto flex gap-2">
                 {!r.approved && <button onClick={() => approve(r.id, true)} className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-accent"><Check className="h-3.5 w-3.5" /> freigeben</button>}
                 {r.approved && <button onClick={() => approve(r.id, false)} className="rounded-md border px-2 py-1 text-xs hover:bg-accent">verbergen</button>}
-                <button onClick={() => remove(r.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></button>
+                <button onClick={() => remove(r)} title="Löschen" aria-label={`Bewertung von ${r.name} löschen`} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></button>
               </div>
             </div>
             <p className="mt-2 text-sm text-muted-foreground">{r.text}</p>

@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom'
-import { ArrowRight, RefreshCw, ShieldCheck, Truck, Package, Clock, BadgePercent } from 'lucide-react'
+import { ArrowRight, RefreshCw, ShieldCheck, Truck, FileCheck2, Clock, BadgePercent } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { BrandMark } from '@/components/BrandMark'
+import { COMPANY } from '@/lib/legal'
 import textileWall from '@/assets/textile-wall.jpg'
 
 const TRUST = [
@@ -17,9 +18,9 @@ const FEATURES = [
     text: 'Frühere Aufträge mit einem Klick identisch wiederholen – gleiche Artikel, Größen und Mengen.',
   },
   {
-    icon: Package,
-    title: 'Ihr Sortiment im Blick',
-    text: 'Ihr hinterlegter Katalog zu Firmenkonditionen. Zusammenstellen, anpassen, absenden.',
+    icon: FileCheck2,
+    title: 'Anfrage & Angebot',
+    text: 'Artikel, Menge und Druckdatei senden, Ihr individuelles Angebot im Portal prüfen und verbindlich annehmen.',
   },
   {
     icon: ShieldCheck,
@@ -55,8 +56,8 @@ export default function Landing() {
             <span className="text-brand">ohne Umwege</span>.
           </h1>
           <p className="mt-5 max-w-lg text-lg text-muted-foreground">
-            Bewährte Artikel zentral verwalten und mit wenigen Klicks nachbestellen. Transparent,
-            schnell, zu Ihren Konditionen.
+            Angebote anfragen und annehmen, bewährte Aufträge mit wenigen Klicks nachbestellen.
+            Transparent, schnell, zu Ihren Konditionen.
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Link to="/login">
@@ -121,7 +122,7 @@ export default function Landing() {
             <Link to="/agb" className="hover:text-foreground">AGB</Link>
             <Link to="/widerruf" className="hover:text-foreground">Widerruf</Link>
           </nav>
-          <p>© 2026 Ballina</p>
+          <p>© {new Date().getFullYear()} {COMPANY.brand}</p>
         </div>
       </footer>
     </div>

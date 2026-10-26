@@ -53,7 +53,8 @@ function getWooCommerceAuthHeader(): string {
   return `Basic ${btoa(credentials)}`;
 }
 
-// Password for Placement Zones access - loaded from environment variable
+// Password for Placement Zones access (local dev tool) - VITE_ADMIN_PZ_PASSWORD in .env,
+// exposed to the dev server only (vite.config.ts). Without it the page stays locked.
 const PLACEMENT_ZONES_PASSWORD = import.meta.env.VITE_ADMIN_PZ_PASSWORD || "";
 const AUTH_STORAGE_KEY = "placement_zones_auth";
 
@@ -70,7 +71,7 @@ const createHash = (input: string): string => {
 
 // Check if user is authenticated
 const isAuthenticated = (): boolean => {
-  if (typeof window === "undefined") return false;
+  if (typeof window === "undefined" || !PLACEMENT_ZONES_PASSWORD) return false;
   const authData = sessionStorage.getItem(AUTH_STORAGE_KEY);
   if (!authData) return false;
   
@@ -94,7 +95,8 @@ const isAuthenticated = (): boolean => {
 
 // Authenticate user
 const authenticate = (password: string): boolean => {
-  if (password === PLACEMENT_ZONES_PASSWORD) {
+  // An unset password must never unlock the page with an empty input.
+  if (PLACEMENT_ZONES_PASSWORD && password === PLACEMENT_ZONES_PASSWORD) {
     const timestamp = Date.now();
     const sessionId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
     const hash = createHash(PLACEMENT_ZONES_PASSWORD + timestamp + sessionId);
@@ -154,7 +156,10 @@ const AdminPlacementZones = () => {
     if (e) e.preventDefault();
     setLoginError("");
     
-    if (authenticate(password)) {
+    if (!PLACEMENT_ZONES_PASSWORD) {
+      setLoginError("Kein Passwort eingerichtet: VITE_ADMIN_PZ_PASSWORD in der .env setzen und den Dev-Server neu starten.");
+      setPassword("");
+    } else if (authenticate(password)) {
       setIsAuthenticatedState(true);
       setPassword("");
       toast.success("Erfolgreich angemeldet");

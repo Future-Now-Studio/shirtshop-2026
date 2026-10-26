@@ -51,7 +51,7 @@ export default function Header() {
     <header className="glass-nav sticky top-0 z-40">
       <div className="container flex h-16 items-center justify-between">
         <Link to="/" className="flex items-center" onClick={() => setOpen(false)}>
-          <img loading="lazy" decoding="async" src={logo} alt="Private Shirt" className="h-8 w-auto" />
+          <img decoding="async" src={logo} alt="Private Shirt" className="h-8 w-auto" />
         </Link>
 
         {/* desktop nav */}

@@ -8,11 +8,14 @@ import { invokeFn } from "@/lib/functions";
 export default function NewsletterAction({ action }: { action: "confirm" | "unsubscribe" }) {
   const [params] = useSearchParams();
   const [state, setState] = useState<"loading" | "ok" | "error">("loading");
+  const [already, setAlready] = useState(false);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    invokeFn("newsletter", { action, token: params.get("token") ?? "" }).then(({ error }) => {
-      if (error) { setMessage(error); setState("error"); } else setState("ok");
+    invokeFn<{ status?: string }>("newsletter", { action, token: params.get("token") ?? "" }).then(({ data, error }) => {
+      if (error) { setMessage(error); setState("error"); return; }
+      setAlready(data?.status === "already");
+      setState("ok");
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -26,9 +29,11 @@ export default function NewsletterAction({ action }: { action: "confirm" | "unsu
             {action === "confirm" ? "anmeldung bestätigt." : "abgemeldet."}
           </h1>
           <p className="mt-2 text-muted-foreground">
-            {action === "confirm"
-              ? "Danke! Ab jetzt bekommst du unseren Newsletter."
-              : "Du erhältst keinen Newsletter mehr von uns."}
+            {action === "unsubscribe"
+              ? "Du erhältst keinen Newsletter mehr von uns."
+              : already
+                ? "Deine Anmeldung war bereits bestätigt – du bekommst unseren Newsletter."
+                : "Danke! Ab jetzt bekommst du unseren Newsletter."}
           </p>
         </>
       )}

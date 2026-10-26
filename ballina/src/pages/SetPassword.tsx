@@ -4,7 +4,7 @@ import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Label } from '@/components/ui/input'
 import { BrandMark } from '@/components/BrandMark'
-import { authErrorMessage } from '@/lib/auth'
+import { authErrorMessage, PASSWORD_MIN_LENGTH } from '@/lib/auth'
 import { AUTH_LINK_TYPE, supabase, USE_MOCK } from '@/lib/supabase'
 
 /**
@@ -21,19 +21,31 @@ export default function SetPassword() {
 
   useEffect(() => {
     if (USE_MOCK || !supabase) { setReady('expired'); return }
-    // The session from the link may arrive a moment after mount.
+    // An expired / used link comes back as "#error=…&error_code=otp_expired".
+    if (/[#&?]error(_code)?=/.test(window.location.hash + window.location.search)) { setReady('expired'); return }
+    // supabase-js first verifies the link (network round trip) and only then
+    // emits INITIAL_SESSION (with or without session). Decide on that event
+    // instead of a short fixed timeout (slow mobile connections).
+    // Only a session that comes from an invite/reset link may set a password
+    // without the current one — an already signed-in browser must not (an
+    // unattended session would allow an account takeover). Logged-in users
+    // change their password under "Mein Konto" with the current password.
     let done = false
     const finish = (ok: boolean) => { if (!done) { done = true; setReady(ok ? 'ok' : 'expired') } }
-    supabase.auth.getSession().then(({ data }) => data.session && finish(true))
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => session && finish(true))
-    const t = setTimeout(() => finish(false), 2500)
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session && (AUTH_LINK_TYPE || event === 'PASSWORD_RECOVERY')) finish(true)
+      else if (event === 'INITIAL_SESSION') finish(false)
+    })
+    supabase.auth.getSession().then(({ data }) => { if (data.session && AUTH_LINK_TYPE) finish(true) })
+    // Last resort if no event arrives at all.
+    const t = setTimeout(() => finish(false), 20000)
     return () => { clearTimeout(t); sub.subscription.unsubscribe() }
   }, [])
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
-    if (password.length < 8) return setError('Das Passwort muss mindestens 8 Zeichen lang sein.')
+    if (password.length < PASSWORD_MIN_LENGTH) return setError(`Das Passwort muss mindestens ${PASSWORD_MIN_LENGTH} Zeichen lang sein.`)
     if (password !== repeat) return setError('Die Passwörter stimmen nicht überein.')
     setSaving(true)
     const { error: err } = await supabase!.auth.updateUser({ password })
@@ -70,15 +82,17 @@ export default function SetPassword() {
           <form onSubmit={submit} className="mt-8 space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="new-password">Neues Passwort</Label>
-              <Input id="new-password" type="password" autoComplete="new-password" minLength={8} required
+              <Input id="new-password" type="password" autoComplete="new-password" minLength={PASSWORD_MIN_LENGTH} required
                 value={password} onChange={(e) => setPassword(e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="repeat-password">Passwort wiederholen</Label>
-              <Input id="repeat-password" type="password" autoComplete="new-password" minLength={8} required
+              <Input id="repeat-password" type="password" autoComplete="new-password" minLength={PASSWORD_MIN_LENGTH} required
                 value={repeat} onChange={(e) => setRepeat(e.target.value)} />
             </div>
-            <p className="text-xs text-muted-foreground">Mindestens 8 Zeichen.</p>
+            <p className="text-xs text-muted-foreground">
+              Mindestens {PASSWORD_MIN_LENGTH} Zeichen. Bitte kein Passwort verwenden, das Sie schon anderswo nutzen.
+            </p>
             {error && <div role="alert" className="rounded-lg bg-destructive/10 px-3 py-2.5 text-sm text-destructive">{error}</div>}
             <Button type="submit" variant="brand" size="xl" className="w-full" disabled={saving}>
               {saving && <Loader2 className="size-4 animate-spin" />}

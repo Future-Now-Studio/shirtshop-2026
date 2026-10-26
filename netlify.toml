@@ -1,3 +1,7 @@
+# LEGACY shop (WooCommerce + Stripe) on privateshirt.netlify.app. It is retired
+# when v2 goes live — see README.md "Legacy shop → Retirement".
+# Netlify only reads this file for a site WITHOUT a base directory: the v2 site
+# must set Base directory = v2, the ballina site Base directory = ballina.
 [build]
   command = "npm run build"
   publish = "dist"
@@ -14,3 +18,14 @@
   from = "/*"
   to = "/index.html"
   status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "SAMEORIGIN"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    # Only directives that cannot break Stripe, the WooCommerce images or the
+    # Google Maps embeds: no framing, no plugins, no <base> or foreign form targets.
+    Content-Security-Policy = "frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"

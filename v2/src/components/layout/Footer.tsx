@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { Mail, Phone, MapPin, Instagram } from "lucide-react";
 import logo from "@/assets/group-25.svg";
 import Newsletter from "./Newsletter";
+import { openConsentSettings } from "@/components/CookieConsent";
 
 const NAV = [
   { to: "/", label: "home" },
@@ -13,6 +14,7 @@ const SERVICES = [
   { to: "/selbst-gestalten", label: "selbst gestalten" },
   { to: "/grossbestellung", label: "großbestellung" },
   { to: "/filialen", label: "filialen" },
+  { to: "/versand", label: "versand & lieferung" },
 ];
 
 export default function Footer() {
@@ -89,6 +91,7 @@ export default function Footer() {
             <Link to="/impressum" className="hover:text-primary">impressum</Link>
             <Link to="/agb" className="hover:text-primary">agb</Link>
             <Link to="/widerruf" className="hover:text-primary">widerruf</Link>
+            <button type="button" onClick={openConsentSettings} className="hover:text-primary">cookie-einstellungen</button>
           </div>
           <p>webshop erstellt von <span className="font-medium text-foreground">future-now studio</span></p>
         </div>

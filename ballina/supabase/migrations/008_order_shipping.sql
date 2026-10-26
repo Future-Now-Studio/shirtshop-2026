@@ -19,5 +19,8 @@ create trigger b2b_orders_set_shipping
   before insert or update of total on public.b2b_orders
   for each row execute function public.b2b_orders_set_shipping();
 
--- backfill existing orders
-update public.b2b_orders set total = total;
+-- backfill existing orders — only rows whose shipping does not match the rule
+-- yet, so re-running apply.sh leaves existing orders (and updated_at) alone.
+update public.b2b_orders set total = total
+ where shipping is distinct from
+       (case when coalesce(total, 0) = 0 or total >= 500 then 0 else 6.90 end);

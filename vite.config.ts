@@ -3,13 +3,21 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 
 // https://vitejs.dev/config/
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   // Load .env (all vars, not just VITE_*) so we can use WC creds in the dev proxy
-  // without exposing them in the client bundle.
+  // without exposing them in the client bundle. WC keys must never carry a VITE_ prefix.
   const env = loadEnv(mode, process.cwd(), "");
-  const WC_BASE = env.WC_BASE_URL || env.VITE_WC_BASE_URL || "https://timob10.sg-host.com";
-  const WC_KEY = env.WC_CONSUMER_KEY || env.VITE_WC_CONSUMER_KEY || "";
-  const WC_SECRET = env.WC_CONSUMER_SECRET || env.VITE_WC_CONSUMER_SECRET || "";
+  const WC_BASE = env.WC_BASE_URL || "https://timob10.sg-host.com";
+  const WC_KEY = env.WC_CONSUMER_KEY || "";
+  const WC_SECRET = env.WC_CONSUMER_SECRET || "";
+
+  // Allowlist of variables that reach the browser. zustand reads the bare
+  // `import.meta.env`, which makes Vite inline the whole env object into the
+  // bundle — with the default "VITE_" prefix every VITE_* variable of the build
+  // environment would be public. The placement-zones password (local dev tool,
+  // see App.tsx) is only exposed to the dev server, never to a build.
+  const publicEnv = ["VITE_STRIPE_PUBLISHABLE_KEY", "VITE_SENTRY_DSN"];
+  const envPrefix = command === "serve" ? [...publicEnv, "VITE_ADMIN_PZ_PASSWORD"] : publicEnv;
 
   // Strip a trailing /wp-json/wc/v3 if the user pasted the full REST URL into env
   const wcTarget = WC_BASE.replace(/\/wp-json\/wc\/v3\/?$/, "");
@@ -25,6 +33,7 @@ export default defineConfig(({ mode }) => {
       : "";
 
   return {
+    envPrefix,
     server: {
       host: "::",
       port: 8080,

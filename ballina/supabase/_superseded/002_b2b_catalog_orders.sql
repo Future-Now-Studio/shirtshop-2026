@@ -1,6 +1,15 @@
 -- ===========================================================================
+-- !!! DO NOT RUN — SUPERSEDED, KEPT FOR HISTORY ONLY !!!
+-- Replaced by migrations/003_platform.sql … 014 (apply via ./supabase/apply.sh).
+-- On today's schema this file fails (b2b_orders has no user_id) or, run
+-- statement by statement, adds weak customer policies and updated_at
+-- triggers that break inquiry status changes. If that ever happened, run
+-- ./supabase/apply.sh "<conn>" once more (007 + 014 clean it up).
+-- ===========================================================================
+
+-- ===========================================================================
 -- Ballina B2B Portal · schema for catalogue + orders with line items
--- Run this in the SQL editor of the NEW Supabase project.
+-- (Original note, obsolete: "Run this in the SQL editor of the NEW Supabase project.")
 -- ===========================================================================
 
 -- --- Profiles (company per auth user) -------------------------------------

@@ -13,6 +13,7 @@ import { createOrderFromPayment, createPaymentIntentForCart } from './netlify/fu
 import {
   cleanLine,
   cleanMultiline,
+  contactRecipient,
   escapeHtml,
   isHoneypotTriggered,
   isPlainEmail,
@@ -141,7 +142,7 @@ app.post('/api/send-contact-email', async (req, res) => {
 
     const info = await transporter.sendMail({
       from: `"Private Shirt Contact Form" <${process.env.SMTP_FROM || smtpUser}>`,
-      to: process.env.CONTACT_EMAIL_TO || 'timobeyer_@outlook.de',
+      to: contactRecipient(),
       replyTo: email,
       subject: `Neue Kontaktanfrage von ${name}`,
       html: `

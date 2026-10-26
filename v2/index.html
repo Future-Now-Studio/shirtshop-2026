@@ -15,7 +15,17 @@
     <meta property="og:title" content="Private Shirt | Sei du selbst. Sei einzigartig." />
     <meta property="og:description" content="T-Shirts, Hoodies und mehr selbst gestalten und in Hamburg bedrucken lassen." />
     <meta property="og:url" content="https://private-shirt.de/" />
+    <meta property="og:image" content="https://private-shirt.de/og-image.jpg" />
     <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      // Netlify preview/staging hosts must not be indexed (canonical host: private-shirt.de)
+      if (/\.netlify\.app$/i.test(location.hostname)) {
+        var robots = document.createElement("meta");
+        robots.name = "robots";
+        robots.content = "noindex";
+        document.head.appendChild(robots);
+      }
+    </script>
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",

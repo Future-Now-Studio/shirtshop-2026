@@ -3,10 +3,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Star, Ruler, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { invokeFn } from "@/lib/functions";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { eur } from "@/lib/utils";
 import { PRICE_NOTE } from "@/lib/pricing";
 import { Honeypot, isBot } from "@/components/Honeypot";
+import { PrivacyNote } from "@/components/PrivacyNote";
 
 /* ---------- Size chart ---------- */
 const SIZE_ROWS = [
@@ -78,9 +81,13 @@ export function Reviews({ productId }: { productId: string }) {
     if (!form.name.trim() || !form.text.trim()) return;
     if (isBot(e.currentTarget as HTMLFormElement)) { setMsg("Danke! Deine Bewertung wird nach Prüfung veröffentlicht."); return; }
     setBusy(true); setMsg(null);
-    const { error } = await supabase.from("reviews").insert({ product_id: productId, rating: form.rating, name: form.name.trim(), text: form.text.trim() });
+    // id generated here: anon may insert but not read back; notify-admin needs it
+    const id = crypto.randomUUID();
+    const { error } = await supabase.from("reviews").insert({ id, product_id: productId, rating: form.rating, name: form.name.trim(), text: form.text.trim() });
     setBusy(false);
     if (error) { setMsg(error.code === "P0001" ? error.message : "Bewertung konnte nicht gesendet werden. Bitte später erneut versuchen."); return; }
+    // best-effort owner mail; never blocks or fails the form
+    void invokeFn("notify-admin", { kind: "review", id }).catch(() => {});
     setForm({ name: "", rating: 5, text: "" });
     setMsg("Danke! Deine Bewertung wird nach Prüfung veröffentlicht.");
     qc.invalidateQueries({ queryKey: ["reviews", productId] });
@@ -90,9 +97,15 @@ export function Reviews({ productId }: { productId: string }) {
 
   return (
     <section className="mt-16 border-t pt-10">
-      <div className="mb-6 flex items-center gap-3">
-        <h2 className="text-2xl font-bold lowercase">bewertungen</h2>
-        {reviews.length > 0 && <span className="flex items-center gap-1.5 text-sm text-muted-foreground"><Stars n={avg} /> {avg.toFixed(1)} · {reviews.length}</span>}
+      <div className="mb-6">
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-bold lowercase">bewertungen</h2>
+          {reviews.length > 0 && <span className="flex items-center gap-1.5 text-sm text-muted-foreground"><Stars n={avg} /> {avg.toFixed(1)} · {reviews.length}</span>}
+        </div>
+        {/* UWG § 5b Abs. 3: say whether/how reviews are checked */}
+        <p className="mt-1 text-xs text-muted-foreground">
+          Alle Bewertungen werden vor der Veröffentlichung von uns geprüft und freigegeben. Ob die Verfasser das Produkt gekauft haben, wird nicht überprüft.
+        </p>
       </div>
 
       <div className="grid gap-10 md:grid-cols-2">
@@ -112,17 +125,25 @@ export function Reviews({ productId }: { productId: string }) {
         <form onSubmit={submit} className="relative space-y-3 rounded-xl border bg-card p-5">
           <Honeypot />
           <p className="font-semibold lowercase">bewertung schreiben</p>
-          <div className="flex gap-1">
+          <p id="review-stars-label" className="text-sm font-medium">Sterne</p>
+          <div className="flex gap-1" role="group" aria-labelledby="review-stars-label">
             {[1, 2, 3, 4, 5].map((i) => (
               <button type="button" key={i} aria-label={`${i} von 5 Sternen`} aria-pressed={i === form.rating} onClick={() => setForm((f) => ({ ...f, rating: i }))}>
                 <Star className={"h-6 w-6 " + (i <= form.rating ? "fill-secondary text-secondary" : "text-muted-foreground/40")} />
               </button>
             ))}
           </div>
-          <input required placeholder="Dein Name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" />
-          <textarea required rows={3} placeholder="Wie findest du das Produkt?" value={form.text} onChange={(e) => setForm((f) => ({ ...f, text: e.target.value }))} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+          <div className="space-y-1.5">
+            <Label htmlFor="review-name">Dein Name</Label>
+            <input id="review-name" required maxLength={100} autoComplete="name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="review-text">Deine Bewertung</Label>
+            <textarea id="review-text" required rows={3} maxLength={2000} placeholder="Wie findest du das Produkt?" value={form.text} onChange={(e) => setForm((f) => ({ ...f, text: e.target.value }))} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+          </div>
           <Button type="submit" disabled={busy}>{busy ? "senden…" : "absenden"}</Button>
-          {msg && <p className="text-xs text-muted-foreground">{msg}</p>}
+          {msg && <p className="text-xs text-muted-foreground" role="status">{msg}</p>}
+          <PrivacyNote>Mit dem Absenden willigst du ein, dass dein Name, deine Sterne und dein Text nach Prüfung öffentlich bei diesem Produkt erscheinen. Die Löschung kannst du jederzeit verlangen.</PrivacyNote>
         </form>
       </div>
     </section>

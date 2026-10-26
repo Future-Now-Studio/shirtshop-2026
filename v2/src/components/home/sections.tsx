@@ -1,14 +1,15 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Plus, MapPin, Phone, Mail, Sparkles, Layers, Palette, Star } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { LinkButton } from "@/components/LinkButton";
+import { useVolumeTiers, tiersText, type VolumeTier } from "@/components/VolumeTiers";
 import { supabase } from "@/lib/supabase";
 import { STORES } from "@/pages/marketing";
 import aboutImage from "@/assets/lifestyle-woman.jpg";
 import hamburgImage from "@/assets/hamburg-city.jpg";
 import ConsentMap from "@/components/ConsentMap";
 import { eur } from "@/lib/utils";
-import { PRICE_NOTE } from "@/lib/pricing";
+import { PRICE_NOTE, useShopConfig, type ShopConfig } from "@/lib/pricing";
 
 /* ---------- Highlights slider ---------- */
 async function fetchHighlights() {
@@ -145,18 +146,20 @@ export function LocationsTeaser() {
   );
 }
 
-const FAQ = [
+// Lieferzeit, shipping and volume tiers come from the admin settings, so the
+// FAQ never contradicts what product page and checkout show.
+const faq = (cfg: ShopConfig, tiers: VolumeTier[]) => [
   {
-    q: "Wie lange dauert die Bearbeitung meiner Bestellung?",
-    a: "Standard-Bestellungen werden in der Regel innerhalb von 3–5 Werktagen bearbeitet und versendet. Bei individuellen Drucken oder Stickereien kann es 5–10 Werktage dauern. Großbestellungen besprechen wir individuell.",
+    q: "Wie lange dauert die Lieferung?",
+    a: `Lieferzeit: ${cfg.deliveryTime}. Wir liefern nur innerhalb Deutschlands. Großbestellungen besprechen wir individuell.`,
   },
   {
     q: "Kann ich meine eigenen Designs hochladen?",
-    a: "Ja! Mit unserem Creator lädst du eigene Designs hoch und platzierst sie direkt auf den Produkten. Wir unterstützen PNG, JPG, SVG und PDF — für beste Qualität empfehlen wir Vektordateien.",
+    a: "Ja! Im Designer („Selbst gestalten“) lädst du eigene Bilder hoch und platzierst sie direkt auf den Produkten. Möglich sind Bilddateien wie PNG, JPG oder SVG — für beste Qualität empfehlen wir SVG oder hochauflösende PNGs. Druckdaten wie PDF, AI oder EPS schickst du uns am besten über die Großbestellungs-Anfrage oder per E-Mail.",
   },
   {
-    q: "Was ist der Mindestbestellwert?",
-    a: "Der Mindestbestellwert beträgt 25 €. Bei Großbestellungen ab 50 Stück bieten wir attraktive Mengenrabatte. Kontaktiere uns gerne für ein individuelles Angebot.",
+    q: "Gibt es einen Mindestbestellwert?",
+    a: `Nein, du kannst schon ab einem Stück bestellen.${tiers.length ? ` Mengenrabatt gibt es automatisch im Warenkorb: ${tiersText(tiers)}.` : ""} Ab ${eur(cfg.freeShippingThreshold)} Warenwert ist der Versand kostenlos. Für große Auflagen erstellen wir dir gerne ein individuelles Angebot.`,
   },
   {
     q: "Welche Zahlungsmethoden werden akzeptiert?",
@@ -164,10 +167,10 @@ const FAQ = [
   },
   {
     q: "Was ist, wenn das Produkt nicht passt?",
-    a: "Du hast 14 Tage Zeit, ungetragene und unveränderte Artikel zurückzugeben. Individualisierte Produkte (mit Druck/Stickerei) können nur bei Mängeln zurückgegeben werden.",
+    a: "Für Artikel ohne individuellen Druck hast du ein 14-tägiges Widerrufsrecht ab Erhalt der Ware – Details in unserer Widerrufsbelehrung. Individuell bedruckte oder bestickte Artikel sind vom Widerruf ausgeschlossen (§ 312g Abs. 2 Nr. 1 BGB); bei Mängeln gelten natürlich die gesetzlichen Gewährleistungsrechte.",
   },
   {
-    q: "Bieten Sie Großbestellungen für Unternehmen an?",
+    q: "Bietet ihr Großbestellungen für Unternehmen an?",
     a: "Ja, wir sind spezialisiert auf Großbestellungen für Unternehmen, Vereine und Events — mit individueller Beratung, Mengenrabatten und Umsetzung deiner Firmenlogos.",
   },
 ];
@@ -175,7 +178,7 @@ const FAQ = [
 const ABOUT_STATS = [
   { value: "2010", label: "gegründet" },
   { value: "2", label: "filialen in hh" },
-  { value: "1 Mio+", label: "prints" },
+  { value: "1 Mio+", label: "veredelte teile" },
 ];
 
 export function AboutTeaser() {
@@ -218,17 +221,16 @@ export function AboutTeaser() {
             </div>
           ))}
         </dl>
-        <Link to="/unternehmen" className="mt-8 inline-block">
-          <Button size="lg">
-            jetzt kennenlernen <ArrowRight className="ml-2 h-4 w-4" />
-          </Button>
-        </Link>
+        <LinkButton to="/unternehmen" size="lg" className="mt-8">
+          jetzt kennenlernen <ArrowRight className="ml-2 h-4 w-4" />
+        </LinkButton>
       </div>
     </section>
   );
 }
 
 export function FaqSection() {
+  const items = faq(useShopConfig(), useVolumeTiers());
   return (
     <section className="mt-20">
       <h2 className="text-center text-4xl font-black lowercase">
@@ -236,7 +238,7 @@ export function FaqSection() {
       </h2>
       <p className="mt-2 text-center text-muted-foreground">hier findest du antworten auf die häufigsten fragen zu produkten, bestellungen und services.</p>
       <div className="mx-auto mt-8 max-w-3xl space-y-3">
-        {FAQ.map((f) => (
+        {items.map((f) => (
           <details key={f.q} className="group rounded-2xl border border-border/60 bg-card p-5 shadow-sm [&_svg]:open:rotate-45">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-semibold">
               {f.q}
@@ -259,14 +261,10 @@ export function ContactBanner() {
         Großbestellung an.
       </p>
       <div className="mt-7 flex flex-wrap justify-center gap-3">
-        <a href="#produkte">
-          <Button size="lg" variant="secondary">Jetzt gestalten</Button>
-        </a>
-        <Link to="/grossbestellung">
-          <Button size="lg" variant="outline" className="border-primary-foreground/40 bg-transparent text-primary-foreground hover:bg-primary-foreground/10">
-            Großbestellung anfragen
-          </Button>
-        </Link>
+        <LinkButton href="#produkte" size="lg" variant="secondary">Jetzt gestalten</LinkButton>
+        <LinkButton to="/grossbestellung" size="lg" variant="outline" className="border-primary-foreground/40 bg-transparent text-primary-foreground hover:bg-primary-foreground/10">
+          Großbestellung anfragen
+        </LinkButton>
       </div>
     </section>
   );

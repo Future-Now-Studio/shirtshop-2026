@@ -4,6 +4,12 @@ import { Button } from '@/components/ui/button'
 
 const KEY = 'ballina_cookie_consent'
 
+/**
+ * Information note, not a consent banner: the portal only stores what is
+ * technically necessary (login session) and uses no tracking, so there is
+ * nothing to accept or decline (§ 25 Abs. 2 Nr. 2 TDDDG). If analytics or
+ * marketing tools are ever added, this must become a real consent dialog.
+ */
 export function CookieConsent() {
   const [show, setShow] = useState(false)
 
@@ -15,9 +21,9 @@ export function CookieConsent() {
     }
   }, [])
 
-  function decide(value: 'essential' | 'all') {
+  function dismiss() {
     try {
-      localStorage.setItem(KEY, value)
+      localStorage.setItem(KEY, 'info')
     } catch {
       /* ignore */
     }
@@ -26,22 +32,22 @@ export function CookieConsent() {
 
   if (!show) return null
   return (
-    <div className="fixed inset-x-3 bottom-3 z-50 mx-auto max-w-2xl rounded-xl border border-border bg-background p-4 shadow-xl sm:inset-x-auto sm:right-4">
+    <div
+      role="region"
+      aria-label="Hinweis zur Speicherung"
+      className="fixed inset-x-3 bottom-3 z-50 mx-auto flex max-w-2xl flex-col gap-3 rounded-xl border border-border bg-background p-4 shadow-xl sm:inset-x-auto sm:right-4 sm:flex-row sm:items-center"
+    >
       <p className="text-sm text-muted-foreground">
-        Wir verwenden nur technisch notwendige Cookies, um das Portal bereitzustellen. Details in der{' '}
+        Dieses Portal speichert nur technisch notwendige Daten in Ihrem Browser (z. B. Ihre
+        Anmeldung) – kein Tracking, keine Werbe-Cookies. Details in der{' '}
         <Link to="/datenschutz" className="font-medium text-brand hover:underline">
           Datenschutzerklärung
         </Link>
         .
       </p>
-      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
-        <Button variant="outline" size="sm" onClick={() => decide('essential')}>
-          Nur notwendige
-        </Button>
-        <Button variant="brand" size="sm" onClick={() => decide('all')}>
-          Alle akzeptieren
-        </Button>
-      </div>
+      <Button variant="outline" size="sm" className="shrink-0" onClick={dismiss}>
+        Verstanden
+      </Button>
     </div>
   )
 }

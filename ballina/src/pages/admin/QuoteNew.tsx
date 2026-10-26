@@ -1,85 +1,124 @@
-import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react'
-import { adminCreateQuote, adminGetInquiries, adminSetInquiryStatus } from '@/lib/adminApi'
-import { formatEUR } from '@/lib/utils'
+import { ArrowLeft, Loader2 } from 'lucide-react'
+import { adminCreateQuote, adminGetInquiry, adminGetQuote, adminUpdateQuote, type QuoteInput } from '@/lib/adminApi'
+import { formatDate, formatEUR } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input, Label, Textarea } from '@/components/ui/input'
 import { PageHeader } from '@/components/PageHeader'
 import { CustomerCombobox } from '@/components/CustomerCombobox'
+import { berlinDatePlus, berlinToday, formatQty } from './adminFormat'
+import {
+  emptyPositionRow,
+  PositionsEditor,
+  rowsFromItems,
+  summarizePositions,
+  ZeroPriceConfirm,
+  type PositionRow,
+} from './PositionsEditor'
 
-interface Row {
-  productName: string
-  color: string
-  size: string
-  quantity: number
-  unitPrice: number
+/** valid_until (timestamptz) → Berlin calendar date for the date input. */
+function berlinDateOf(iso: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' }).format(new Date(iso))
 }
 
-const emptyRow: Row = { productName: '', color: '', size: '', quantity: 10, unitPrice: 0 }
-
+/**
+ * New quote (optionally prefilled from ?anfrage=, ?kunde= or ?vorlage=<quote>)
+ * or, under /admin/angebot/:id/bearbeiten, correction of an open quote.
+ */
 export default function QuoteNew() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { id: editId } = useParams()
   const [params] = useSearchParams()
-  const { data: inquiries = [] } = useQuery({ queryKey: ['admin', 'inquiries'], queryFn: adminGetInquiries })
+  const inquiryId = editId ? null : params.get('anfrage')
+  const templateId = editId ?? params.get('vorlage')
+  const presetCustomer = params.get('kunde')
 
-  const [companyId, setCompanyId] = useState('')
+  const inquiryQ = useQuery({
+    queryKey: ['admin', 'inquiry', inquiryId],
+    queryFn: () => adminGetInquiry(inquiryId!),
+    enabled: !!inquiryId,
+  })
+  const templateQ = useQuery({
+    queryKey: ['admin', 'quote', templateId],
+    queryFn: () => adminGetQuote(templateId!),
+    enabled: !!templateId,
+  })
+
+  const [companyId, setCompanyId] = useState(editId ? '' : presetCustomer ?? '')
   const [title, setTitle] = useState('')
-  const [validUntil, setValidUntil] = useState('')
+  const [validUntil, setValidUntil] = useState(berlinDatePlus(30))
   const [note, setNote] = useState('')
-  const [rows, setRows] = useState<Row[]>([{ ...emptyRow }])
+  const [rows, setRows] = useState<PositionRow[]>([{ ...emptyPositionRow }])
+  const [allowZero, setAllowZero] = useState(false)
 
-  // Prefill from ?kunde= or ?anfrage=
+  // Prefill once per source (a later refetch must not overwrite the admin's edits).
+  const source = inquiryId ? `anfrage:${inquiryId}` : templateId ? `angebot:${templateId}` : ''
+  const prefilled = useRef('')
   useEffect(() => {
-    const kunde = params.get('kunde')
-    const anfrage = params.get('anfrage')
-    if (anfrage) {
-      const inq = inquiries.find((i) => i.id === anfrage)
-      if (inq) {
-        setCompanyId(inq.companyId)
-        setTitle(inq.productType)
-        setRows([{ productName: inq.productType, color: '', size: '', quantity: inq.quantity, unitPrice: 0 }])
-      }
-    } else if (kunde) {
-      setCompanyId(kunde)
+    if (!source || prefilled.current === source) return
+    const inq = inquiryQ.data
+    const tpl = templateQ.data
+    if (inquiryId && inq) {
+      prefilled.current = source
+      setCompanyId(inq.companyId)
+      setTitle(inq.productType)
+      setRows([{ ...emptyPositionRow, productName: inq.productType, quantity: String(inq.quantity || 1) }])
+    } else if (templateId && tpl) {
+      prefilled.current = source
+      setCompanyId(tpl.companyId)
+      setTitle(tpl.title)
+      setNote(tpl.note ?? '')
+      setRows(rowsFromItems(tpl.items))
+      if (tpl.items.some((it) => it.unitPrice === 0)) setAllowZero(true)
+      // Editing keeps the validity unless it has already passed.
+      if (editId && tpl.validUntil && berlinDateOf(tpl.validUntil) >= berlinToday()) setValidUntil(berlinDateOf(tpl.validUntil))
     }
-  }, [params, inquiries])
+  }, [source, inquiryId, templateId, editId, inquiryQ.data, templateQ.data])
 
-  const total = rows.reduce((s, r) => s + r.unitPrice * r.quantity, 0)
+  const { items, invalidRows, zeroRows, total } = summarizePositions(rows)
+  const today = berlinToday()
+  const dateInvalid = !validUntil || validUntil < today
 
-  function setRow(i: number, patch: Partial<Row>) {
-    setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
-  }
-
-  const create = useMutation({
-    mutationFn: async () => {
-      const quote = await adminCreateQuote({
+  const save = useMutation({
+    mutationFn: () => {
+      const input: QuoteInput = {
         companyId,
-        title,
-        validUntil: validUntil ? new Date(validUntil).toISOString() : new Date(Date.now() + 30 * 864e5).toISOString(),
-        note: note || undefined,
-        items: rows
-          .filter((r) => r.productName && r.quantity > 0)
-          .map((r) => ({ productId: 'custom', imageUrl: '', ...r })),
-      })
-      // If this quote answers an inquiry, close that loop so it leaves the
-      // "Neu" list and the dashboard counter reflects reality.
-      const anfrage = params.get('anfrage')
-      if (anfrage) await adminSetInquiryStatus(anfrage, 'angebot_gesendet')
-      return quote
+        title: title.trim(),
+        validUntil,
+        note: note.trim() || undefined,
+        items: items.map((it) => ({ productId: 'custom', imageUrl: '', ...it })),
+        allowZeroPrice: zeroRows > 0 && allowZero,
+        inquiryId: inquiryId ?? undefined,
+      }
+      // Quote, positions and the inquiry status are written in one transaction.
+      return editId ? adminUpdateQuote(editId, input) : adminCreateQuote(input)
     },
-    onSuccess: () => {
+    onSuccess: (quote) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] })
+      queryClient.invalidateQueries({ queryKey: ['admin', 'quote', quote.id] })
       queryClient.invalidateQueries({ queryKey: ['admin', 'inquiries'] })
       queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] })
-      navigate('/admin/angebote')
+      navigate(`/admin/angebot/${quote.id}`, { replace: !!editId })
     },
   })
 
-  const valid = companyId && title && rows.some((r) => r.productName && r.quantity > 0 && r.unitPrice >= 0)
+  const editBlocked = !!editId && !!templateQ.data && templateQ.data.status !== 'offen'
+  const valid =
+    !!companyId && !!title.trim() && !dateInvalid && items.length > 0 && invalidRows === 0 && (zeroRows === 0 || allowZero) && !editBlocked
+
+  if ((inquiryId && inquiryQ.isLoading) || (templateId && templateQ.isLoading)) {
+    return (
+      <div className="grid place-items-center py-16">
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+  const loadError = (inquiryId && inquiryQ.error) || (templateId && templateQ.error)
+  const missing = (inquiryId && inquiryQ.isSuccess && !inquiryQ.data) || (templateId && templateQ.isSuccess && !templateQ.data)
 
   return (
     <div>
@@ -90,83 +129,93 @@ export default function QuoteNew() {
         <ArrowLeft className="size-4" />
         Zurück
       </button>
-      <PageHeader title="Neues Angebot" description="Angebot für einen Kunden zusammenstellen und senden." />
+      <PageHeader
+        title={editId ? `Angebot ${templateQ.data?.quoteNumber ?? ''} bearbeiten` : 'Neues Angebot'}
+        description={
+          editId
+            ? 'Korrektur eines offenen Angebots. Der Kunde sieht die Änderung sofort im Portal.'
+            : 'Angebot für einen Kunden zusammenstellen und senden.'
+        }
+      />
+
+      {(loadError || missing) && (
+        <p role="alert" className="mb-4 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {loadError
+            ? `Vorlage konnte nicht geladen werden: ${(loadError as Error).message}`
+            : inquiryId
+              ? 'Die Anfrage wurde nicht gefunden.'
+              : 'Das Angebot wurde nicht gefunden.'}
+        </p>
+      )}
+      {editBlocked && (
+        <p role="alert" className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Dieses Angebot ist nicht mehr offen und kann nicht geändert werden. Über „Als Vorlage kopieren“
+          lässt sich ein neues Angebot erstellen.
+        </p>
+      )}
+      {inquiryQ.data && (
+        <Card className="mb-6 p-4 text-sm">
+          <p className="font-medium">Anfrage von {inquiryQ.data.companyName}</p>
+          <p className="mt-1 text-muted-foreground">
+            {inquiryQ.data.productType} · {formatQty(inquiryQ.data.quantity)} Stück
+            {inquiryQ.data.deadline ? ` · bis ${formatDate(inquiryQ.data.deadline)}` : ''}
+            {inquiryQ.data.message ? ` · „${inquiryQ.data.message}“` : ''}
+          </p>
+        </Card>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           {/* Positions */}
           <Card className="p-5">
             <h3 className="text-sm font-semibold">Positionen</h3>
-            <div className="mt-3 space-y-3">
-              {rows.map((r, i) => (
-                <div key={i} className="grid grid-cols-12 items-end gap-2 border-b border-border pb-3 last:border-0 xl:border-0 xl:pb-0">
-                  <div className="col-span-12 xl:col-span-3">
-                    <Label className={i === 0 ? '' : 'xl:hidden'}>Artikel</Label>
-                    <Input value={r.productName} onChange={(e) => setRow(i, { productName: e.target.value })} placeholder="z. B. Softshell-Jacke" />
-                  </div>
-                  <div className="col-span-6 sm:col-span-3 xl:col-span-2">
-                    <Label className={i === 0 ? '' : 'xl:hidden'}>Farbe</Label>
-                    <Input value={r.color} onChange={(e) => setRow(i, { color: e.target.value })} placeholder="Schwarz" />
-                  </div>
-                  <div className="col-span-6 sm:col-span-3 xl:col-span-2">
-                    <Label className={i === 0 ? '' : 'xl:hidden'}>Größe</Label>
-                    <Input value={r.size} onChange={(e) => setRow(i, { size: e.target.value })} placeholder="L" />
-                  </div>
-                  <div className="col-span-5 sm:col-span-2 xl:col-span-2">
-                    <Label className={i === 0 ? '' : 'xl:hidden'}>Menge</Label>
-                    <Input type="number" min={1} value={r.quantity} onChange={(e) => setRow(i, { quantity: Number(e.target.value) || 0 })} />
-                  </div>
-                  <div className="col-span-5 sm:col-span-3 xl:col-span-2">
-                    <Label className={i === 0 ? '' : 'xl:hidden'}>€/Stück</Label>
-                    <Input type="number" min={0} step="0.01" value={r.unitPrice} onChange={(e) => setRow(i, { unitPrice: Number(e.target.value) || 0 })} />
-                  </div>
-                  <div className="col-span-2 flex justify-end sm:col-span-1">
-                    <button
-                      onClick={() => setRows((rs) => (rs.length > 1 ? rs.filter((_, idx) => idx !== i) : rs))}
-                      className="grid size-9 place-items-center text-muted-foreground hover:text-destructive"
-                      aria-label="Position entfernen"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <Button variant="outline" size="sm" className="mt-3" onClick={() => setRows((rs) => [...rs, { ...emptyRow }])}>
-              <Plus className="size-4" />
-              Position hinzufügen
-            </Button>
+            <PositionsEditor
+              rows={rows}
+              onChange={setRows}
+              placeholders={{ productName: 'z. B. Softshell-Jacke', color: 'Schwarz', size: 'L' }}
+            />
           </Card>
 
           <Card className="p-5">
-            <Label htmlFor="note">Hinweis zum Angebot (optional)</Label>
-            <Textarea id="note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Staffelpreise, Druckkosten, Lieferzeit…" />
+            <Label htmlFor="note">Hinweis zum Angebot (optional, für den Kunden sichtbar)</Label>
+            <Textarea id="note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Staffelpreise, Druckkosten, Lieferzeit…" maxLength={2000} />
           </Card>
         </div>
 
         {/* Meta / submit */}
         <Card className="h-fit space-y-4 p-5">
-          <CustomerCombobox value={companyId} onChange={setCompanyId} />
+          {/* Fixed when editing, or when answering a customer's inquiry. */}
+          <CustomerCombobox value={companyId} onChange={setCompanyId} disabled={!!editId || !!inquiryQ.data?.companyId} />
           <div>
             <Label htmlFor="title">Titel</Label>
-            <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="z. B. Winterjacken 2026" />
+            <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="z. B. Winterjacken 2026" maxLength={200} />
           </div>
           <div>
-            <Label htmlFor="valid">Gültig bis</Label>
-            <Input id="valid" type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
+            <Label htmlFor="valid">Gültig bis (einschließlich)</Label>
+            <Input id="valid" type="date" min={today} value={validUntil} onChange={(e) => setValidUntil(e.target.value)} aria-invalid={dateInvalid || undefined} />
+            {dateInvalid && <p className="mt-1 text-xs text-destructive">Bitte ein Datum ab heute wählen.</p>}
           </div>
 
           <div className="flex justify-between border-t border-border pt-3 text-sm">
-            <span className="text-muted-foreground">Angebotssumme</span>
+            <span className="text-muted-foreground">Angebotssumme (netto)</span>
             <span className="font-semibold">{formatEUR(total)}</span>
           </div>
 
-          <Button variant="brand" className="w-full" onClick={() => create.mutate()} disabled={!valid || create.isPending}>
-            {create.isPending && <Loader2 className="size-4 animate-spin" />}
-            Angebot senden
+          <ZeroPriceConfirm count={zeroRows} checked={allowZero} onChange={setAllowZero} />
+
+          <Button variant="brand" className="w-full" onClick={() => save.mutate()} disabled={!valid || save.isPending}>
+            {save.isPending && <Loader2 className="size-4 animate-spin" />}
+            {editId ? 'Änderungen speichern' : 'Angebot senden'}
           </Button>
+          {save.isError && (
+            <p role="alert" className="text-sm text-destructive">
+              {editId ? 'Nicht gespeichert' : 'Angebot nicht angelegt'}: {(save.error as Error).message}
+            </p>
+          )}
           <p className="text-center text-xs text-muted-foreground">
-            Der Kunde sieht das Angebot sofort in seinem Portal.
+            {editId
+              ? 'Es wird keine neue E-Mail versendet.'
+              : 'Der Kunde sieht das Angebot sofort in seinem Portal und erhält eine E-Mail.'}
           </p>
         </Card>
       </div>

@@ -4,6 +4,12 @@ import { Button } from "@/components/ui/button";
 
 const KEY = "shirtshop-v2-cookie-consent";
 export const CONSENT_EVENT = "shirtshop-consent-change";
+const OPEN_EVENT = "shirtshop-consent-open";
+
+/** Reopens the banner, so a given consent can be withdrawn as easily as given (Art. 7(3) DSGVO). */
+export function openConsentSettings() {
+  window.dispatchEvent(new Event(OPEN_EVENT));
+}
 
 /** True once the visitor allowed external content (Google Maps). */
 export function hasExternalConsent(): boolean {
@@ -42,6 +48,9 @@ export default function CookieConsent() {
     } catch {
       /* localStorage blocked — don't nag */
     }
+    const reopen = () => setOpen(true);
+    window.addEventListener(OPEN_EVENT, reopen);
+    return () => window.removeEventListener(OPEN_EVENT, reopen);
   }, []);
 
   function choose(value: "all" | "essential") {

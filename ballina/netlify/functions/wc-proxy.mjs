@@ -8,9 +8,12 @@
 //   products/categories, products/attributes, products/attributes/<id>/terms
 // Everything else gets a 403. Product listings are forced to status=publish and
 // single products / variations that are not published are answered with 404.
-// (Keep this file identical in ballina/netlify/functions and netlify/functions.)
-
-const WC_BASE = 'https://timob10.sg-host.com/wp-json/wc/v3';
+// (Same as netlify/functions/wc-proxy.mjs, except that here WC_BASE_URL is
+// required: the portal's catalogue is switched off, and without a configured
+// shop the keys must never be sent to the staging host.)
+//
+// Env: WC_BASE_URL (https REST base, e.g. https://shop.example.de/wp-json/wc/v3),
+// WC_CONSUMER_KEY, WC_CONSUMER_SECRET.
 
 const ALLOWED_ROUTES = [
   /^products$/,
@@ -42,6 +45,12 @@ export default async (req) => {
   const WC_SECRET = process.env.WC_CONSUMER_SECRET;
   if (!WC_KEY || !WC_SECRET) {
     return jsonResponse(500, { error: 'WooCommerce credentials not configured' });
+  }
+  // Credentials are sent along, so only an https base is accepted.
+  if (!process.env.WC_BASE_URL) return jsonResponse(503, { error: 'Katalog nicht konfiguriert' });
+  const WC_BASE = process.env.WC_BASE_URL.trim().replace(/\/+$/, '');
+  if (!/^https:\/\/[^\s/]+\/\S*$/.test(`${WC_BASE}/`)) {
+    return jsonResponse(500, { error: 'WC_BASE_URL must be an https URL' });
   }
 
   // e.g. /api/wc/products?per_page=100 → products

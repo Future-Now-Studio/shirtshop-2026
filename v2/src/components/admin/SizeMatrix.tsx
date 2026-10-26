@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { dbErrorMessage } from "@/lib/utils";
 
 async function fetchMatrix(productId: string) {
   const [sizes, productSizes, variants, availability] = await Promise.all([
@@ -29,6 +30,20 @@ export default function SizeMatrix({ productId }: { productId: string }) {
   const toggleProductSize = useMutation({
     mutationFn: async (p: { sizeId: string; enabled: boolean }) => {
       if (p.enabled) {
+        // A disabled size is not sellable: clear its stock so it can neither
+        // count for the publish check nor show up as stock anywhere.
+        const cells = (data?.avail ?? []).filter((a) => a.size_id === p.sizeId && (a.stock > 0 || a.available));
+        const units = cells.reduce((n, a) => n + a.stock, 0);
+        const name = data?.sizes.find((s) => s.id === p.sizeId)?.name ?? "";
+        if (units > 0 && !confirm(`Für Größe ${name} sind noch ${units} Stück Bestand eingetragen. Größe deaktivieren und Bestand auf 0 setzen?`)) return;
+        if (cells.length) {
+          const { error } = await supabase
+            .from("variant_size_availability")
+            .update({ stock: 0, available: false })
+            .eq("size_id", p.sizeId)
+            .in("variant_id", cells.map((a) => a.variant_id));
+          if (error) throw error;
+        }
         const { error } = await supabase.from("product_sizes").delete().match({ product_id: productId, size_id: p.sizeId });
         if (error) throw error;
       } else {
@@ -58,10 +73,13 @@ export default function SizeMatrix({ productId }: { productId: string }) {
 
   if (!data) return <p className="text-muted-foreground">Lade…</p>;
 
+  const failed = toggleProductSize.error ?? setCell.error;
+
   const sizes = data.sizes.filter((s) => data.enabledSizeIds.has(s.id));
 
   return (
     <div className="space-y-6">
+      {failed && <p role="alert" className="text-sm text-destructive">Speichern fehlgeschlagen: {dbErrorMessage(failed)}</p>}
       <div>
         <p className="mb-2 text-sm font-medium">Verfügbare Größen für dieses Produkt</p>
         <div className="flex flex-wrap gap-2">

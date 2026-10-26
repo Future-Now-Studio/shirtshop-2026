@@ -34,3 +34,14 @@ await run('row level security', async () => {
   await admin.from('products').delete().in('id', [pub.data.id, draft.data.id]);
   await admin.from('colors').delete().eq('id', color.data.id);
 });
+
+await run('internal helpers are not public', async () => {
+  const orphans = await anon.rpc('orphan_design_files', { p_older_than: '1 day' });
+  assert(!!orphans.error, 'anon cannot list orphaned design files');
+  const trusted = await anon.rpc('is_trusted_writer');
+  assert(!!trusted.error, 'anon cannot call is_trusted_writer');
+  const windows = await anon.from('design_upload_windows').select('window_start').limit(1);
+  assert(!!windows.error || (windows.data?.length ?? 0) === 0, 'anon cannot read the upload budget');
+  const svc = await admin.rpc('orphan_design_files', { p_older_than: '30 days', p_limit: 1 });
+  assert(!svc.error, 'service role can list orphaned design files');
+});

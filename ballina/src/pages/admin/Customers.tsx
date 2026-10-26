@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/PageHeader'
+import { formatPercent } from './adminFormat'
 
 export default function Customers() {
   const [q, setQ] = useState('')
@@ -70,8 +71,12 @@ export default function Customers() {
               <span>Firma</span>
               <span>Kd-Nr.</span>
               <span>Ansprechpartner</span>
-              <span className="text-right">Rabatt</span>
-              <span className="text-right">Budget</span>
+              <span className="text-right" title="Rabatt-Richtwert für Angebote – wird nicht automatisch abgezogen">
+                Rabatt*
+              </span>
+              <span className="text-right" title="Jahresbudget – nur zur Information, blockiert keine Bestellungen">
+                Budget*
+              </span>
               <span></span>
             </div>
             <div className="divide-y divide-border">
@@ -94,7 +99,7 @@ export default function Customers() {
                     <span className="text-muted-foreground"> · {c.billingAddress?.city ?? '—'}</span>
                   </span>
                   <span className="hidden text-right lg:block">
-                    {c.discountPercent ? <Badge variant="brand">–{c.discountPercent}%</Badge> : <span className="text-muted-foreground">—</span>}
+                    {c.discountPercent ? <Badge variant="neutral">{formatPercent(c.discountPercent)}</Badge> : <span className="text-muted-foreground">—</span>}
                   </span>
                   <span className="hidden text-right tabular-nums text-muted-foreground lg:block">
                     {c.annualBudget ? formatEUR(c.annualBudget) : '—'}
@@ -116,6 +121,10 @@ export default function Customers() {
               )}
             </div>
           </Card>
+          <p className="mt-2 hidden text-xs text-muted-foreground lg:block">
+            * Rabatt: interner Richtwert für Angebote, wird nicht automatisch abgezogen. Budget: nur zur Information,
+            blockiert keine Bestellungen.
+          </p>
           {hasNextPage && (
             <div className="mt-4 flex justify-end">
               <Button variant="outline" size="sm" onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>

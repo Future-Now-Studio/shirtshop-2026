@@ -8,6 +8,9 @@ import { Button } from "@/components/ui/button";
 import { useCart } from "@/stores/cart";
 import HeartButton from "@/components/HeartButton";
 import { SizeChartButton, Reviews, SimilarProducts } from "@/components/ProductExtras";
+import { DeliveryTime } from "@/components/DeliveryTime";
+import { VolumeTiers } from "@/components/VolumeTiers";
+import { LinkButton } from "@/components/LinkButton";
 import NotFound from "@/pages/NotFound";
 import { setPageMeta } from "@/lib/seo";
 import { PRICE_NOTE, shippingNote, useShopConfig } from "@/lib/pricing";
@@ -20,7 +23,7 @@ async function fetchProduct(slug: string) {
   const { data, error } = await supabase
     .from("products")
     .select(
-      `id, slug, name, description, category, base_price, design_element_price,
+      `id, slug, name, description, category, base_price, design_element_price, excluded_from_volume_discount,
        variants(id, hex, sort_order, colors(id, name, hex), variant_images(view, storage_path),
                 variant_size_availability(size_id, available, stock)),
        product_sizes(sizes(id, name, sort_order))`
@@ -63,6 +66,7 @@ export default function ProductDetail() {
       title: `${p.name} | Private Shirt`,
       description: p.description || `${p.name} bedrucken lassen – ab ${eur(Number(p.base_price))} inkl. MwSt.`,
       path: `/produkt/${p.slug}`,
+      image: img ? publicUrl(img.storage_path) : undefined,
       jsonLd: {
         "@context": "https://schema.org",
         "@type": "Product",
@@ -157,6 +161,11 @@ export default function ProductDetail() {
         <h1 className="mt-2 text-3xl font-semibold">{p.name}</h1>
         <p className="mt-1 text-2xl tabular-nums">{eur(Number(p.base_price))}</p>
         <p className="text-xs text-muted-foreground">{PRICE_NOTE} · {shippingNote(shopConfig)}</p>
+        {/* Lieferzeit + delivery area before the order (Art. 246a § 1 EGBGB, § 312j BGB) */}
+        <DeliveryTime className="mt-2" />
+        <p className="mt-0.5 pl-[22px] text-xs text-muted-foreground">
+          Lieferung nur innerhalb Deutschlands · <Link to="/versand" className="underline hover:text-foreground">Versand & Lieferung</Link>
+        </p>
         {p.description && <p className="mt-4 text-muted-foreground">{p.description}</p>}
 
         {/* Colors */}
@@ -166,8 +175,11 @@ export default function ProductDetail() {
             {variants.map((v: any, i: number) => (
               <button
                 key={v.id}
+                type="button"
                 onClick={() => { setVariantIdx(i); setSizeQty({}); }}
                 title={v.colors?.name}
+                aria-label={`Farbe ${v.colors?.name ?? i + 1}`}
+                aria-pressed={i === variantIdx}
                 className={
                   "h-9 w-9 rounded-full border-2 " + (i === variantIdx ? "border-primary ring-2 ring-primary/30" : "border-border")
                 }
@@ -194,9 +206,9 @@ export default function ProductDetail() {
                     {s.name}{!ok && <span className="ml-2 text-xs text-muted-foreground">ausverkauft</span>}
                   </span>
                   <div className="flex items-center gap-1.5">
-                    <button disabled={!ok || q <= 0} onClick={() => setQ(q - 1)} className="flex h-7 w-7 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent disabled:opacity-30">−</button>
-                    <input type="number" min={0} disabled={!ok} value={q} onChange={(e) => setQ(Number(e.target.value))} className="h-8 w-12 rounded-md border border-input bg-background text-center text-sm" />
-                    <button disabled={!ok} onClick={() => setQ(q + 1)} className="flex h-7 w-7 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent disabled:opacity-30">+</button>
+                    <button type="button" aria-label={`Größe ${s.name}: eins weniger`} disabled={!ok || q <= 0} onClick={() => setQ(q - 1)} className="flex h-7 w-7 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent disabled:opacity-30">−</button>
+                    <input type="number" min={0} aria-label={`Menge Größe ${s.name}`} disabled={!ok} value={q} onChange={(e) => setQ(Math.trunc(Number(e.target.value)) || 0)} className="h-8 w-12 rounded-md border border-input bg-background text-center text-sm" />
+                    <button type="button" aria-label={`Größe ${s.name}: eins mehr`} disabled={!ok} onClick={() => setQ(q + 1)} className="flex h-7 w-7 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent disabled:opacity-30">+</button>
                   </div>
                 </div>
               );
@@ -204,6 +216,8 @@ export default function ProductDetail() {
             {sizes.length === 0 && <p className="px-3 py-4 text-sm text-muted-foreground">Keine Größen hinterlegt.</p>}
           </div>
         </div>
+
+        <VolumeTiers qty={totalPieces} unitPrice={Number(p.base_price)} excluded={p.excluded_from_volume_discount} className="mt-4" />
 
         <div className="mt-4 flex items-center justify-between text-sm">
           <span className="text-muted-foreground">{totalPieces} Stück gesamt</span>
@@ -214,9 +228,7 @@ export default function ProductDetail() {
           <Button disabled={totalPieces === 0} className="px-8" onClick={handleAdd}>
             In den Warenkorb
           </Button>
-          <Link to={`/gestalten/${p.slug}`}>
-            <Button variant="outline">Selbst gestalten</Button>
-          </Link>
+          <LinkButton to={`/gestalten/${p.slug}`} variant="outline">Selbst gestalten</LinkButton>
         </div>
         {totalPieces === 0 && <p className="mt-2 text-xs text-muted-foreground">Mindestens 1 Stück wählen.</p>}
       </div>

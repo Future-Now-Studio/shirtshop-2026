@@ -1,15 +1,18 @@
 import { cn, formatEUR } from '@/lib/utils'
 
-/** Compact "Jahresbudget" progress bar: spent vs. annual budget (net). */
+/** Compact "Jahresbudget" progress bar: spent vs. annual budget (net goods value). */
 export function BudgetBar({
   spent,
   budget,
   year,
+  pending = 0,
   className,
 }: {
   spent: number
   budget: number
   year: number
+  /** Orders whose prices are still provisional (counted with their known amounts only). */
+  pending?: number
   className?: string
 }) {
   const ratio = budget > 0 ? spent / budget : 0
@@ -43,7 +46,9 @@ export function BudgetBar({
         {over
           ? `Budget um ${formatEUR(spent - budget)} überschritten.`
           : `Noch ${formatEUR(budget - spent)} verfügbar.`}{' '}
-        Summe aller nicht stornierten Bestellungen dieses Jahres.
+        Warenwert (netto) aller nicht stornierten Bestellungen {year}.
+        {pending > 0 &&
+          ` ${pending === 1 ? '1 Bestellung hat' : `${pending} Bestellungen haben`} noch vorläufige Preise und ${pending === 1 ? 'ist' : 'sind'} nur mit den bekannten Beträgen enthalten.`}
       </p>
     </div>
   )

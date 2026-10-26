@@ -1,13 +1,13 @@
 import { uploadArtwork } from './artwork'
 import { supabase, USE_MOCK } from './supabase'
-import { MOCK_COMPANY, MOCK_ORDERS, MOCK_PRODUCTS, MOCK_QUOTES } from './mockData'
-import { fetchWooCommerceProducts } from './woocommerce'
+import { MOCK_COMPANY, MOCK_ORDERS, MOCK_QUOTES } from './mockData'
 import { isQuoteAcceptable } from './utils'
 import type {
+  Address,
   CartLine,
   Company,
+  Inquiry,
   Order,
-  Product,
   Quote,
   QuoteStatus,
 } from './types'
@@ -49,27 +49,6 @@ function nextOrderNumber(orders: Order[]): string {
 // ---------------------------------------------------------------------------
 // Public API — pages/hooks call these regardless of backend.
 // ---------------------------------------------------------------------------
-export async function getProducts(): Promise<Product[]> {
-  // The catalogue always reflects the live main store (WooCommerce).
-  // Sample products are a mock-mode convenience only: in real mode a failed
-  // fetch must surface as an error instead of showing made-up prices.
-  if (USE_MOCK) {
-    try {
-      const products = await fetchWooCommerceProducts()
-      if (products.length) return products
-    } catch (err) {
-      console.warn('[catalogue] WooCommerce fetch failed, using mock samples:', err)
-    }
-    return MOCK_PRODUCTS.filter((p) => p.active)
-  }
-  try {
-    return await fetchWooCommerceProducts()
-  } catch (err) {
-    console.error('[catalogue] WooCommerce fetch failed:', err)
-    throw new Error('Der Produktkatalog ist gerade nicht erreichbar.', { cause: err })
-  }
-}
-
 export async function getCompany(): Promise<Company> {
   if (USE_MOCK || !supabase) {
     await delay()
@@ -101,7 +80,8 @@ export async function getCompany(): Promise<Company> {
     billingAddress: billing,
     deliveryAddress: delivery,
     paymentTerms: comp.payment_terms ?? undefined,
-    discountPercent: comp.discount_percent != null ? Number(comp.discount_percent) : undefined,
+    // discount_percent is an internal guide value for quotes (never applied to
+    // prices), so the customer app does not load it.
     annualBudget: comp.annual_budget != null ? Number(comp.annual_budget) : undefined,
   }
 }
@@ -125,16 +105,42 @@ export async function getOrder(id: string): Promise<Order | null> {
     await delay()
     return loadMockOrders().find((o) => o.id === id) ?? null
   }
+  // maybeSingle: an unknown / foreign id is "not found" (null), not an error.
   const { data, error } = await supabase
     .from('b2b_orders')
     .select('*, b2b_order_items(*), b2b_order_events(*)')
     .eq('id', id)
-    .single()
+    .maybeSingle()
   if (error) throw error
   return data ? mapOrderRow(data) : null
 }
 
-export async function createOrder(lines: CartLine[], note?: string): Promise<Order> {
+/** Order details entered in the order / accept dialog (stored in columns, see 012). */
+export interface OrderMeta {
+  note?: string
+  poNumber?: string // Bestellzeichen / Kostenstelle
+  deliveryAddress?: Address // undefined → company default
+  requestedDate?: string // YYYY-MM-DD
+}
+
+function metaToRpc(meta: OrderMeta) {
+  return {
+    note: meta.note?.trim() || null,
+    po_number: meta.poNumber?.trim() || null,
+    requested_date: meta.requestedDate || null,
+    delivery_address: meta.deliveryAddress
+      ? {
+          name: meta.deliveryAddress.name?.trim() || null,
+          line1: meta.deliveryAddress.line1.trim(),
+          zip: meta.deliveryAddress.zip.trim(),
+          city: meta.deliveryAddress.city.trim(),
+          country: meta.deliveryAddress.country?.trim() || null,
+        }
+      : null,
+  }
+}
+
+export async function createOrder(lines: CartLine[], meta: OrderMeta = {}): Promise<Order> {
   const total = lines.reduce((sum, l) => sum + l.unitPrice * l.quantity, 0)
 
   if (USE_MOCK || !supabase) {
@@ -146,7 +152,10 @@ export async function createOrder(lines: CartLine[], note?: string): Promise<Ord
       orderNumber: nextOrderNumber(orders),
       status: 'offen',
       total,
-      note,
+      note: meta.note?.trim() || undefined,
+      poNumber: meta.poNumber?.trim() || undefined,
+      deliveryAddress: meta.deliveryAddress,
+      requestedDate: meta.requestedDate || undefined,
       createdAt: now,
       statusHistory: [{ status: 'offen', at: now, note: 'Bestellung eingegangen.' }],
       items: lines.map((l, idx) => ({ id: `i_${Date.now()}_${idx}`, ...l })),
@@ -156,21 +165,22 @@ export async function createOrder(lines: CartLine[], note?: string): Promise<Ord
   }
 
   // Upload attached print files first (private bucket, own company folder).
-  if (lines.some((l) => l.artworkFile)) {
+  // Work on copies: the caller's lines are UI state.
+  const items = lines.map((l) => ({ ...l }))
+  if (items.some((l) => l.artworkFile)) {
     const profile = await currentProfile()
     if (!profile) throw new Error('Kein Firmenprofil gefunden.')
-    for (const l of lines) {
+    for (const l of items) {
       if (l.artworkFile) l.artworkPath = await uploadArtwork(profile.companyId, l.artworkFile)
     }
   }
 
-  // Server-side RPC: validates the company, derives unit prices from the DB
-  // (never from the client) and computes the total. See 007/009 migrations.
+  // Server-side RPC: validates the company, derives unit prices and images
+  // from the DB (never from the client) and computes the total. See 012.
   const { data: orderId, error } = await supabase.rpc('create_order', {
-    p_items: lines.map((l) => ({
+    p_items: items.map((l) => ({
       product_id: l.productId,
       product_name: l.productName,
-      image_url: l.imageUrl,
       color: l.color,
       size: l.size,
       quantity: l.quantity,
@@ -178,7 +188,7 @@ export async function createOrder(lines: CartLine[], note?: string): Promise<Ord
       artwork_name: l.artworkName ?? null,
       artwork_path: l.artworkPath ?? null,
     })),
-    p_meta: { note: note ?? null },
+    p_meta: metaToRpc(meta),
   })
   if (error) throw new Error(error.message)
 
@@ -191,11 +201,23 @@ export async function createOrder(lines: CartLine[], note?: string): Promise<Ord
   return order
 }
 
-/** Best-effort order mail (confirmation / shipped / cancelled) via the Netlify function. */
-export async function sendOrderEmail(
-  orderId: string,
-  event: 'created' | 'shipped' | 'cancelled' | 'reclaimed' = 'created',
-): Promise<void> {
+/**
+ * Portal mail events handled by the send-order-email Netlify function. The
+ * function loads recipients and content server-side from the referenced row,
+ * checks the caller may trigger the event, and sends each event at most once.
+ *   created | shipped | cancelled | reclaimed | prices_confirmed → orderId
+ *   quote_created                                                → quoteId
+ *   inquiry_created                                              → inquiryId
+ */
+export type OrderMailEvent = 'created' | 'shipped' | 'cancelled' | 'reclaimed' | 'prices_confirmed' | 'tracking_updated'
+
+export type PortalMail =
+  | { event: OrderMailEvent; orderId: string }
+  | { event: 'quote_created'; quoteId: string }
+  | { event: 'inquiry_created'; inquiryId: string }
+
+/** Best-effort portal mail via the Netlify function; never throws. */
+export async function sendPortalMail(mail: PortalMail): Promise<void> {
   if (!supabase) return
   try {
     const { data: sess } = await supabase.auth.getSession()
@@ -204,11 +226,19 @@ export async function sendOrderEmail(
     await fetch('/api/send-order-email', {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orderId, event }),
+      body: JSON.stringify(mail),
     })
   } catch {
     /* mail is best-effort */
   }
+}
+
+/** Best-effort order mail (confirmation / shipped / cancelled / reclaimed / tracking update). */
+export function sendOrderEmail(
+  orderId: string,
+  event: OrderMailEvent = 'created',
+): Promise<void> {
+  return sendPortalMail({ event, orderId })
 }
 
 // --- Order actions: cancel (#15), reclaim (#15), approve/reject (#9) --------
@@ -265,27 +295,88 @@ export interface InquiryInput {
   message?: string
   artworkFile?: File
 }
-export async function createInquiry(input: InquiryInput): Promise<void> {
+const LS_INQUIRIES = 'ballina_mock_inquiries'
+
+function loadMockInquiries(): Inquiry[] {
+  try {
+    const raw = localStorage.getItem(LS_INQUIRIES)
+    if (raw) return JSON.parse(raw) as Inquiry[]
+  } catch {
+    /* ignore */
+  }
+  return []
+}
+
+/** Creates the inquiry and notifies the back office; returns the inquiry id. */
+export async function createInquiry(input: InquiryInput): Promise<string> {
+  // The id is generated here so the notification can reference the row.
+  const id = crypto.randomUUID()
   if (USE_MOCK || !supabase) {
     await delay(400)
-    return
+    const inquiry: Inquiry = {
+      id,
+      productType: input.productType,
+      quantity: input.quantity,
+      deadline: input.deadline,
+      message: input.message,
+      artworkName: input.artworkFile?.name,
+      status: 'neu',
+      createdAt: new Date().toISOString(),
+    }
+    try {
+      localStorage.setItem(LS_INQUIRIES, JSON.stringify([inquiry, ...loadMockInquiries()]))
+    } catch {
+      /* ignore */
+    }
+    return id
   }
   const { data: { user } } = await supabase.auth.getUser()
   const profile = await currentProfile()
   if (!profile) throw new Error('Kein Firmenprofil gefunden.')
   const artworkPath = input.artworkFile ? await uploadArtwork(profile.companyId, input.artworkFile) : null
   const { error } = await supabase.from('b2b_inquiries').insert({
+    id,
     company_id: profile.companyId,
     artwork_name: input.artworkFile?.name ?? null,
     artwork_path: artworkPath,
+    contact_person: profile.name ?? null,
     email: user?.email ?? null,
-    product_type: input.productType,
+    product_type: input.productType.trim(),
     quantity: input.quantity,
     deadline: input.deadline || null,
-    message: input.message || null,
+    message: input.message?.trim() || null,
     status: 'neu',
   })
+  if (error) {
+    console.error('[inquiry] insert failed:', error)
+    throw new Error('Die Anfrage konnte nicht gesendet werden. Bitte erneut versuchen.')
+  }
+  void sendPortalMail({ event: 'inquiry_created', inquiryId: id })
+  return id
+}
+
+/** The company's own inquiries, newest first (RLS: inq_own_read). */
+export async function getInquiries(): Promise<Inquiry[]> {
+  if (USE_MOCK || !supabase) {
+    await delay()
+    return loadMockInquiries()
+  }
+  const { data, error } = await supabase
+    .from('b2b_inquiries')
+    .select('id, product_type, quantity, deadline, message, artwork_name, artwork_path, status, created_at')
+    .order('created_at', { ascending: false })
   if (error) throw error
+  return (data ?? []).map((r: any) => ({
+    id: r.id,
+    productType: r.product_type,
+    quantity: r.quantity ?? 0,
+    deadline: r.deadline ?? undefined,
+    message: r.message ?? undefined,
+    artworkName: r.artwork_name ?? undefined,
+    artworkPath: r.artwork_path ?? undefined,
+    status: r.status,
+    createdAt: r.created_at,
+  }))
 }
 
 // ---------------------------------------------------------------------------
@@ -344,23 +435,27 @@ function quoteToLines(quote: Quote): CartLine[] {
 }
 
 /** Accept a quote → set it to "angenommen" and create the corresponding order. */
-export async function acceptQuote(id: string): Promise<Order> {
+export async function acceptQuote(id: string, meta: OrderMeta = {}): Promise<Order> {
   if (USE_MOCK || !supabase) {
     await delay(400)
     const quotes = loadMockQuotes()
     const quote = quotes.find((q) => q.id === id)
     if (!quote) throw new Error('Angebot nicht gefunden.')
     if (!isQuoteAcceptable(quote)) throw new Error('Angebot ist nicht mehr gültig.')
-    const order = await createOrder(quoteToLines(quote), `Aus Angebot ${quote.quoteNumber} – ${quote.title}`)
+    const ref = `Aus Angebot ${quote.quoteNumber} – ${quote.title}`
+    const order = await createOrder(quoteToLines(quote), {
+      ...meta,
+      note: meta.note?.trim() ? `${ref}\n${meta.note.trim()}` : ref,
+    })
     saveMockQuotes(
       quotes.map((q) => (q.id === id ? { ...q, status: 'angenommen' as QuoteStatus } : q)),
     )
     return order
   }
   // Atomic server-side RPC: checks ownership, status 'offen' and valid_until,
-  // creates the order from the quote's own items/prices and marks the quote
-  // accepted in one transaction.
-  const { data: orderId, error } = await supabase.rpc('accept_quote', { p_quote_id: id })
+  // creates the order from the quote's own items/prices (+ PO, delivery
+  // address, Wunschtermin) and marks the quote accepted in one transaction.
+  const { data: orderId, error } = await supabase.rpc('accept_quote', { p_quote_id: id, p_meta: metaToRpc(meta) })
   if (error) throw new Error(error.message)
   void sendOrderEmail(orderId as string)
   const order = await getOrder(orderId as string)
@@ -378,6 +473,26 @@ export async function declineQuote(id: string): Promise<void> {
     return
   }
   const { error } = await supabase.rpc('decline_quote', { p_quote_id: id })
+  if (error) throw new Error(error.message)
+}
+
+// ---------------------------------------------------------------------------
+// "Mein Konto" self-service (RPCs from 012; tenant columns stay guarded)
+// ---------------------------------------------------------------------------
+export async function updateMyProfile(name: string, phone: string): Promise<void> {
+  if (USE_MOCK || !supabase) throw new Error('Im Demo-Modus nicht verfügbar.')
+  const { error } = await supabase.rpc('update_my_profile', { p_name: name, p_phone: phone })
+  if (error) throw new Error(error.message)
+}
+
+/** Default delivery address of the company; null resets it to the billing address. */
+export async function updateMyDeliveryAddress(address: Address | null): Promise<void> {
+  if (USE_MOCK || !supabase) throw new Error('Im Demo-Modus nicht verfügbar.')
+  const { error } = await supabase.rpc('update_my_delivery_address', {
+    p_address: address
+      ? { line1: address.line1.trim(), zip: address.zip.trim(), city: address.city.trim(), country: address.country?.trim() || null }
+      : null,
+  })
   if (error) throw new Error(error.message)
 }
 
@@ -403,6 +518,9 @@ function mapOrderRow(r: any): Order {
     reclamation: r.reclamation ?? undefined,
     invoiceName: r.invoice_name ?? undefined,
     invoiceDataUrl: r.invoice_url ?? undefined,
+    poNumber: r.po_number ?? undefined,
+    deliveryAddress: mapAddress(r.delivery_address),
+    requestedDate: r.requested_date ?? undefined,
     statusHistory: events.length ? events : undefined,
     items: (r.b2b_order_items ?? []).map((it: any) => ({
       id: it.id,
@@ -420,11 +538,24 @@ function mapOrderRow(r: any): Order {
   }
 }
 
+function mapAddress(a: any): Address | undefined {
+  if (!a || typeof a !== 'object' || !a.line1) return undefined
+  return {
+    name: a.name ?? undefined,
+    line1: a.line1,
+    zip: a.zip ?? '',
+    city: a.city ?? '',
+    country: a.country ?? undefined,
+  }
+}
+
 function mapQuoteRow(r: any): Quote {
   return {
     id: r.id,
     quoteNumber: r.quote_number,
     orderId: r.order_id ?? undefined,
+    inquiryId: r.inquiry_id ?? undefined,
+    withdrawnAt: r.withdrawn_at ?? undefined,
     title: r.title,
     createdAt: r.created_at,
     validUntil: r.valid_until,
@@ -444,15 +575,15 @@ function mapQuoteRow(r: any): Quote {
   }
 }
 
-/** Current user's profile row (company_id) — used by the real-DB paths. */
-async function currentProfile(): Promise<{ companyId: string } | null> {
+/** Current user's profile row (company_id, name) — used by the real-DB paths. */
+async function currentProfile(): Promise<{ companyId: string; name?: string } | null> {
   if (!supabase) return null
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
   const { data } = await supabase
     .from('b2b_profiles')
-    .select('company_id')
+    .select('company_id, name')
     .eq('user_id', user.id)
-    .single()
-  return data ? { companyId: data.company_id } : null
+    .maybeSingle()
+  return data ? { companyId: data.company_id, name: data.name ?? undefined } : null
 }

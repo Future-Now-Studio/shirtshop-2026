@@ -3,12 +3,15 @@ import { Link } from "react-router-dom";
 import { ArrowRight, CheckCircle, Truck, Factory } from "lucide-react";
 import heroImage from "@/assets/hero-image.jpg";
 import heroVideo from "@/assets/browsing.mp4";
+import { useShopConfig } from "@/lib/pricing";
 
-const TRUST = [
-  { icon: CheckCircle, stat: "1 mio.+", label: "zufriedene bestellungen" },
-  { icon: Factory, stat: "100 % lokal", label: "produziert in hamburg" },
-  { icon: Truck, stat: "24–48 h", label: "blitzschnelle lieferung" },
-];
+// Delivery stat comes from the configured Lieferzeit (Admin → Einstellungen),
+// e.g. "3–5 Werktage, mit individuellem Druck 5–10 Werktage" →
+// stat "3–5 werktage", label "lieferzeit, mit individuellem druck 5–10 werktage".
+function deliveryStat(deliveryTime: string) {
+  const [first, ...rest] = deliveryTime.split(",");
+  return { stat: first.trim(), label: rest.length ? `lieferzeit, ${rest.join(",").trim()}` : "lieferzeit" };
+}
 
 // Phones and "reduce motion" users get the still image: saves ~1.4 MB of
 // mobile data and respects the OS setting.
@@ -19,6 +22,12 @@ function wantsVideo() {
 
 export default function Hero() {
   const [showVideo] = useState(wantsVideo);
+  const { deliveryTime } = useShopConfig();
+  const trust = [
+    { icon: CheckCircle, stat: "1 mio.+", label: "veredelte teile" },
+    { icon: Factory, stat: "100 % lokal", label: "produziert in hamburg" },
+    { icon: Truck, ...deliveryStat(deliveryTime) },
+  ];
   return (
     // full-bleed breakout from the page container
     <section className="relative left-1/2 right-1/2 -mx-[50vw] -mt-10 mb-16 w-screen overflow-hidden">
@@ -65,7 +74,7 @@ export default function Hero() {
 
         <div className="relative z-20 border-t-2 md:absolute md:inset-x-0 md:bottom-0 border-primary/20 bg-background/90 backdrop-blur-xl">
           <div className="container grid grid-cols-1 divide-y divide-border/60 py-4 md:grid-cols-3 md:divide-x md:divide-y-0">
-            {TRUST.map(({ icon: Icon, stat, label }) => (
+            {trust.map(({ icon: Icon, stat, label }) => (
               <div key={label} className="group flex items-center justify-center gap-4 py-3 md:py-2">
                 <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground transition-transform group-hover:scale-110">
                   <Icon className="h-6 w-6" />

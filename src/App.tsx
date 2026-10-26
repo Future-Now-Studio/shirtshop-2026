@@ -20,7 +20,9 @@ const TShirtDesigner = lazy(() => import("./pages/TShirtDesigner"));
 const Grossbestellung = lazy(() => import("./pages/Grossbestellung"));
 const Checkout = lazy(() => import("./pages/Checkout"));
 const CheckoutSuccess = lazy(() => import("./pages/CheckoutSuccess"));
-const AdminPlacementZones = lazy(() => import("./pages/AdminPlacementZones"));
+// Placement-zone editor is a local dev tool: saving only works through the Vite
+// dev proxy (the production wc-proxy is read-only), so builds do not ship it.
+const AdminPlacementZones = import.meta.env.DEV ? lazy(() => import("./pages/AdminPlacementZones")) : null;
 const Impressum = lazy(() => import("./pages/Impressum"));
 const Datenschutz = lazy(() => import("./pages/Datenschutz"));
 const AGB = lazy(() => import("./pages/AGB"));
@@ -61,8 +63,12 @@ const App = () => (
                 <Route path="/impressum" element={<Impressum />} />
                 <Route path="/datenschutz" element={<Datenschutz />} />
                 <Route path="/agb" element={<AGB />} />
-                <Route path="/admin/placement-zones" element={<AdminPlacementZones />} />
-                <Route path="/admin/placement-zones/:productId" element={<AdminPlacementZones />} />
+                {AdminPlacementZones && (
+                  <>
+                    <Route path="/admin/placement-zones" element={<AdminPlacementZones />} />
+                    <Route path="/admin/placement-zones/:productId" element={<AdminPlacementZones />} />
+                  </>
+                )}
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </Suspense>

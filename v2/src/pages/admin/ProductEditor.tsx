@@ -4,12 +4,14 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { publishProblem } from "@/lib/publish-check";
+import { dbErrorMessage } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import VariantManager from "@/components/admin/VariantManager";
 import SizeMatrix from "@/components/admin/SizeMatrix";
 import PrintZoneEditor from "@/components/admin/PrintZoneEditor";
+import { slugify } from "@/components/admin/catalog";
 
 const TABS = [
   { key: "basics", label: "Basis" },
@@ -57,7 +59,7 @@ export default function ProductEditor() {
       </div>
 
       {tab === "basics" && <Basics product={product} onSaved={() => qc.invalidateQueries({ queryKey: ["product", id] })} />}
-      {tab === "variants" && <VariantManager productId={product.id} />}
+      {tab === "variants" && <VariantManager productId={product.id} published={product.status === "published"} />}
       {tab === "sizes" && <SizeMatrix productId={product.id} />}
       {tab === "zones" && <PrintZoneEditor productId={product.id} />}
     </div>
@@ -65,8 +67,10 @@ export default function ProductEditor() {
 }
 
 function Basics({ product, onSaved }: { product: any; onSaved: () => void }) {
+  const qc = useQueryClient();
   const [form, setForm] = useState({
     name: product.name ?? "",
+    slug: product.slug ?? "",
     category: product.category ?? "",
     description: product.description ?? "",
     base_price: product.base_price ?? 0,
@@ -77,6 +81,7 @@ function Basics({ product, onSaved }: { product: any; onSaved: () => void }) {
   useEffect(() => {
     setForm({
       name: product.name ?? "",
+      slug: product.slug ?? "",
       category: product.category ?? "",
       description: product.description ?? "",
       base_price: product.base_price ?? 0,
@@ -88,6 +93,14 @@ function Basics({ product, onSaved }: { product: any; onSaved: () => void }) {
 
   const save = useMutation({
     mutationFn: async () => {
+      if (!form.name.trim()) throw new Error("Name fehlt.");
+      const slug = slugify(form.slug);
+      if (!slug) throw new Error("Shop-Adresse fehlt (Buchstaben, Ziffern und Bindestriche).");
+      if (!(Number(form.base_price) >= 0) || !(Number(form.design_element_price) >= 0)) throw new Error("Preise dürfen nicht negativ sein.");
+      if (
+        slug !== product.slug && product.status === "published" &&
+        !confirm(`Shop-Adresse von /produkt/${product.slug} auf /produkt/${slug} ändern? Alte Links (geteilt, Google, Merklisten) führen dann ins Leere.`)
+      ) return false;
       if (form.status === "published") {
         const problem = await publishProblem(product.id);
         if (problem) throw new Error(`Noch nicht veröffentlichbar: ${problem}`);
@@ -95,7 +108,8 @@ function Basics({ product, onSaved }: { product: any; onSaved: () => void }) {
       const { error } = await supabase
         .from("products")
         .update({
-          name: form.name,
+          name: form.name.trim(),
+          slug,
           category: form.category || null,
           description: form.description || null,
           base_price: Number(form.base_price),
@@ -105,9 +119,15 @@ function Basics({ product, onSaved }: { product: any; onSaved: () => void }) {
           updated_at: new Date().toISOString(),
         })
         .eq("id", product.id);
-      if (error) throw error;
+      if (error) throw new Error(error.code === "23505" ? `Die Shop-Adresse /produkt/${slug} ist schon vergeben.` : dbErrorMessage(error));
+      setForm((f) => ({ ...f, slug }));
+      return true;
     },
-    onSuccess: onSaved,
+    onSuccess: (saved) => {
+      if (!saved) return;
+      onSaved();
+      qc.invalidateQueries({ queryKey: ["admin-products"] });
+    },
   });
 
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
@@ -123,6 +143,14 @@ function Basics({ product, onSaved }: { product: any; onSaved: () => void }) {
       <div className="space-y-1.5">
         <Label>Name</Label>
         <Input value={form.name} onChange={(e) => set("name", e.target.value)} />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="p-slug">Shop-Adresse</Label>
+        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+          /produkt/
+          <Input id="p-slug" value={form.slug} onChange={(e) => set("slug", e.target.value)} onBlur={() => set("slug", slugify(form.slug))} className="flex-1" />
+        </div>
+        <p className="text-xs text-muted-foreground">Nur Kleinbuchstaben, Ziffern und Bindestriche (Umlaute werden zu ae/oe/ue/ss).</p>
       </div>
       <div className="space-y-1.5">
         <Label>Kategorie</Label>
@@ -170,7 +198,7 @@ function Basics({ product, onSaved }: { product: any; onSaved: () => void }) {
       </div>
       {save.error && <p className="text-sm text-destructive">{(save.error as Error).message}</p>}
       <Button type="submit" disabled={save.isPending}>
-        {save.isPending ? "Speichern…" : save.isSuccess ? "Gespeichert ✓" : "Speichern"}
+        {save.isPending ? "Speichern…" : save.isSuccess && save.data ? "Gespeichert ✓" : "Speichern"}
       </Button>
     </form>
   );
